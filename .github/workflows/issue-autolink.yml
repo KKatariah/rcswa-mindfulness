@@ -1,46 +1,14 @@
 name: "Issue Autolink"
-
 on:
   pull_request:
     types: [opened]
-
-permissions:
-  contents: read
-  pull-requests: write
 
 jobs:
   issue-links:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract issue number from branch and comment
-        uses: actions/github-script@v7
+      - uses: tkt-actions/add-issue-links@v1.8.2
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const pr = context.payload.pull_request;
-            const branch = pr.head.ref || "";
-
-            // Matches: issue-123, issues-123, issue/123, feature/issue-123, etc.
-            const match = branch.match(/(?:^|\/)(?:issue|issues)[-_\/]?(\d+)(?:$|[-_\/])/i);
-
-            if (!match) {
-              core.info(`No issue number found in branch "${branch}". Skipping.`);
-              return;
-            }
-
-            const issue_number = Number(match[1]);
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-
-            const body =
-              `Linked to #${issue_number}\n\n` +
-              `Auto-linked from branch \`${branch}\`.`;
-
-            await github.rest.issues.createComment({
-              owner,
-              repo,
-              issue_number: pr.number,
-              body
-            });
-
-            core.info(`Posted link comment on PR #${pr.number} to issue #${issue_number}.`);
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+          branch-prefix: "issue-"
+          resolve: "true"
