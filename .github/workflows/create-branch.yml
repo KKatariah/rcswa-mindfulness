@@ -1,3 +1,4 @@
+name: Create branch for new issues
 on:
   # The issue.opened event below is only needed for the "immediate" mode.
   # The issue.assigned event below is only needed for the default ("auto") mode.
@@ -9,7 +10,11 @@ on:
   # The pull_request events below are only needed for pull-request related features.
   pull_request:
     types: [ opened, closed ]
-
+    
+permissions:
+  contents: write
+  issues: read
+  
 jobs:
   create_issue_branch_job:
     runs-on: ubuntu-latest
