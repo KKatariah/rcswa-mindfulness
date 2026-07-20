@@ -1,0 +1,14 @@
+{
+	"recommendations": [
+		"davidanson.vscode-markdownlint",
+		"esbenp.prettier-vscode",
+		"tomoki1207.pdf",
+		"streetsidesoftware.code-spell-checker-british-english",
+		"streetsidesoftware.code-spell-checker",
+		"bierner.color-info",
+		"eamodio.gitlens",
+		"kevinrose.vsc-python-indent",
+		"mechatroner.rainbow-csv",
+		"wayou.vscode-todo-highlight"
+	]
+}
