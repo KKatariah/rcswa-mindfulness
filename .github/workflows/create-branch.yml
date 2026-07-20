@@ -6,13 +6,13 @@ on:
 
 permissions:
   contents: write
-  issues: read
+  issues: write
 
 jobs:
   create-issue-branch:
     runs-on: ubuntu-latest
     steps:
-      - name: Create branch from issue
+      - name: Create and link branch from issue (with fallback)
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
@@ -24,31 +24,56 @@ jobs:
             // sanitize title for branch name
             const slug = issue.title
               .toLowerCase()
-              .replace(/[^a-z0-9\s-]/g, '')
+              .replace(/[^a-z0-9\s-]/g, "")
               .trim()
-              .replace(/\s+/g, '-')
-              .replace(/-+/g, '-')
+              .replace(/\s+/g, "-")
+              .replace(/-+/g, "-")
               .slice(0, 50);
 
-            const branch = `issue-${issue.number}-${slug || 'untitled'}`;
+            const branchName = `issue-${issue.number}-${slug || "untitled"}`;
 
             // get default branch
             const { data: repoData } = await github.rest.repos.get({ owner, repo });
             const baseBranch = repoData.default_branch;
 
-            // get SHA of default branch head
+            // 1) Preferred path: create linked branch via issue endpoint
+            try {
+              await github.request("POST /repos/{owner}/{repo}/issues/{issue_number}/create-branch", {
+                owner,
+                repo,
+                issue_number: issue.number,
+                name: branchName
+              });
+
+              core.info(`Created linked branch via issue endpoint: ${branchName}`);
+              return;
+            } catch (err) {
+              core.warning(
+                `Issue create-branch endpoint unavailable/failed (${err.status || "unknown"}). Falling back to git ref creation.`
+              );
+            }
+
+            // 2) Fallback path: create ref directly from default branch HEAD
             const { data: refData } = await github.rest.git.getRef({
               owner,
               repo,
               ref: `heads/${baseBranch}`
             });
 
-            // create new branch
-            await github.rest.git.createRef({
-              owner,
-              repo,
-              ref: `refs/heads/${branch}`,
-              sha: refData.object.sha
-            });
+            try {
+              await github.rest.git.createRef({
+                owner,
+                repo,
+                ref: `refs/heads/${branchName}`,
+                sha: refData.object.sha
+              });
 
-            core.info(`Created branch: ${branch}`);
+              core.info(`Created branch via fallback: ${branchName}`);
+            } catch (err) {
+              // If branch already exists, don't fail the workflow
+              if (err.status === 422) {
+                core.info(`Branch already exists: ${branchName}`);
+              } else {
+                throw err;
+              }
+            }
