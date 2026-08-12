@@ -1,95 +1,134 @@
 """Database schema for the mindfulness training program.
 
-The custom ``User`` model subclasses ``AbstractUser`` so we inherit Django's
-built-in, salted password hashing (``set_password`` / ``check_password``) and
-the full auth/permissions stack. Because of the custom user model,
-``AUTH_USER_MODEL = 'app.User'`` must be set in settings before the first
-migration is created.
+The custom ``User`` model subclasses ``AbstractUser`` so Django's salted
+password hashing and auth/permissions stack are inherited. ``username`` is
+removed in favour of ``email`` as the unique identifier. SSO users who have
+no local password get ``set_unusable_password()`` called in the manager —
+there is no nullable password column.
 
-Foreign keys reference ``settings.AUTH_USER_MODEL`` rather than the ``User``
-class directly — this is the recommended pattern for pluggable user models.
+Foreign keys use ``settings.AUTH_USER_MODEL`` rather than the ``User`` class
+directly, the recommended pattern for pluggable user models.
 """
 
 from django.conf import settings
+from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.db.models import Q
+
+
+# Users & Access
+class UserManager(BaseUserManager):
+    use_in_migrations = True
+
+    def _create_user(self, email, password, **extra_fields):
+        if not email:
+            raise ValueError("Email address is required.")
+        email = self.normalize_email(email)
+        user = self.model(email=email, **extra_fields)
+        if password:
+            user.set_password(password)
+        else:
+            # SSO users have no local password
+            user.set_unusable_password()
+        user.save(using=self._db)
+        return user
+
+    def create_user(self, email, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", False)
+        extra_fields.setdefault("is_superuser", False)
+        return self._create_user(email, password, **extra_fields)
+
+    def create_superuser(self, email, password, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True.")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True.")
+        return self._create_user(email, password, **extra_fields)
 
 
 class User(AbstractUser):
-    """A program participant or administrator.
-
-    Extends Django's ``AbstractUser`` (username, email, password hash, names,
-    is_staff/is_active, etc.) with the fields this program needs.
-    """
-
     class Role(models.TextChoices):
         STUDENT = "student", "Student"
         ADMIN = "admin", "Admin"
 
-    phone_number = models.CharField(max_length=20, blank=True)
-    role = models.CharField(
-        max_length=10,
-        choices=Role.choices,
-        default=Role.STUDENT,
-    )
-    university = models.CharField(max_length=150, blank=True)
-    year_of_study = models.PositiveSmallIntegerField(null=True, blank=True)
+    # Remove inherited username field; email is the unique identifier.
+    username = None
+
+    objects = UserManager()
+
+    USERNAME_FIELD = "email"
+    # Overrides AbstractUser.REQUIRED_FIELDS = ['email'] (can't duplicate USERNAME_FIELD).
+    REQUIRED_FIELDS = ["full_name"]
+
+    email = models.EmailField(unique=True)
+    full_name = models.CharField(max_length=200, blank=True)
+    auth_provider = models.CharField(max_length=50, default="local")
+    provider_uid = models.CharField(max_length=255, blank=True, null=True)
+    role = models.CharField(max_length=10, choices=Role.choices, default=Role.STUDENT)
+    created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return self.get_full_name() or self.username
+        return self.full_name or self.email
 
 
 class Cohort(models.Model):
-    """One run of the program, typically one per calendar year."""
-
     name = models.CharField(max_length=150)
     year = models.PositiveIntegerField()
     start_date = models.DateField()
+    end_date = models.DateField()
 
     def __str__(self):
         return f"{self.name} ({self.year})"
 
 
 class Enrollment(models.Model):
-    """Links a user to the cohort they are taking part in."""
-
     class Status(models.TextChoices):
         ACTIVE = "active", "Active"
         COMPLETED = "completed", "Completed"
         WITHDRAWN = "withdrawn", "Withdrawn"
 
+    # CASCADE: an enrollment record is meaningless without its user.
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="enrollments",
     )
+    # CASCADE: an enrollment record is meaningless without its cohort.
     cohort = models.ForeignKey(
         Cohort,
         on_delete=models.CASCADE,
         related_name="enrollments",
     )
-    start_date = models.DateField()
     current_week = models.PositiveSmallIntegerField(default=1)
     status = models.CharField(
-        max_length=12,
-        choices=Status.choices,
-        default=Status.ACTIVE,
+        max_length=12, choices=Status.choices, default=Status.ACTIVE
     )
+    enrolled_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ("user", "cohort")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "cohort"], name="unique_enrollment_user_cohort"
+            ),
+        ]
 
     def __str__(self):
         return f"{self.user} in {self.cohort}"
 
 
-class Module(models.Model):
-    """A weekly module of the program (weeks 1–8)."""
+# Content
 
-    week_number = models.PositiveSmallIntegerField(unique=True)
+class Module(models.Model):
+    # Globally unique — see ambiguity note at bottom of file.
+    week_number = models.PositiveSmallIntegerField(unique=True, db_index=True)
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     is_published = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ["week_number"]
@@ -99,34 +138,37 @@ class Module(models.Model):
 
 
 class ContentItem(models.Model):
-    """An embeddable piece of content (video or guided meditation)."""
-
     class ContentType(models.TextChoices):
         VIDEO = "video", "Video"
-        MEDITATION = "meditation", "Meditation"
+        AUDIO = "audio", "Audio"
 
+    class Provider(models.TextChoices):
+        YOUTUBE = "youtube", "YouTube"
+        SOUNDCLOUD = "soundcloud", "SoundCloud"
+
+    # CASCADE: content items are owned by their module.
     module = models.ForeignKey(
         Module,
         on_delete=models.CASCADE,
         related_name="content_items",
     )
-    type = models.CharField(max_length=12, choices=ContentType.choices)
     title = models.CharField(max_length=200)
+    type = models.CharField(max_length=10, choices=ContentType.choices)
+    provider = models.CharField(max_length=20, choices=Provider.choices)
     embed_url = models.URLField()
-    provider = models.CharField(max_length=50, blank=True)
+    display_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["module", "display_order"]
 
     def __str__(self):
         return self.title
 
 
 class Resource(models.Model):
-    """A supplementary resource (link, PDF, etc.), optionally tied to a module."""
-
-    class ResourceType(models.TextChoices):
-        LINK = "link", "Link"
-        DOCUMENT = "document", "Document"
-        ARTICLE = "article", "Article"
-
+    # SET_NULL: supplementary resources are not destroyed when a module is removed.
     module = models.ForeignKey(
         Module,
         on_delete=models.SET_NULL,
@@ -136,24 +178,27 @@ class Resource(models.Model):
     )
     title = models.CharField(max_length=200)
     url = models.URLField()
-    resource_type = models.CharField(
-        max_length=20,
-        choices=ResourceType.choices,
-        default=ResourceType.LINK,
-    )
+    resource_type = models.CharField(max_length=100)
+    display_order = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        ordering = ["display_order"]
 
     def __str__(self):
         return self.title
 
 
-class ContentCompletion(models.Model):
-    """Records that a user has completed a content item (progress tick)."""
 
+# Progress
+
+class ContentCompletion(models.Model):
+    # CASCADE: completion records belong to the user.
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="content_completions",
     )
+    # CASCADE: a completion record is meaningless when its content item is deleted.
     content_item = models.ForeignKey(
         ContentItem,
         on_delete=models.CASCADE,
@@ -162,243 +207,217 @@ class ContentCompletion(models.Model):
     completed_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ("user", "content_item")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "content_item"],
+                name="unique_completion_user_content_item",
+            ),
+        ]
 
     def __str__(self):
         return f"{self.user} completed {self.content_item}"
 
 
-class PracticeLog(models.Model):
-    """A daily self-reported record of whether the user practised."""
 
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="practice_logs",
-    )
-    practice_date = models.DateField()
-    practiced = models.BooleanField(default=False)
-    duration_min = models.PositiveIntegerField(null=True, blank=True)
-
-    class Meta:
-        unique_together = ("user", "practice_date")
-
-    def __str__(self):
-        return f"{self.user} on {self.practice_date}"
-
-
-class Survey(models.Model):
-    """A questionnaire administered at some point in the program."""
-
-    class SurveyType(models.TextChoices):
-        INTAKE = "intake", "Intake"
-        WEEKLY = "weekly", "Weekly"
-        OUTCOME = "outcome", "Outcome"
-        FOLLOWUP = "followup", "Follow-up"
-
-    code = models.CharField(max_length=50, unique=True)
-    title = models.CharField(max_length=200)
-    type = models.CharField(max_length=12, choices=SurveyType.choices)
-
-    def __str__(self):
-        return f"{self.title} ({self.code})"
-
-
-class Question(models.Model):
-    """A single question belonging to a survey."""
-
-    class ResponseType(models.TextChoices):
-        SCALE = "scale", "Scale"
-        TEXT = "text", "Text"
-        BOOLEAN = "boolean", "Boolean"
-
-    survey = models.ForeignKey(
-        Survey,
-        on_delete=models.CASCADE,
-        related_name="questions",
-    )
-    text = models.TextField()
-    response_type = models.CharField(
-        max_length=12,
-        choices=ResponseType.choices,
-    )
-    scale_min = models.IntegerField(null=True, blank=True)
-    scale_max = models.IntegerField(null=True, blank=True)
-
-    def __str__(self):
-        return self.text[:60]
-
-
-class SurveyResponse(models.Model):
-    """One submission of a survey by a user."""
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="survey_responses",
-    )
-    survey = models.ForeignKey(
-        Survey,
-        on_delete=models.CASCADE,
-        related_name="responses",
-    )
-    week_number = models.PositiveSmallIntegerField(null=True, blank=True)
-    submitted_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.user} — {self.survey}"
-
-
-class Answer(models.Model):
-    """A single answer to a question within a survey response."""
-
-    survey_response = models.ForeignKey(
-        SurveyResponse,
-        on_delete=models.CASCADE,
-        related_name="answers",
-    )
-    question = models.ForeignKey(
-        Question,
-        on_delete=models.CASCADE,
-        related_name="answers",
-    )
-    value_numeric = models.FloatField(null=True, blank=True)
-    value_text = models.TextField(blank=True)
-
-    def __str__(self):
-        return f"Answer to {self.question}"
-
-
-class JournalEntry(models.Model):
-    """A weekly reflection written by the user."""
-
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="journal_entries",
-    )
-    week_number = models.PositiveSmallIntegerField()
-    feeling_text = models.TextField(blank=True)
-    experience_text = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.user} — week {self.week_number}"
-
+# Notifications
 
 class NotificationPreference(models.Model):
-    """Per-user notification settings."""
-
+    # CASCADE: preferences are owned by the user.
     user = models.OneToOneField(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="notification_preference",
     )
+    inapp_enabled = models.BooleanField(default=True)
     email_enabled = models.BooleanField(default=True)
-    sms_enabled = models.BooleanField(default=False)
-    reminder_time = models.TimeField(null=True, blank=True)
+    reminder_time = models.TimeField()
 
     def __str__(self):
         return f"Preferences for {self.user}"
 
 
 class NotificationLog(models.Model):
-    """A record of a notification that was (or will be) sent to a user."""
+    class NotificationType(models.TextChoices):
+        CONTENT_REMINDER = "content_reminder", "Content Reminder"
+        SURVEY_PROMPT = "survey_prompt", "Survey Prompt"
+        CONTENT_UPDATE = "content_update", "Content Update"
+        MODULE_ADDED = "module_added", "Module Added"
 
     class Channel(models.TextChoices):
+        INAPP = "inapp", "In-App"
         EMAIL = "email", "Email"
-        SMS = "sms", "SMS"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
         SENT = "sent", "Sent"
         FAILED = "failed", "Failed"
 
+    # CASCADE: log entries belong to the user.
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name="notification_logs",
     )
+    type = models.CharField(max_length=20, choices=NotificationType.choices)
+    # SET_NULL: preserve the audit trail even when referenced content is deleted.
+    module = models.ForeignKey(
+        Module,
+        on_delete=models.SET_NULL,
+        related_name="notification_logs",
+        null=True,
+        blank=True,
+    )
+    content_item = models.ForeignKey(
+        ContentItem,
+        on_delete=models.SET_NULL,
+        related_name="notification_logs",
+        null=True,
+        blank=True,
+    )
     channel = models.CharField(max_length=10, choices=Channel.choices)
-    scheduled_for = models.DateTimeField()
+    scheduled_for = models.DateTimeField(db_index=True)
     sent_at = models.DateTimeField(null=True, blank=True)
     status = models.CharField(
         max_length=10,
         choices=Status.choices,
         default=Status.PENDING,
+        db_index=True,
     )
 
     def __str__(self):
-        return f"{self.channel} to {self.user} ({self.status})"
+        return f"{self.get_type_display()} to {self.user} ({self.status})"
 
 
-class ForumThread(models.Model):
-    """A discussion thread, optionally attached to a module."""
 
+# Surveys
+
+class Survey(models.Model):
+    class SurveyType(models.TextChoices):
+        INTAKE = "intake", "Intake"
+        WEEKLY = "weekly", "Weekly"
+        END = "end", "End"
+        FOLLOWUP = "followup", "Follow-up"
+
+    # SET_NULL: surveys may be global (not tied to any module).
     module = models.ForeignKey(
         Module,
         on_delete=models.SET_NULL,
-        related_name="threads",
+        related_name="surveys",
         null=True,
         blank=True,
     )
+    code = models.CharField(max_length=50, unique=True)
     title = models.CharField(max_length=200)
-    created_by = models.ForeignKey(
+    type = models.CharField(max_length=10, choices=SurveyType.choices)
+
+    def __str__(self):
+        return f"{self.title} ({self.code})"
+
+
+class SurveyResponse(models.Model):
+    # CASCADE: responses belong to the user.
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
-        related_name="threads_created",
+        related_name="survey_responses",
     )
+    # CASCADE: a response is meaningless without its survey definition.
+    survey = models.ForeignKey(
+        Survey,
+        on_delete=models.CASCADE,
+        related_name="responses",
+    )
+    answers = models.JSONField()
+    submitted_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "survey"], name="unique_survey_response_user_survey"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} — {self.survey}"
+
+
+
+# Community
+
+class ForumThread(models.Model):
+    # SET_NULL: threads survive module/content deletion (community content is durable).
+    module = models.ForeignKey(
+        Module,
+        on_delete=models.SET_NULL,
+        related_name="forum_threads",
+        null=True,
+        blank=True,
+    )
+    content_item = models.ForeignKey(
+        ContentItem,
+        on_delete=models.SET_NULL,
+        related_name="forum_threads",
+        null=True,
+        blank=True,
+    )
+    # SET_NULL: community threads outlive their authors; created_by becomes null on deletion.
+    # Schema marks created_by non-nullable, but SET_NULL (with null=True) is preferable
+    # because CASCADE would silently destroy community discussion on user deletion.
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="threads_created",
+        null=True,
+    )
+    title = models.CharField(max_length=200)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    Q(module__isnull=False, content_item__isnull=True)
+                    | Q(module__isnull=True, content_item__isnull=False)
+                ),
+                name="forum_thread_exactly_one_context",
+            ),
+        ]
 
     def __str__(self):
         return self.title
 
 
 class ForumPost(models.Model):
-    """A post within a thread; may be a reply to another post."""
-
+    # CASCADE: posts are destroyed when their thread is deleted.
     thread = models.ForeignKey(
         ForumThread,
         on_delete=models.CASCADE,
         related_name="posts",
     )
+    # SET_NULL: anonymise authorship rather than destroying posts when a user is deleted.
     author = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="forum_posts",
+        null=True,
     )
+    # SET_NULL: replies survive if their parent post is hard-deleted.
     parent_post = models.ForeignKey(
         "self",
-        on_delete=models.CASCADE,
+        on_delete=models.SET_NULL,
         related_name="replies",
         null=True,
         blank=True,
     )
     body = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    # Soft-delete flag. delete() is NOT overridden per spec.
+    is_deleted = models.BooleanField(default=False)
+
+    class Meta:
+        ordering = ["created_at"]
 
     def __str__(self):
         return f"Post by {self.author} in {self.thread}"
-
-
-class BuddyPair(models.Model):
-    """A pairing of two users within a cohort for peer support."""
-
-    cohort = models.ForeignKey(
-        Cohort,
-        on_delete=models.CASCADE,
-        related_name="buddy_pairs",
-    )
-    user_a = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="buddy_pairs_as_a",
-    )
-    user_b = models.ForeignKey(
-        settings.AUTH_USER_MODEL,
-        on_delete=models.CASCADE,
-        related_name="buddy_pairs_as_b",
-    )
-
-    def __str__(self):
-        return f"{self.user_a} & {self.user_b}"
