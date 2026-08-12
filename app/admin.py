@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
 
-# Import all the models from models.py
+#import all the models from models.py
 from .models import (
     User,
     Cohort,
@@ -43,7 +43,7 @@ class CustomUserAdmin(UserAdmin):
     ordering = ("email",)
 
 
-# Register all the models
+#register all the models
 admin.site.register(Cohort)
 admin.site.register(Enrollment)
 admin.site.register(Module)
