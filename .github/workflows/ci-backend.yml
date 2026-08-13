@@ -12,85 +12,41 @@ jobs:
     name: Run Flake8
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-      - name: "Set up Python"
-        uses: actions/setup-python@v2
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.x
+          python-version: "3.12"
 
-      - name: "Install flake8"
-        run: pip install flake8
+      - name: Install flake8
+        run: pip install flake8 flake8-django
 
-      - name: "Install flake8-django"
-        run: pip install flake8-django
-
-      - name: "Run flake8"
+      - name: Run flake8
         uses: liskin/gh-problem-matcher-wrap@v1
         with:
           linters: flake8
-          run: flake8 --max-line-length 150 server/
+          run: flake8 --max-line-length 150 --exclude=migrations app server manage.py
+
   build:
     name: Build and test
     runs-on: ubuntu-latest
 
-    defaults:
-      run:
-        working-directory: server
-
-    services:
-      db:
-        image: postgres
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: password
-          POSTGRES_DB: github-actions
-        ports:
-          - 5432:5432
-        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
-
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Install poetry
-        run: pipx install poetry
-
-      - name: Set up Python Env
-        uses: actions/setup-python@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-          cache: "poetry"
+          cache: "pip"
 
-      - name: Install dependencies 👨🏻‍💻
-        run: poetry install
+      - name: Install dependencies
+        run: pip install -r requirements.txt
 
-      - name: Run Migrations 🕊️
-        env:
-          API_SECRET_KEY: o!v%_v0zjvc5+_)e!r+o!_uefr2a&)lfgv17$ex=a!ei%!y-_o
-          POSTGRES_HOST: localhost
-          POSTGRES_PASSWORD: password
-          POSTGRES_PORT: 5432
-          EMAIL_PORT: 1025
-          FRONTEND_URL: http://localhost:3000
-        run: poetry run python manage.py migrate
+      - name: Run migrations
+        run: python manage.py migrate
 
-      - name: Run tests 🧪
-        env:
-          API_SECRET_KEY: o!v%_v0zjvc5+_)e!r+o!_uefr2a&)lfgv17$ex=a!ei%!y-_o
-          JWT_SIGNING_KEY: NjMgNmYgNmQgNmQgNzUgNmUgNjkgNzQgNzkgNzMgNzAgNjkgNzIgNjkgNzQgNjYgNmYgNzUgNmUgNjQgNjEgNzQgNjkgNmYgNmU=
-          POSTGRES_HOST: localhost
-          POSTGRES_PASSWORD: password
-          POSTGRES_PORT: 5432
-          EMAIL_PORT: 1025
-          FRONTEND_URL: http://localhost:3000
-        run: |
-          poetry run python3 -m pip install coverage
-          poetry run coverage run manage.py test
-          poetry run coverage xml
-
-      - name: Upload Coverage ☂️
-        uses: codecov/codecov-action@v3
-        with:
-          flags: backend
-          files: ./server/coverage.xml
+      - name: Run tests
+        run: python manage.py test
