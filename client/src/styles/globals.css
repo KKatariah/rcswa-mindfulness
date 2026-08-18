@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: var(--font-work-sans), "Segoe UI", sans-serif;
+  --font-sans: var(--font-work-sans, "Segoe UI"), sans-serif;
 
   --color-brand-blue: #5096cf;
   --color-ink: #111827;
