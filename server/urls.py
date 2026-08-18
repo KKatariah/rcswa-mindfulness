@@ -16,9 +16,18 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+
+from app.views import ContentCompletionViewSet, ModuleViewSet, register_view
+
+router = DefaultRouter()
+router.register("modules", ModuleViewSet, basename="module")
+router.register("progress", ContentCompletionViewSet, basename="progress")
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('__reload__/', include('django_browser_reload.urls')), # DX enhancement, only active when DEBUG is true
-    path('app/', include('app.urls'))
+    path('app/', include('app.urls')),
+    path('api/register/', register_view, name='register'),
+    path('api/', include(router.urls)),
 ]
