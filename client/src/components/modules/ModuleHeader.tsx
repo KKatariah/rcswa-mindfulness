@@ -12,7 +12,7 @@ export default function ModuleHeader({
 	description,
 }: ModuleHeaderProps) {
 	return (
-		<div className="rounded-3xl border-t-4 border-brand-blue bg-white p-8 shadow-[0px_10px_20px_rgba(0,0,0,0.08)]">
+		<div className="rounded-3xl border-t-4 border-brand-blue-dark bg-white p-8 shadow-[0px_10px_20px_rgba(0,0,0,0.08)]">
 			<h1 className="text-3xl font-extrabold text-ink">{title}</h1>
 
 			<div className="mt-3 inline-flex items-center gap-1.5 rounded-full bg-brand-blue/10 px-3 py-1 text-sm font-semibold text-brand-blue-dark">

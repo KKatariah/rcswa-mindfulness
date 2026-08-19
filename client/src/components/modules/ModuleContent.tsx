@@ -15,7 +15,7 @@ export default function ModuleContent({ blocks }: ModuleContentProps) {
 					return (
 						<div
 							key={block.id}
-							className="prose prose-neutral prose-lg mb-4 max-w-none last:mb-0"
+							className="prose prose-neutral prose-lg mb-4 max-w-none last:mb-0 lg:prose-base"
 						>
 							<ReactMarkdown remarkPlugins={[remarkGfm]}>
 								{block.content}
