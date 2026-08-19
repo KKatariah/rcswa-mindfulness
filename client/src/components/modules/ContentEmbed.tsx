@@ -15,7 +15,7 @@ export default function ContentEmbed({
 	attribution,
 }: ContentEmbedProps) {
 	return (
-		<div className="mx-auto my-8 w-full max-w-xl">
+		<div className="mx-auto my-8 w-full max-w-xl rounded-2xl border-l-4 border-brand-blue bg-surface-muted p-4">
 			{title && (
 				<p className="mb-2 text-xs font-bold uppercase tracking-wide text-brand-blue">
 					{type === "video" ? "Watch" : "Listen"} · {title}
@@ -23,7 +23,7 @@ export default function ContentEmbed({
 			)}
 
 			{!embedUrl ? (
-				<div className="flex aspect-video w-full items-center justify-center rounded-xl bg-gray-200">
+				<div className="flex aspect-video w-full items-center justify-center rounded-xl bg-white">
 					<span
 						aria-hidden="true"
 						className="flex size-16 items-center justify-center rounded-full border-4 border-gray-400 text-gray-500"
