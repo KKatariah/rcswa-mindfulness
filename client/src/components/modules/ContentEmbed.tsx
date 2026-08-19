@@ -1,17 +1,11 @@
 import { PlayIcon } from "@/components/ui/icons";
-
-type Attribution = {
-	artistName: string;
-	artistUrl: string;
-	trackTitle: string;
-	trackUrl: string;
-};
+import type { AudioAttribution } from "@/types/module";
 
 type ContentEmbedProps = {
 	type: "video" | "audio";
 	title?: string;
 	embedUrl?: string;
-	attribution?: Attribution;
+	attribution?: AudioAttribution;
 };
 
 export default function ContentEmbed({
