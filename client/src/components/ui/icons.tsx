@@ -74,6 +74,15 @@ export function LockIcon(props: IconProps) {
   );
 }
 
+export function ClockIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 18 18" {...base} {...props}>
+      <circle cx="9" cy="9" r="7.5" />
+      <path d="M9 4.5V9l3 1.5" />
+    </svg>
+  );
+}
+
 export function CalendarIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 18 18" {...base} {...props}>
