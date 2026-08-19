@@ -1,5 +1,4 @@
-from django.shortcuts import render, redirect
-from django.http import HttpResponse, HttpResponseNotAllowed
+from django.shortcuts import render
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import api_view
@@ -10,16 +9,20 @@ from .serializers import ContentCompletionSerializer, ModuleSerializer, Register
 
 # Create your views here.
 
+
 def index_view(request):
     return render(request, 'app/index.html')
 
+
 def profile_view(request):
     context = {
-        "name" : "placeholder"
-        } # will need to start on class forms next in forms.py
+        "name": "placeholder"
+    }  # will need to start on class forms next in forms.py
     return render(request, 'app/profile.html', context)
 
-#API views
+
+# API views
+
 
 @api_view(["POST"])
 def register_view(request):

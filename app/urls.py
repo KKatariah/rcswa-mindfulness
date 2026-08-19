@@ -7,5 +7,5 @@ urlpatterns = [
     path("", views.index_view, name="default_index_html"),
     path("index/", views.index_view, name="index_html"),
     path("profile/", views.profile_view, name="profile_html"),
-    #path("api/login/", views.login_view, name="login"),
+    # path("api/login/", views.login_view, name="login"),
 ]
