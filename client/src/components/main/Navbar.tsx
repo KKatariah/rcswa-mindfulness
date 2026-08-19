@@ -12,7 +12,7 @@ export default function Navbar() {
 	const [isOpen, setIsOpen] = useState(false);
 
 	return (
-		<nav className="absolute inset-x-0 top-0 z-20 px-6 py-4 sm:px-10 lg:px-30 lg:py-5.5">
+		<nav className="absolute inset-x-0 top-0 z-20 px-6 py-4 sm:px-10 lg:px-[7.5rem] lg:py-[1.375rem]">
 			<div className="flex items-center justify-between">
 				<Link href="/" className="flex items-center gap-3">
 					<span className="size-9 shrink-0 rounded-[10px] bg-brand-blue" />
