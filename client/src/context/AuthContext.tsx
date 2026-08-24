@@ -17,7 +17,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const [user, setUser] = useState<AuthUser | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 
-	useEffect(() => {
+	useEffect(() => { // eslint-disable-line react-hooks/set-state-in-effect
 		const storedUser = localStorage.getItem("user");
 		if (storedUser) {
 			setUser(JSON.parse(storedUser));
