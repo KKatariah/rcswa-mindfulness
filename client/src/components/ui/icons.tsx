@@ -114,6 +114,24 @@ export function ChevronRightIcon(props: IconProps) {
   );
 }
 
+export function HeadphonesIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base} {...props}>
+      <path d="M2.5 11.67h2.5a1.67 1.67 0 0 1 1.67 1.67v2.5a1.67 1.67 0 0 1-1.67 1.67H3.33a.83.83 0 0 1-.83-.83v-3.33a7.5 7.5 0 1 1 15 0v3.33a.83.83 0 0 1-.83.83h-1.67a1.67 1.67 0 0 1-1.67-1.67v-2.5a1.67 1.67 0 0 1 1.67-1.67h2.5" />
+    </svg>
+  );
+}
+
+export function UsersIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base} {...props}>
+      <path d="M13.33 17.5v-1.67a3.33 3.33 0 0 0-3.33-3.33H4.17a3.33 3.33 0 0 0-3.33 3.33v1.67" />
+      <circle cx="7.08" cy="5.83" r="3.33" />
+      <path d="M18.33 17.5v-1.67a3.33 3.33 0 0 0-2.5-3.23M12.92 2.6a3.33 3.33 0 0 1 0 6.45" />
+    </svg>
+  );
+}
+
 export function InstagramIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 20 20" {...base} {...props}>
