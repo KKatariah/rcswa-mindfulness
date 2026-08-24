@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'django_browser_reload',
     'rest_framework',
     'rest_framework.authtoken',
+    'corsheaders',
 
     'app',
 ]
@@ -48,6 +49,7 @@ INSTALLED_APPS = [
 AUTH_USER_MODEL = 'app.User'
 
 MIDDLEWARE = [
+    'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
@@ -56,6 +58,10 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
     'django_browser_reload.middleware.BrowserReloadMiddleware',
+]
+
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",
 ]
 
 ROOT_URLCONF = 'server.urls'

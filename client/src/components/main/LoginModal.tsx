@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import Modal from "@/components/main/Modal";
+import { useAuth } from "@/context/AuthContext";
 
 type LoginModalProps = {
 	isOpen: boolean;
@@ -7,16 +8,36 @@ type LoginModalProps = {
 };
 
 export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
+	const { login } = useAuth();
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
+	const [error, setError] = useState<string | null>(null);
+	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	function handleSubmit(event: FormEvent) {
+	async function handleSubmit(event: FormEvent) {
 		event.preventDefault();
+		setError(null);
+		setIsSubmitting(true);
+
+		try {
+			await login(email, password);
+			onClose();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Login failed");
+		} finally {
+			setIsSubmitting(false);
+		}
 	}
 
 	return (
 		<Modal isOpen={isOpen} onClose={onClose} title="Log in">
 			<form onSubmit={handleSubmit} className="flex flex-col gap-6">
+				{error && (
+					<p className="text-sm text-red-600" role="alert">
+						{error}
+					</p>
+				)}
+
 				<div className="flex flex-col gap-2">
 					<label htmlFor="login-email" className="text-sm font-semibold text-ink">
 						Email
@@ -49,9 +70,10 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
 				<button
 					type="submit"
-					className="h-12 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white"
+					disabled={isSubmitting}
+					className="h-12 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white disabled:opacity-50"
 				>
-					Login
+					{isSubmitting ? "Logging in..." : "Login"}
 				</button>
 			</form>
 		</Modal>

@@ -3,6 +3,7 @@ import Link from "next/link";
 import { MenuIcon, XIcon } from "@/components/ui/icons";
 import LoginModal from "@/components/main/LoginModal";
 import SignUpModal from "@/components/main/SignUpModal";
+import { useAuth } from "@/context/AuthContext";
 
 const NAV_LINKS = [
 	{ label: "Home", href: "/" },
@@ -11,6 +12,7 @@ const NAV_LINKS = [
 ];
 
 export default function Navbar() {
+	const { user, logout } = useAuth();
 	const [isOpen, setIsOpen] = useState(false);
 	const [loginOpen, setLoginOpen] = useState(false);
 	const [signUpOpen, setSignUpOpen] = useState(false);
@@ -23,6 +25,11 @@ export default function Navbar() {
 	function openSignUp() {
 		setIsOpen(false);
 		setSignUpOpen(true);
+	}
+
+	async function handleLogout() {
+		setIsOpen(false);
+		await logout();
 	}
 
 	return (
@@ -43,20 +50,37 @@ export default function Navbar() {
 					</ul>
 
 					<div className="hidden items-center gap-4 lg:flex">
-						<button
-							type="button"
-							onClick={openLogin}
-							className="text-[15px] font-semibold text-white"
-						>
-							Log In
-						</button>
-						<button
-							type="button"
-							onClick={openSignUp}
-							className="flex h-11 items-center justify-center rounded-xl bg-brand-blue px-4.5 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]"
-						>
-							Sign Up
-						</button>
+						{user ? (
+							<>
+								<span className="text-[15px] font-semibold text-white">
+									Hi, {user.full_name}
+								</span>
+								<button
+									type="button"
+									onClick={handleLogout}
+									className="flex h-11 items-center justify-center rounded-xl bg-brand-blue px-4.5 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]"
+								>
+									Log Out
+								</button>
+							</>
+						) : (
+							<>
+								<button
+									type="button"
+									onClick={openLogin}
+									className="text-[15px] font-semibold text-white"
+								>
+									Log In
+								</button>
+								<button
+									type="button"
+									onClick={openSignUp}
+									className="flex h-11 items-center justify-center rounded-xl bg-brand-blue px-4.5 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]"
+								>
+									Sign Up
+								</button>
+							</>
+						)}
 					</div>
 
 					<button
@@ -87,20 +111,32 @@ export default function Navbar() {
 							</Link>
 						))}
 						<div className="my-2 h-px w-full bg-gray-200" />
-						<button
-							type="button"
-							onClick={openLogin}
-							className="rounded-lg px-3 py-2.5 text-left text-[15px] font-semibold text-ink"
-						>
-							Log In
-						</button>
-						<button
-							type="button"
-							onClick={openSignUp}
-							className="flex h-11 items-center justify-center rounded-xl bg-brand-blue text-[15px] font-bold text-white"
-						>
-							Sign Up
-						</button>
+						{user ? (
+							<button
+								type="button"
+								onClick={handleLogout}
+								className="flex h-11 items-center justify-center rounded-xl bg-brand-blue text-[15px] font-bold text-white"
+							>
+								Log Out
+							</button>
+						) : (
+							<>
+								<button
+									type="button"
+									onClick={openLogin}
+									className="rounded-lg px-3 py-2.5 text-left text-[15px] font-semibold text-ink"
+								>
+									Log In
+								</button>
+								<button
+									type="button"
+									onClick={openSignUp}
+									className="flex h-11 items-center justify-center rounded-xl bg-brand-blue text-[15px] font-bold text-white"
+								>
+									Sign Up
+								</button>
+							</>
+						)}
 					</div>
 				)}
 			</nav>

@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import Modal from "@/components/main/Modal";
+import { useAuth } from "@/context/AuthContext";
 
 type SignUpModalProps = {
 	isOpen: boolean;
@@ -7,18 +8,43 @@ type SignUpModalProps = {
 };
 
 export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
+	const { register } = useAuth();
 	const [email, setEmail] = useState("");
-	const [username, setUsername] = useState("");
+	const [fullName, setFullName] = useState("");
 	const [password, setPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
+	const [error, setError] = useState<string | null>(null);
+	const [isSubmitting, setIsSubmitting] = useState(false);
 
-	function handleSubmit(event: FormEvent) {
+	async function handleSubmit(event: FormEvent) {
 		event.preventDefault();
+		setError(null);
+
+		if (password !== confirmPassword) {
+			setError("Passwords do not match.");
+			return;
+		}
+
+		setIsSubmitting(true);
+		try {
+			await register(email, fullName, password);
+			onClose();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Registration failed");
+		} finally {
+			setIsSubmitting(false);
+		}
 	}
 
 	return (
 		<Modal isOpen={isOpen} onClose={onClose} title="Sign up">
 			<form onSubmit={handleSubmit} className="flex flex-col gap-6">
+				{error && (
+					<p className="text-sm text-red-600" role="alert">
+						{error}
+					</p>
+				)}
+
 				<div className="flex flex-col gap-2">
 					<label htmlFor="signup-email" className="text-sm font-semibold text-ink">
 						Email
@@ -35,16 +61,16 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 				</div>
 
 				<div className="flex flex-col gap-2">
-					<label htmlFor="signup-username" className="text-sm font-semibold text-ink">
-						Username
+					<label htmlFor="signup-fullname" className="text-sm font-semibold text-ink">
+						Full name
 					</label>
 					<input
-						id="signup-username"
+						id="signup-fullname"
 						type="text"
 						required
-						value={username}
-						onChange={(event) => setUsername(event.target.value)}
-						placeholder="Enter username"
+						value={fullName}
+						onChange={(event) => setFullName(event.target.value)}
+						placeholder="Enter your full name"
 						className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
 					/>
 				</div>
@@ -81,9 +107,10 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 
 				<button
 					type="submit"
-					className="h-12 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white"
+					disabled={isSubmitting}
+					className="h-12 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white disabled:opacity-50"
 				>
-					Sign up
+					{isSubmitting ? "Signing up..." : "Sign up"}
 				</button>
 			</form>
 		</Modal>
