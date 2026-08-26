@@ -366,17 +366,16 @@ class ForumThread(models.Model):
         null=True,
     )
     title = models.CharField(max_length=200)
+    is_pinned = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
+            # Both null (general thread) is valid; only rejected when BOTH are set.
             models.CheckConstraint(
-                condition=(
-                    Q(module__isnull=False, content_item__isnull=True)
-                    | Q(module__isnull=True, content_item__isnull=False)
-                ),
-                name="forum_thread_exactly_one_context",
+                condition=~Q(module__isnull=False, content_item__isnull=False),
+                name="forum_thread_at_most_one_context",
             ),
         ]
 

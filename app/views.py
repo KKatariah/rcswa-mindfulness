@@ -5,10 +5,19 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
-from rest_framework.permissions import AllowAny
-from rest_framework.permissions import IsAuthenticated
-from .models import ContentCompletion, ContentItem, Module
-from .serializers import ContentCompletionSerializer, ModuleSerializer, RegisterSerializer
+from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
+from .models import ContentCompletion, ContentItem, ForumPost, ForumThread, Module
+from .serializers import (
+    ContentCompletionSerializer,
+    ForumPostCreateSerializer,
+    ForumPostSerializer,
+    ForumThreadCreateSerializer,
+    ForumThreadDetailSerializer,
+    ForumThreadSerializer,
+    ModuleSerializer,
+    RegisterSerializer,
+)
 
 # Create your views here.
 
@@ -139,3 +148,133 @@ class ContentCompletionViewSet(
             out.data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+# ── Forum ──────────────────────────────────────────────────────────────────────
+
+def _derive_title(body: str) -> str:
+    """First ≤60 chars of body, trimmed at the nearest word boundary."""
+    text = body.strip()
+    if not text:
+        return "Untitled"
+    if len(text) <= 60:
+        return text
+    truncated = text[:60]
+    boundary = truncated.rfind(" ")
+    return truncated[:boundary] if boundary > 0 else truncated
+
+
+class IsAuthorOrAdmin(BasePermission):
+    def has_object_permission(self, request, view, obj):
+        u = request.user
+        if getattr(u, "role", None) == "admin" or u.is_staff:
+            return True
+        if isinstance(obj, ForumThread):
+            return obj.created_by_id == u.pk
+        if isinstance(obj, ForumPost):
+            return obj.author_id == u.pk
+        return False
+
+
+class ForumThreadViewSet(viewsets.ModelViewSet):
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        return (
+            ForumThread.objects
+            .prefetch_related(
+                Prefetch("posts", queryset=ForumPost.objects.select_related("author"))
+            )
+            .select_related("created_by")
+            .order_by("-is_pinned", "-updated_at")
+        )
+
+    def get_serializer_class(self):
+        if self.action == "retrieve":
+            return ForumThreadDetailSerializer
+        return ForumThreadSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = ForumThreadCreateSerializer(
+            data=request.data, context=self.get_serializer_context()
+        )
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        out = ForumThreadSerializer(serializer.instance, context=self.get_serializer_context())
+        return Response(out.data, status=status.HTTP_201_CREATED, headers=self.get_success_headers(out.data))
+
+    def perform_create(self, serializer):
+        body = serializer.validated_data.pop("body")
+        title = _derive_title(body)
+        thread = serializer.save(created_by=self.request.user, title=title)
+        ForumPost.objects.create(thread=thread, author=self.request.user, body=body)
+
+    def get_permissions(self):
+        if self.action in ["partial_update", "destroy"]:
+            return [IsAuthenticated(), IsAuthorOrAdmin()]
+        return [IsAuthenticated()]
+
+
+class ForumPostViewSet(
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    http_method_names = ["post", "patch", "delete", "head", "options"]
+    serializer_class = ForumPostSerializer
+
+    def get_queryset(self):
+        return ForumPost.objects.filter(is_deleted=False).select_related("author")
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return ForumPostCreateSerializer
+        return ForumPostSerializer
+
+    def create(self, request, *args, **kwargs):
+        create_ser = ForumPostCreateSerializer(
+            data=request.data, context=self.get_serializer_context()
+        )
+        create_ser.is_valid(raise_exception=True)
+        self.perform_create(create_ser)
+        out = ForumPostSerializer(create_ser.instance, context=self.get_serializer_context())
+        return Response(out.data, status=status.HTTP_201_CREATED, headers=self.get_success_headers(out.data))
+
+    def perform_create(self, serializer):
+        serializer.save(author=self.request.user)
+
+    def perform_update(self, serializer):
+        serializer.save()
+        post = serializer.instance
+        first_id = (
+            ForumPost.objects
+            .filter(thread_id=post.thread_id)
+            .order_by("created_at", "pk")
+            .values_list("pk", flat=True)
+            .first()
+        )
+        if first_id == post.pk:
+            ForumThread.objects.filter(pk=post.thread_id).update(
+                title=_derive_title(post.body)
+            )
+
+    def perform_destroy(self, instance):
+        first_id = (
+            ForumPost.objects
+            .filter(thread_id=instance.thread_id)
+            .order_by("created_at", "pk")
+            .values_list("pk", flat=True)
+            .first()
+        )
+        if first_id == instance.pk:
+            raise ValidationError(
+                "Cannot delete the opening post. Delete the thread instead."
+            )
+        instance.is_deleted = True
+        instance.save(update_fields=["is_deleted"])
+
+    def get_permissions(self):
+        if self.action in ["partial_update", "destroy"]:
+            return [IsAuthenticated(), IsAuthorOrAdmin()]
+        return [IsAuthenticated()]
