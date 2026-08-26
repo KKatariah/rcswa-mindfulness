@@ -2,11 +2,13 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from app.views import ContentCompletionViewSet, ModuleViewSet
+from app.views import ContentCompletionViewSet, ModuleViewSet, SurveyResponseViewSet, SurveyViewSet
 
 router = DefaultRouter()
 router.register("modules", ModuleViewSet, basename="module")
 router.register("progress", ContentCompletionViewSet, basename="progress")
+router.register("surveys", SurveyViewSet, basename="survey")
+router.register("survey-responses", SurveyResponseViewSet, basename="survey-response")
 
 urlpatterns = [
     path('admin/', admin.site.urls),
