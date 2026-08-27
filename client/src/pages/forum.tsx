@@ -421,13 +421,27 @@ export default function ForumPage() {
 
 	useEffect(() => {
 		if (authLoading) return;
-		if (!user) { setLoading(false); return; }
 
-		const token = localStorage.getItem("token") ?? "";
-		listForumThreads(token)
-			.then(setThreads)
-			.catch((e) => setError(e instanceof Error ? e.message : "Failed to load forum"))
-			.finally(() => setLoading(false));
+		let cancelled = false;
+
+		(async () => {
+			if (!user) {
+				if (!cancelled) setLoading(false);
+				return;
+			}
+
+			const token = localStorage.getItem("token") ?? "";
+			try {
+				const data = await listForumThreads(token);
+				if (!cancelled) setThreads(data);
+			} catch (e) {
+				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load forum");
+			} finally {
+				if (!cancelled) setLoading(false);
+			}
+		})();
+
+		return () => { cancelled = true; };
 	}, [user, authLoading]);
 
 	async function loadThread(id: number) {
