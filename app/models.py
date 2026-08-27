@@ -65,6 +65,7 @@ class User(AbstractUser):
 
     email = models.EmailField(unique=True)
     full_name = models.CharField(max_length=200, blank=True)
+    display_name = models.CharField(max_length=100, blank=True)
     auth_provider = models.CharField(max_length=50, default="local")
     provider_uid = models.CharField(max_length=255, blank=True, null=True)  # noqa: DJ01 (so flake8 linting ignores null=True)
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.STUDENT)

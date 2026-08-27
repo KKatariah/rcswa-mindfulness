@@ -2,13 +2,14 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from app.views import ContentCompletionViewSet, ForumPostViewSet, ForumThreadViewSet, ModuleViewSet
+from app.views import ContentCompletionViewSet, ForumPostViewSet, ForumThreadViewSet, ModuleViewSet, UserProfileViewSet
 
 router = DefaultRouter()
 router.register("modules", ModuleViewSet, basename="module")
 router.register("progress", ContentCompletionViewSet, basename="progress")
 router.register("forum/threads", ForumThreadViewSet, basename="forum-thread")
 router.register("forum/posts", ForumPostViewSet, basename="forum-post")
+router.register("users", UserProfileViewSet, basename="user")
 
 urlpatterns = [
     path('admin/', admin.site.urls),

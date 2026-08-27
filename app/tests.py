@@ -518,3 +518,118 @@ class ForumTests(APITestCase):
             "editing the opening post must not bump thread.updated_at "
             "(QuerySet.update bypasses auto_now)",
         )
+
+
+class ForumDisplayNameTests(APITestCase):
+    def setUp(self):
+        self.author = User.objects.create_user(
+            email="author@test.local", password="testpass", full_name="Real Name"
+        )
+        self.viewer = User.objects.create_user(
+            email="viewer@test.local", password="testpass", full_name="Viewer"
+        )
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass",
+            full_name="Admin Real Name", role=User.Role.ADMIN,
+        )
+        self.module = Module.objects.create(
+            week_number=1, title="Week 1", is_published=True
+        )
+        self.thread = ForumThread.objects.create(
+            module=self.module, created_by=self.author, title="Test Thread"
+        )
+        self.post = ForumPost.objects.create(
+            thread=self.thread, author=self.author, body="Hello"
+        )
+
+    def _thread_author_name(self, viewer):
+        self.client.force_login(viewer)
+        resp = self.client.get("/api/forum/threads/")
+        return next(t for t in resp.data if t["id"] == self.thread.pk)["author_name"]
+
+    def _reply_author_name(self, viewer):
+        self.client.force_login(viewer)
+        resp = self.client.get(f"/api/forum/threads/{self.thread.pk}/")
+        return resp.data["opening_post"]["author_name"]
+
+    # ── Name resolution ────────────────────────────────────────────────────────
+
+    def test_student_sees_display_name_when_set(self):
+        self.author.display_name = "Ghost Writer"
+        self.author.save(update_fields=["display_name"])
+        self.assertEqual(self._thread_author_name(self.viewer), "Ghost Writer")
+        self.assertEqual(self._reply_author_name(self.viewer), "Ghost Writer")
+
+    def test_student_sees_full_name_when_display_name_not_set(self):
+        self.assertEqual(self._thread_author_name(self.viewer), "Real Name")
+        self.assertEqual(self._reply_author_name(self.viewer), "Real Name")
+
+    def test_admin_sees_full_name_even_when_display_name_is_set(self):
+        self.author.display_name = "Ghost Writer"
+        self.author.save(update_fields=["display_name"])
+        self.assertEqual(self._thread_author_name(self.admin), "Real Name")
+        self.assertEqual(self._reply_author_name(self.admin), "Real Name")
+
+    def test_null_author_renders_deleted_user(self):
+        self.post.author = None
+        self.post.save()
+        self.client.force_login(self.viewer)
+        resp = self.client.get(f"/api/forum/threads/{self.thread.pk}/")
+        self.assertEqual(resp.data["opening_post"]["author_name"], "Deleted user")
+
+    def test_clearing_display_name_falls_back_to_full_name(self):
+        self.author.display_name = "Ghost Writer"
+        self.author.save(update_fields=["display_name"])
+        self.assertEqual(self._thread_author_name(self.viewer), "Ghost Writer")
+
+        self.author.display_name = ""
+        self.author.save(update_fields=["display_name"])
+        self.assertEqual(self._thread_author_name(self.viewer), "Real Name")
+
+    # ── Profile endpoint ───────────────────────────────────────────────────────
+
+    def test_user_can_update_own_display_name(self):
+        self.client.force_login(self.author)
+        resp = self.client.patch(
+            f"/api/users/{self.author.pk}/",
+            {"display_name": "Ghost Writer"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.author.refresh_from_db()
+        self.assertEqual(self.author.display_name, "Ghost Writer")
+
+    def test_user_cannot_update_another_users_display_name(self):
+        self.client.force_login(self.viewer)
+        resp = self.client.patch(
+            f"/api/users/{self.author.pk}/",
+            {"display_name": "Hijacked"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.author.refresh_from_db()
+        self.assertEqual(self.author.display_name, "")
+
+    def test_clearing_display_name_via_api_falls_back_to_full_name(self):
+        self.author.display_name = "Ghost Writer"
+        self.author.save(update_fields=["display_name"])
+
+        self.client.force_login(self.author)
+        resp = self.client.patch(
+            f"/api/users/{self.author.pk}/",
+            {"display_name": ""},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.author.refresh_from_db()
+        self.assertEqual(self.author.display_name, "")
+        # Now check the forum shows full_name again
+        self.assertEqual(self._thread_author_name(self.viewer), "Real Name")
+
+    def test_user_can_read_own_profile(self):
+        self.author.display_name = "Ghost Writer"
+        self.author.save(update_fields=["display_name"])
+        self.client.force_login(self.author)
+        resp = self.client.get(f"/api/users/{self.author.pk}/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["display_name"], "Ghost Writer")

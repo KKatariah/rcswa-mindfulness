@@ -7,7 +7,7 @@ from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
-from .models import ContentCompletion, ContentItem, ForumPost, ForumThread, Module
+from .models import ContentCompletion, ContentItem, ForumPost, ForumThread, Module, User
 from .serializers import (
     ContentCompletionSerializer,
     ForumPostCreateSerializer,
@@ -17,6 +17,7 @@ from .serializers import (
     ForumThreadSerializer,
     ModuleSerializer,
     RegisterSerializer,
+    UserDisplayNameSerializer,
 )
 
 # Create your views here.
@@ -176,6 +177,11 @@ class IsAuthorOrAdmin(BasePermission):
         return False
 
 
+class IsSelf(BasePermission):
+    def has_object_permission(self, request, view, obj):
+        return obj.pk == request.user.pk
+
+
 class ForumThreadViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
@@ -277,4 +283,22 @@ class ForumPostViewSet(
     def get_permissions(self):
         if self.action in ["partial_update", "destroy"]:
             return [IsAuthenticated(), IsAuthorOrAdmin()]
+        return [IsAuthenticated()]
+
+
+# ── User profile ───────────────────────────────────────────────────────────────
+
+class UserProfileViewSet(
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [IsAuthenticated]
+    serializer_class = UserDisplayNameSerializer
+    http_method_names = ["get", "patch", "head", "options"]
+    queryset = User.objects.all()
+
+    def get_permissions(self):
+        if self.action in ("partial_update", "update"):
+            return [IsAuthenticated(), IsSelf()]
         return [IsAuthenticated()]

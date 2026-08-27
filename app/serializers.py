@@ -60,6 +60,22 @@ class ContentCompletionSerializer(serializers.ModelSerializer):
 
 # ── Forum ──────────────────────────────────────────────────────────────────────
 
+def _forum_author_name(author, request):
+    """
+    Resolve the public name for a forum author.
+    - Null author (deleted account) → "Deleted user".
+    - Admin/staff viewer → real full_name, regardless of display_name.
+    - Everyone else → display_name if set, else full_name.
+    """
+    if author is None:
+        return "Deleted user"
+    if request and request.user.is_authenticated:
+        u = request.user
+        if getattr(u, "role", None) == "admin" or u.is_staff:
+            return author.full_name
+    return author.display_name or author.full_name
+
+
 def _can_edit(obj, request):
     """True if the requesting user authored obj or has admin/staff rights."""
     if not request or not request.user.is_authenticated:
@@ -88,7 +104,7 @@ class ForumPostSerializer(serializers.ModelSerializer):
         read_only_fields = ["thread", "parent_post", "created_at", "updated_at"]
 
     def get_author_name(self, obj):
-        return obj.author.full_name if obj.author else "Deleted user"
+        return _forum_author_name(obj.author, self.context.get("request"))
 
     def get_can_edit(self, obj):
         return _can_edit(obj, self.context.get("request"))
@@ -123,7 +139,7 @@ class ForumThreadSerializer(serializers.ModelSerializer):
         read_only_fields = ["module", "content_item", "created_at", "updated_at"]
 
     def get_author_name(self, obj):
-        return obj.created_by.full_name if obj.created_by else "Deleted user"
+        return _forum_author_name(obj.created_by, self.context.get("request"))
 
     def get_body(self, obj):
         posts = sorted(obj.posts.all(), key=lambda p: (p.created_at, p.pk))
@@ -179,3 +195,12 @@ class ForumThreadCreateSerializer(serializers.ModelSerializer):
                 "Provide either 'module' or 'content_item', not both."
             )
         return data
+
+
+# ── User profile ───────────────────────────────────────────────────────────────
+
+class UserDisplayNameSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id", "display_name"]
+        read_only_fields = ["id"]
