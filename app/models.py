@@ -13,6 +13,7 @@ directly, the recommended pattern for pluggable user models.
 from django.conf import settings
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
+from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 
@@ -306,6 +307,11 @@ class Survey(models.Model):
     code = models.CharField(max_length=50, unique=True)
     title = models.CharField(max_length=200)
     type = models.CharField(max_length=10, choices=SurveyType.choices)
+    questions = models.JSONField(default=list)
+
+    def clean(self):
+        if self.type == self.SurveyType.WEEKLY and self.module_id is None:
+            raise ValidationError({"module": "A weekly survey must be linked to a module."})
 
     def __str__(self):
         return f"{self.title} ({self.code})"

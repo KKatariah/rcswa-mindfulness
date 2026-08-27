@@ -1,14 +1,24 @@
 from django.shortcuts import render
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
-from rest_framework.permissions import AllowAny
-from rest_framework.permissions import IsAuthenticated
-from .models import ContentCompletion, ContentItem, Module
-from .serializers import ContentCompletionSerializer, ModuleSerializer, RegisterSerializer
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from .models import ContentCompletion, ContentItem, Module, Survey, SurveyResponse
+from .serializers import (
+    ContentCompletionSerializer,
+    ModuleSerializer,
+    RegisterSerializer,
+    SurveyDetailSerializer,
+    SurveyResponseAdminSerializer,
+    SurveyResponseSerializer,
+    SurveyResponseUpdateSerializer,
+    SurveySerializer,
+    _survey_is_unlocked,
+)
 
 # Create your views here.
 
@@ -139,3 +149,94 @@ class ContentCompletionViewSet(
             out.data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+
+# ── Surveys ────────────────────────────────────────────────────────────────────
+
+class SurveyViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return (
+            Survey.objects
+            .select_related("module")
+            .prefetch_related("module__content_items")
+        )
+
+    def get_serializer_class(self):
+        if self.action == "retrieve":
+            return SurveyDetailSerializer
+        return SurveySerializer
+
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        # Batch-fetch completions once per request so get_is_unlocked is O(1) per survey.
+        if self.request and self.request.user.is_authenticated:
+            ctx["completed_ids"] = set(
+                ContentCompletion.objects.filter(user=self.request.user)
+                .values_list("content_item_id", flat=True)
+            )
+        return ctx
+
+    @action(detail=False, methods=["get"], url_path="module-responses")
+    def module_responses(self, request):
+        u = request.user
+        if not (getattr(u, "role", None) == "admin" or u.is_staff):
+            raise PermissionDenied()
+        module_id = request.query_params.get("module")
+        if not module_id:
+            return Response(
+                {"detail": "module query parameter is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        responses = (
+            SurveyResponse.objects
+            .filter(survey__module_id=module_id)
+            .select_related("user", "survey")
+            .order_by("submitted_at")
+        )
+        serializer = SurveyResponseAdminSerializer(
+            responses, many=True, context=self.get_serializer_context()
+        )
+        return Response(serializer.data)
+
+
+class SurveyResponseViewSet(
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [IsAuthenticated]
+    http_method_names = ["post", "patch", "head", "options"]
+
+    def get_queryset(self):
+        return SurveyResponse.objects.filter(user=self.request.user).select_related("survey")
+
+    def get_serializer_class(self):
+        if self.action in ("partial_update", "update"):
+            return SurveyResponseUpdateSerializer
+        return SurveyResponseSerializer
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        survey = serializer.validated_data["survey"]
+
+        if not _survey_is_unlocked(survey, request.user):
+            return Response(
+                {"detail": "This survey is locked. Complete all module content first."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if SurveyResponse.objects.filter(user=request.user, survey=survey).exists():
+            return Response(
+                {"detail": "You have already submitted this survey. Use PATCH to update your response."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        self.perform_create(serializer)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
