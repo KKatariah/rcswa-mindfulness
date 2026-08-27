@@ -289,6 +289,7 @@ class ForumPostViewSet(
 # ── User profile ───────────────────────────────────────────────────────────────
 
 class UserProfileViewSet(
+    mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
     viewsets.GenericViewSet,
@@ -296,7 +297,12 @@ class UserProfileViewSet(
     permission_classes = [IsAuthenticated]
     serializer_class = UserDisplayNameSerializer
     http_method_names = ["get", "patch", "head", "options"]
-    queryset = User.objects.all()
+
+    def get_queryset(self):
+        u = self.request.user
+        if getattr(u, "role", None) == "admin" or u.is_staff:
+            return User.objects.all()
+        return User.objects.filter(pk=u.pk)
 
     def get_permissions(self):
         if self.action in ("partial_update", "update"):

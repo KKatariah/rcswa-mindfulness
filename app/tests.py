@@ -606,7 +606,8 @@ class ForumDisplayNameTests(APITestCase):
             {"display_name": "Hijacked"},
             content_type="application/json",
         )
-        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        # Queryset scoping hides other users entirely, so 404 rather than 403.
+        self.assertIn(resp.status_code, (status.HTTP_403_FORBIDDEN, status.HTTP_404_NOT_FOUND))
         self.author.refresh_from_db()
         self.assertEqual(self.author.display_name, "")
 
@@ -633,3 +634,26 @@ class ForumDisplayNameTests(APITestCase):
         resp = self.client.get(f"/api/users/{self.author.pk}/")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data["display_name"], "Ghost Writer")
+
+    # ── Queryset scoping ───────────────────────────────────────────────────────
+
+    def test_student_list_sees_only_themselves(self):
+        self.client.force_login(self.viewer)
+        resp = self.client.get("/api/users/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        ids = [u["id"] for u in resp.data]
+        self.assertEqual(ids, [self.viewer.pk])
+
+    def test_student_retrieve_other_user_returns_404(self):
+        self.client.force_login(self.viewer)
+        resp = self.client.get(f"/api/users/{self.author.pk}/")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_admin_list_sees_all_users(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get("/api/users/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        ids = {u["id"] for u in resp.data}
+        self.assertIn(self.author.pk, ids)
+        self.assertIn(self.viewer.pk, ids)
+        self.assertIn(self.admin.pk, ids)
