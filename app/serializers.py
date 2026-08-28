@@ -12,6 +12,8 @@ from .models import (
     SurveyResponse,
     User,
 )
+
+
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
 
@@ -66,7 +68,7 @@ class ContentCompletionSerializer(serializers.ModelSerializer):
         read_only_fields = ["completed_at"]
 
 
-# Forum 
+# ── Forum ──────────────────────────────────────────────────────────────────────
 
 def _forum_author_name(author, request):
     """
@@ -205,7 +207,7 @@ class ForumThreadCreateSerializer(serializers.ModelSerializer):
         return data
 
 
-# User profile
+# ── User profile ───────────────────────────────────────────────────────────────
 
 class UserDisplayNameSerializer(serializers.ModelSerializer):
     class Meta:
@@ -213,7 +215,8 @@ class UserDisplayNameSerializer(serializers.ModelSerializer):
         fields = ["id", "display_name"]
         read_only_fields = ["id"]
 
-# Surveys 
+
+# ── Surveys ────────────────────────────────────────────────────────────────────
 
 def _survey_is_unlocked(survey, user):
     """Return True if every ContentItem in the survey's module is completed by user."""
