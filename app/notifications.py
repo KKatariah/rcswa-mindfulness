@@ -181,9 +181,17 @@ def notify_content_update(module=None, content_item=None):
     PERTH_TZ = ZoneInfo("Australia/Perth")
     today = timezone.now().astimezone(PERTH_TZ).date()
 
+    # Only notify students in cohorts that are currently running:
+    #   start_date <= today <= end_date
+    # This gates out cohorts that haven't begun yet (setup window) and cohorts
+    # that have already finished.
     affected_enrollments = (
         Enrollment.objects
-        .filter(status=Enrollment.Status.ACTIVE, cohort__end_date__gte=today)
+        .filter(
+            status=Enrollment.Status.ACTIVE,
+            cohort__start_date__lte=today,
+            cohort__end_date__gte=today,
+        )
         .select_related("user", "cohort", "user__notification_preference")
         .distinct()
     )
