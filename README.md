@@ -52,6 +52,13 @@ In development `EMAIL_BACKEND` defaults to the console backend (emails are print
 stdout, no SMTP needed) and `VAPID_*` default to empty strings (push is skipped with
 a warning).
 
+**Windows note:** PowerShell's `>` operator writes UTF-16LE, which breaks pip on Linux
+CI. Always regenerate `requirements.txt` with:
+
+```powershell
+pip freeze | Out-File -Encoding utf8 requirements.txt
+```
+
 ### 3. Run migrations
 
 ```bash
