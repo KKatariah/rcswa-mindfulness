@@ -1,6 +1,9 @@
 # local development data
 data/
 
+# VAPID keypair — never commit private keys; use the base64url env var instead
+*.pem
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

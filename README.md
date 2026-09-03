@@ -5,26 +5,41 @@
 ### 1. Generate a VAPID keypair (one-time)
 
 ```bash
-pip install pywebpush        # installs vapid CLI as a side effect
-cd /etc/mindfulness          # or any secure directory
+pip install pywebpush        # installs the vapid CLI as a side-effect (py-vapid)
+cd /tmp                      # work in /tmp so PEM files never enter the repo
 vapid --gen --applicationServerKey
 ```
 
-This writes `private_key.pem` and `public_key.pem` to the current directory and
+This writes `private_key.pem` and `public_key.pem` to the working directory and
 prints a line like:
 
 ```
 Application Server Key = BGFQk5VLb08…
 ```
 
-That printed value is your `VAPID_PUBLIC_KEY`.
+That printed value is your `VAPID_PUBLIC_KEY`. Now extract the raw private key as a
+portable base64url string — this is what you set as `VAPID_PRIVATE_KEY`:
+
+```bash
+python3 -c "
+from py_vapid import Vapid; import base64
+v = Vapid.from_file('/tmp/private_key.pem')
+n = v.private_key.private_numbers().private_value
+print(base64.urlsafe_b64encode(n.to_bytes(32,'big')).rstrip(b'=').decode())
+"
+```
+
+Store the printed string as `VAPID_PRIVATE_KEY` in your environment/secrets manager,
+then delete the PEM files. `pywebpush` checks `os.path.isfile()` first; a base64url
+string fails that check and is passed to `Vapid.from_string()` instead, so no file
+needs to exist on the server at runtime. This survives ephemeral filesystem redeploys.
 
 ### 2. Set environment variables
 
 | Variable | Value |
 |---|---|
-| `VAPID_PRIVATE_KEY` | Absolute path to the generated `private_key.pem` (e.g. `/etc/mindfulness/private_key.pem`) |
-| `VAPID_PUBLIC_KEY` | The `Application Server Key` string printed by `vapid --gen` |
+| `VAPID_PRIVATE_KEY` | Raw base64url private key — the string printed by the extraction command above |
+| `VAPID_PUBLIC_KEY` | The `Application Server Key` printed by `vapid --gen` |
 | `VAPID_ADMIN_EMAIL` | Your admin email (included in the VAPID `sub` claim) |
 | `EMAIL_BACKEND` | `django.core.mail.backends.smtp.EmailBackend` in production |
 | `EMAIL_HOST` | SMTP host |
