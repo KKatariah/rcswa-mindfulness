@@ -1,3 +1,4 @@
+from django.conf import settings as django_settings
 from django.shortcuts import render
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
@@ -6,7 +7,6 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
-from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from .models import ContentCompletion, ContentItem, Module, NotificationPreference, PushSubscription, Survey, SurveyResponse
 from .serializers import (
@@ -324,8 +324,6 @@ class NotificationPreferenceViewSet(
 
 
 # ── VAPID public key (unauthenticated) ─────────────────────────────────────────
-
-from django.conf import settings as django_settings
 
 
 @api_view(["GET"])
