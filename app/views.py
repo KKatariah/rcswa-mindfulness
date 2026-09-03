@@ -6,11 +6,14 @@ from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
+from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from .models import ContentCompletion, ContentItem, Module, Survey, SurveyResponse
+from .models import ContentCompletion, ContentItem, Module, NotificationPreference, PushSubscription, Survey, SurveyResponse
 from .serializers import (
     ContentCompletionSerializer,
     ModuleSerializer,
+    NotificationPreferenceSerializer,
+    PushSubscriptionSerializer,
     RegisterSerializer,
     SurveyDetailSerializer,
     SurveyResponseAdminSerializer,
@@ -240,3 +243,97 @@ class SurveyResponseViewSet(
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+
+# ── Push notification subscriptions ───────────────────────────────────────────
+
+class PushSubscriptionViewSet(
+    mixins.ListModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    Register and manage browser Push API subscriptions.
+
+    POST   /api/notifications/subscriptions/       register or refresh
+    GET    /api/notifications/subscriptions/       list own subscriptions
+    DELETE /api/notifications/subscriptions/{id}/  unregister
+
+    Registration is an upsert keyed on `endpoint`.  If the endpoint already
+    belongs to a different user (e.g. shared campus browser), the subscription
+    is reassigned to the currently authenticated user.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = PushSubscriptionSerializer
+
+    def get_queryset(self):
+        return PushSubscription.objects.filter(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        obj, created = PushSubscription.objects.update_or_create(
+            endpoint=serializer.validated_data["endpoint"],
+            defaults={
+                "user": request.user,
+                "p256dh": serializer.validated_data["p256dh"],
+                "auth": serializer.validated_data["auth"],
+                "user_agent": request.META.get("HTTP_USER_AGENT", ""),
+            },
+        )
+        out = self.get_serializer(obj)
+        return Response(
+            out.data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+# ── Notification preferences ───────────────────────────────────────────────────
+
+class NotificationPreferenceViewSet(
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    GET  /api/notifications/preferences/me/  — retrieve (auto-creates on first call)
+    PATCH /api/notifications/preferences/me/ — update
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = NotificationPreferenceSerializer
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def _get_or_create_pref(self):
+        pref, _ = NotificationPreference.objects.get_or_create(user=self.request.user)
+        return pref
+
+    @action(detail=False, methods=["get", "patch"], url_path="me")
+    def me(self, request):
+        pref = self._get_or_create_pref()
+        if request.method == "GET":
+            return Response(self.get_serializer(pref).data)
+        serializer = self.get_serializer(pref, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def get_queryset(self):
+        return NotificationPreference.objects.filter(user=self.request.user)
+
+
+# ── VAPID public key (unauthenticated) ─────────────────────────────────────────
+
+from django.conf import settings as django_settings
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def vapid_public_key_view(request):
+    """
+    Return the VAPID public key so the frontend can call
+    pushManager.subscribe({ applicationServerKey: key }).
+    This endpoint is intentionally unauthenticated — the public key is public.
+    """
+    return Response({"vapid_public_key": django_settings.VAPID_PUBLIC_KEY})

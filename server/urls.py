@@ -2,13 +2,23 @@ from django.contrib import admin
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 
-from app.views import ContentCompletionViewSet, ModuleViewSet, SurveyResponseViewSet, SurveyViewSet
+from app.views import (
+    ContentCompletionViewSet,
+    ModuleViewSet,
+    NotificationPreferenceViewSet,
+    PushSubscriptionViewSet,
+    SurveyResponseViewSet,
+    SurveyViewSet,
+    vapid_public_key_view,
+)
 
 router = DefaultRouter()
 router.register("modules", ModuleViewSet, basename="module")
 router.register("progress", ContentCompletionViewSet, basename="progress")
 router.register("surveys", SurveyViewSet, basename="survey")
 router.register("survey-responses", SurveyResponseViewSet, basename="survey-response")
+router.register("notifications/subscriptions", PushSubscriptionViewSet, basename="push-subscription")
+router.register("notifications/preferences", NotificationPreferenceViewSet, basename="notification-preference")
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -16,4 +26,5 @@ urlpatterns = [
     path('app/', include('app.urls')),
     path('api/', include('app.api_urls')),
     path('api/', include(router.urls)),
+    path('api/notifications/vapid-public-key/', vapid_public_key_view, name='vapid-public-key'),
 ]
