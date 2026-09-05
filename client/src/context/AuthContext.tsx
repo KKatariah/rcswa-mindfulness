@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
-import { loginUser, registerUser, logoutUser, loginWithGoogle as loginWithGoogleApi } from "@/lib/api";
+import { loginUser, registerUser, logoutUser, loginWithGoogle as loginWithGoogleApi, getCurrentUser } from "@/lib/api";
 
 type AuthUser = { id: number; email: string; full_name: string };
 
@@ -10,7 +10,7 @@ type AuthContextValue = {
 	register: (email: string, fullName: string, password: string) => Promise<void>;
 	logout: () => Promise<void>;
 	loginWithGoogle: (credential: string) => Promise<void>;
-};
+}
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
@@ -18,12 +18,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const [user, setUser] = useState<AuthUser | null>(null);
 	const [isLoading, setIsLoading] = useState(true);
 
-	useEffect(() => {
-		const storedUser = localStorage.getItem("user");
-		if (storedUser) {
-			setUser(JSON.parse(storedUser));
+		useEffect(() => {
+		async function initAuth() {
+			const token = localStorage.getItem("token");
+			if (!token) {
+				setIsLoading(false);
+				return;
+			}
+
+			try {
+				const storedUser = localStorage.getItem("user");
+				if (storedUser) setUser(JSON.parse(storedUser));
+			} catch {
+				localStorage.removeItem("user");
+			}
+
+			try {
+				const data = await getCurrentUser();
+				setUser(data.user);
+				localStorage.setItem("user", JSON.stringify(data.user));
+			} catch {
+				setUser(null);
+				localStorage.removeItem("user");
+				localStorage.removeItem("token");
+			} finally {
+				setIsLoading(false);
+			}
 		}
-		setIsLoading(false);
+
+		initAuth();
 	}, []);
 
 	async function login(email: string, password: string) {

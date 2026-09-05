@@ -111,6 +111,7 @@ def logout_view(request):
         status=status.HTTP_200_OK,
     )
 
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def google_login_view(request):
@@ -164,6 +165,7 @@ def google_login_view(request):
         },
         status=status.HTTP_200_OK,
     )
+
 
 class ModuleViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ModuleSerializer
@@ -296,3 +298,13 @@ class SurveyResponseViewSet(
 
     def perform_create(self, serializer):
         serializer.save(user=self.request.user)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def current_user(request):
+    return Response({"user": {
+        "id": request.user.id,
+        "email": request.user.email,
+        "full_name": request.user.full_name,  # adjust to your actual field
+    }})

@@ -56,3 +56,15 @@ export async function loginWithGoogle(credential: string): Promise<AuthResponse>
 	localStorage.setItem("token", data.token);
 	return data;
 }
+
+export async function getCurrentUser(): Promise<{ user: AuthUser }> {
+	const token = localStorage.getItem("token");
+	if (!token) {
+		throw new Error("No token");
+	}
+	const res = await fetch(`${API_BASE_URL}/user/`, {
+		method: "GET",
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<{ user: AuthUser }>(res);
+}
