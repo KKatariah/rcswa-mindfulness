@@ -308,4 +308,3 @@ def current_user(request):
         "email": request.user.email,
         "full_name": request.user.full_name,  # adjust to your actual field
     }})
-    
