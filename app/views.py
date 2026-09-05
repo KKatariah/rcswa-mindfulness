@@ -7,7 +7,10 @@ from rest_framework.response import Response
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from .models import ContentCompletion, ContentItem, Module, Survey, SurveyResponse
+from .models import ContentCompletion, ContentItem, Module, Survey, SurveyResponse, User
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+from django.conf import settings
 from .serializers import (
     ContentCompletionSerializer,
     ModuleSerializer,
@@ -108,6 +111,59 @@ def logout_view(request):
         status=status.HTTP_200_OK,
     )
 
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def google_login_view(request):
+    token = request.data.get("credential")
+
+    if not token:
+        return Response(
+            {"error": "Google credential token is required."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        idinfo = id_token.verify_oauth2_token(
+            token, google_requests.Request(), settings.GOOGLE_CLIENT_ID
+        )
+    except ValueError:
+        return Response(
+            {"error": "Invalid Google token."},
+            status=status.HTTP_401_UNAUTHORIZED,
+        )
+
+    email = idinfo.get("email")
+    full_name = idinfo.get("name", "")
+
+    if not email:
+        return Response(
+            {"error": "Google account did not provide an email."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    user, created = User.objects.get_or_create(
+        email=email,
+        defaults={"full_name": full_name},
+    )
+
+    if created:
+        user.set_unusable_password()
+        user.save()
+
+    token_obj, _ = Token.objects.get_or_create(user=user)
+
+    return Response(
+        {
+            "message": "Google login successful",
+            "token": token_obj.key,
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+            },
+        },
+        status=status.HTTP_200_OK,
+    )
 
 class ModuleViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = ModuleSerializer

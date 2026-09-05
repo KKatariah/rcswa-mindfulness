@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
-import { loginUser, registerUser, logoutUser } from "@/lib/api";
+import { loginUser, registerUser, logoutUser, loginWithGoogle as loginWithGoogleApi } from "@/lib/api";
 
 type AuthUser = { id: number; email: string; full_name: string };
 
@@ -9,6 +9,7 @@ type AuthContextValue = {
 	login: (email: string, password: string) => Promise<void>;
 	register: (email: string, fullName: string, password: string) => Promise<void>;
 	logout: () => Promise<void>;
+	loginWithGoogle: (credential: string) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -20,7 +21,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	useEffect(() => {
 		const storedUser = localStorage.getItem("user");
 		if (storedUser) {
-			// eslint-disable-next-line react-hooks/set-state-in-effect
 			setUser(JSON.parse(storedUser));
 		}
 		setIsLoading(false);
@@ -42,8 +42,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		localStorage.removeItem("user");
 	}
 
+	async function loginWithGoogle(credential: string) {
+		const data = await loginWithGoogleApi(credential);
+		setUser(data.user);
+		localStorage.setItem("user", JSON.stringify(data.user));
+	}
+
 	return (
-		<AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+		<AuthContext.Provider value={{ user, isLoading, login, register, logout, loginWithGoogle }}>
 			{children}
 		</AuthContext.Provider>
 	);
