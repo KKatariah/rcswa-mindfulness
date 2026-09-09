@@ -1,8 +1,0 @@
-asgiref==3.12.1
-Django==6.0.8
-django-browser-reload==1.21.0
-django-cors-headers==4.9.0
-djangorestframework==3.16.1
-pywebpush==2.5.0
-sqlparse==0.5.5
-tzdata==2026.3

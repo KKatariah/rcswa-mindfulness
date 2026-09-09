@@ -1,3 +1,4 @@
+
 """
 Django settings for server project.
 
@@ -11,7 +12,14 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+
 from pathlib import Path
+from dotenv import load_dotenv
+import os
+
+load_dotenv()
+GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.environ.get("GOOGLE_CLIENT_SECRET")
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent

@@ -45,3 +45,26 @@ export async function logoutUser(): Promise<void> {
 	});
 	localStorage.removeItem("token");
 }
+
+export async function loginWithGoogle(credential: string): Promise<AuthResponse> {
+	const res = await fetch(`${API_BASE_URL}/google-login/`, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ credential }),
+	});
+	const data = await handleResponse<AuthResponse>(res);
+	localStorage.setItem("token", data.token);
+	return data;
+}
+
+export async function getCurrentUser(): Promise<{ user: AuthUser }> {
+	const token = localStorage.getItem("token");
+	if (!token) {
+		throw new Error("No token");
+	}
+	const res = await fetch(`${API_BASE_URL}/user/`, {
+		method: "GET",
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<{ user: AuthUser }>(res);
+}
