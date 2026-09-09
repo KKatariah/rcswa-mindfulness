@@ -1,7 +1,99 @@
+import { useRef, useState } from "react";
 import Head from "next/head";
+import Image from "next/image";
 import Navbar from "@/components/main/Navbar";
+import Footer from "@/components/main/Footer";
+import SignUpModal from "@/components/main/SignUpModal";
+import {
+	CalendarIcon,
+	ChevronLeftIcon,
+	ChevronRightIcon,
+	HeadphonesIcon,
+	UsersIcon,
+} from "@/components/ui/icons";
+
+const HOW_IT_WORKS = [
+	{
+		icon: CalendarIcon,
+		title: "Week-by-week structure",
+		description:
+			"One module per week, with guided sessions and clear goals to keep you on track.",
+	},
+	{
+		icon: HeadphonesIcon,
+		title: "Guided meditations",
+		description:
+			"Gentle, expert-led sessions that help you focus, breathe, and settle into calm.",
+	},
+	{
+		icon: UsersIcon,
+		title: "Community support",
+		description:
+			"Join a supportive community and stay motivated with progress tracking and encouragement.",
+	},
+];
+
+const PROGRAMME_WEEKS = [
+	{
+		week: "Week 1",
+		tag: "Foundations",
+		title: "Foundations of Mindfulness",
+		description: "Learn to notice your breath and settle into a daily practice.",
+	},
+	{
+		week: "Week 2",
+		tag: "Body",
+		title: "Body Awareness",
+		description: "Release tension and cultivate presence through gentle movement and rest.",
+	},
+	{
+		week: "Week 3",
+		tag: "Emotions",
+		title: "Emotional Balance",
+		description: "Learn to observe feelings without judgment and respond with kindness.",
+	},
+	{
+		week: "Week 4",
+		tag: "Resilience",
+		title: "Stress Response",
+		description: "Build tools to pause, breathe, and respond to pressure with clarity.",
+	},
+	{
+		week: "Week 5",
+		tag: "Compassion",
+		title: "Loving-Kindness",
+		description: "Cultivate compassion for yourself and others through loving-kindness practice.",
+	},
+	{
+		week: "Week 6",
+		tag: "Focus",
+		title: "Sustained Attention",
+		description: "Strengthen concentration and gently return your mind when it wanders.",
+	},
+	{
+		week: "Week 7",
+		tag: "Connection",
+		title: "Mindful Relationships",
+		description: "Bring presence and awareness into how you communicate and connect.",
+	},
+	{
+		week: "Week 8",
+		tag: "Integration",
+		title: "Living Mindfully",
+		description: "Weave your practice into daily life and build habits that last.",
+	},
+];
+
+const CARD_SCROLL_DISTANCE = 320;
 
 export default function Home() {
+	const weeksRef = useRef<HTMLDivElement>(null);
+	const [signUpOpen, setSignUpOpen] = useState(false);
+
+	function scrollWeeks(direction: number) {
+		weeksRef.current?.scrollBy({ left: direction * CARD_SCROLL_DISTANCE, behavior: "smooth" });
+	}
+
 	return (
 		<>
 			<Head>
@@ -11,9 +103,144 @@ export default function Home() {
 					content="An 8-week guided meditation journey"
 				/>
 			</Head>
-			<div className="relative min-h-screen bg-ink">
+
+			<div className="relative min-h-[560px] overflow-hidden sm:min-h-[640px]">
+				<Image
+					src="/pexels-michael-metschl-718198730-18284929.jpg"
+					alt=""
+					fill
+					priority
+					sizes="100vw"
+					className="object-cover"
+				/>
+				<div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/50" />
+
 				<Navbar />
+
+				<div className="relative z-10 flex min-h-[560px] flex-col items-center justify-center px-6 text-center sm:min-h-[640px]">
+					<h1 className="text-5xl font-extrabold text-white sm:text-6xl">
+						Find Your Calm
+					</h1>
+					<p className="mt-4 text-lg text-white/90">
+						An 8-week guided meditation journey for lasting wellbeing
+					</p>
+					<button
+						type="button"
+						onClick={() => setSignUpOpen(true)}
+						className="mt-8 flex h-14 items-center justify-center rounded-xl bg-brand-blue px-8 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]"
+					>
+						Start Your Journey
+					</button>
+				</div>
 			</div>
+
+			<section className="bg-white px-6 py-20 sm:px-10 lg:px-30">
+				<div className="mx-auto max-w-2xl text-center">
+					<h2 className="text-3xl font-extrabold text-ink sm:text-4xl">How It Works</h2>
+					<p className="mt-4 text-[15px] text-muted">
+						A structured path with guided sessions, weekly focus, and community
+						support-designed to help you build a consistent practice.
+					</p>
+				</div>
+
+				<div className="mx-auto mt-12 grid max-w-5xl gap-6 sm:grid-cols-2 lg:grid-cols-3">
+					{HOW_IT_WORKS.map(({ icon: Icon, title, description }) => (
+						<div
+							key={title}
+							className="rounded-2xl border border-gray-200 p-6"
+						>
+							<div className="flex size-10 items-center justify-center rounded-xl bg-brand-blue text-white">
+								<Icon className="size-5" />
+							</div>
+							<h3 className="mt-4 font-bold text-ink">{title}</h3>
+							<p className="mt-2 text-sm text-muted">{description}</p>
+						</div>
+					))}
+				</div>
+			</section>
+
+			<section className="bg-surface-muted px-6 py-20 sm:px-10 lg:px-30">
+				<div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
+					<h2 className="text-3xl font-extrabold text-ink sm:text-4xl">
+						The 8-Week Programme
+					</h2>
+
+					<div className="hidden shrink-0 items-center gap-3 sm:flex">
+						<button
+							type="button"
+							onClick={() => scrollWeeks(-1)}
+							aria-label="Scroll to previous weeks"
+							className="flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white text-ink hover:bg-surface-muted"
+						>
+							<ChevronLeftIcon className="size-5" />
+						</button>
+						<button
+							type="button"
+							onClick={() => scrollWeeks(1)}
+							aria-label="Scroll to next weeks"
+							className="flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white text-ink hover:bg-surface-muted"
+						>
+							<ChevronRightIcon className="size-5" />
+						</button>
+					</div>
+				</div>
+
+				<div
+					ref={weeksRef}
+					className="mx-auto mt-12 flex max-w-6xl snap-x snap-mandatory gap-6 overflow-x-auto scrollbar-none pb-4"
+				>
+					{PROGRAMME_WEEKS.map(({ week, tag, title, description }) => (
+						<div
+							key={week}
+							className="w-72 shrink-0 snap-start rounded-2xl bg-white p-6 sm:w-80"
+						>
+							<div className="flex items-center justify-between">
+								<span className="text-sm font-bold text-ink">{week}</span>
+								<span className="rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold text-muted">
+									{tag}
+								</span>
+							</div>
+							<h3 className="mt-3 font-bold text-ink">{title}</h3>
+							<p className="mt-2 text-sm text-muted">{description}</p>
+						</div>
+					))}
+				</div>
+
+				<div className="mt-2 flex justify-center gap-3 sm:hidden">
+					<button
+						type="button"
+						onClick={() => scrollWeeks(-1)}
+						aria-label="Scroll to previous weeks"
+						className="flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white text-ink"
+					>
+						<ChevronLeftIcon className="size-5" />
+					</button>
+					<button
+						type="button"
+						onClick={() => scrollWeeks(1)}
+						aria-label="Scroll to next weeks"
+						className="flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white text-ink"
+					>
+						<ChevronRightIcon className="size-5" />
+					</button>
+				</div>
+			</section>
+
+			<section className="bg-white px-6 py-20 text-center sm:px-10 lg:px-30">
+				<h2 className="text-3xl font-extrabold text-ink sm:text-4xl">Ready to Begin?</h2>
+				<p className="mt-4 text-[15px] text-muted">Join others on the path to wellbeing.</p>
+				<button
+					type="button"
+					onClick={() => setSignUpOpen(true)}
+					className="mt-8 inline-flex h-14 items-center justify-center rounded-xl bg-brand-blue px-8 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]"
+				>
+					Sign Up Free
+				</button>
+			</section>
+
+			<Footer />
+
+			<SignUpModal isOpen={signUpOpen} onClose={() => setSignUpOpen(false)} />
 		</>
 	);
 }
