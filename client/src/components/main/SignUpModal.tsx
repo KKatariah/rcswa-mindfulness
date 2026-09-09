@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import Modal from "@/components/main/Modal";
 import { useAuth } from "@/context/AuthContext";
+import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 
 type SignUpModalProps = {
 	isOpen: boolean;
@@ -8,7 +9,7 @@ type SignUpModalProps = {
 };
 
 export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
-	const { register } = useAuth();
+	const { register, loginWithGoogle } = useAuth();
 	const [email, setEmail] = useState("");
 	const [fullName, setFullName] = useState("");
 	const [password, setPassword] = useState("");
@@ -33,6 +34,17 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 			setError(err instanceof Error ? err.message : "Registration failed");
 		} finally {
 			setIsSubmitting(false);
+		}
+	}
+
+	async function handleGoogleSuccess(credentialResponse: CredentialResponse) {
+		if (!credentialResponse.credential) return;
+		setError(null);
+		try {
+			await loginWithGoogle(credentialResponse.credential);
+			onClose();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Google sign up failed");
 		}
 	}
 
@@ -113,6 +125,18 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 					{isSubmitting ? "Signing up..." : "Sign up"}
 				</button>
 			</form>
+
+			<div className="mt-6 flex flex-col items-center gap-4">
+				<div className="flex w-full items-center gap-3">
+					<div className="h-px flex-1 bg-gray-200" />
+					<span className="text-sm text-muted">or</span>
+					<div className="h-px flex-1 bg-gray-200" />
+				</div>
+				<GoogleLogin
+					onSuccess={handleGoogleSuccess}
+					onError={() => setError("Google sign up failed")}
+				/>
+			</div>
 		</Modal>
 	);
 }

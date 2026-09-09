@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from "react";
 import Modal from "@/components/main/Modal";
 import { useAuth } from "@/context/AuthContext";
+import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 
 type LoginModalProps = {
 	isOpen: boolean;
@@ -8,7 +9,7 @@ type LoginModalProps = {
 };
 
 export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
-	const { login } = useAuth();
+	const { login, loginWithGoogle } = useAuth();
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
 	const [error, setError] = useState<string | null>(null);
@@ -26,6 +27,17 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 			setError(err instanceof Error ? err.message : "Login failed");
 		} finally {
 			setIsSubmitting(false);
+		}
+	}
+
+	async function handleGoogleSuccess(credentialResponse: CredentialResponse) {
+		if (!credentialResponse.credential) return;
+		setError(null);
+		try {
+			await loginWithGoogle(credentialResponse.credential);
+			onClose();
+		} catch (err) {
+			setError(err instanceof Error ? err.message : "Google login failed");
 		}
 	}
 
@@ -76,6 +88,18 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 					{isSubmitting ? "Logging in..." : "Login"}
 				</button>
 			</form>
+
+			<div className="mt-6 flex flex-col items-center gap-4">
+				<div className="flex w-full items-center gap-3">
+					<div className="h-px flex-1 bg-gray-200" />
+					<span className="text-sm text-muted">or</span>
+					<div className="h-px flex-1 bg-gray-200" />
+				</div>
+				<GoogleLogin
+					onSuccess={handleGoogleSuccess}
+					onError={() => setError("Google login failed")}
+				/>
+			</div>
 		</Modal>
 	);
 }
