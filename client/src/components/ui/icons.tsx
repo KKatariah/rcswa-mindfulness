@@ -1,6 +1,6 @@
 import type { SVGProps } from "react";
 
-type IconProps = SVGProps<SVGSVGElement>;
+export type IconProps = SVGProps<SVGSVGElement>;
 
 const base = {
   fill: "none",
@@ -119,6 +119,42 @@ export function ChevronRightIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 20 20" {...base} {...props}>
       <path d="M7.5 15l5-5-5-5" />
+    </svg>
+  );
+}
+
+export function HeadphonesIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base} {...props}>
+      <path d="M2.5 11.67h2.5a1.67 1.67 0 0 1 1.67 1.67v2.5a1.67 1.67 0 0 1-1.67 1.67H3.33a.83.83 0 0 1-.83-.83v-3.33a7.5 7.5 0 1 1 15 0v3.33a.83.83 0 0 1-.83.83h-1.67a1.67 1.67 0 0 1-1.67-1.67v-2.5a1.67 1.67 0 0 1 1.67-1.67h2.5" />
+    </svg>
+  );
+}
+
+export function UsersIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base} {...props}>
+      <path d="M13.33 17.5v-1.67a3.33 3.33 0 0 0-3.33-3.33H4.17a3.33 3.33 0 0 0-3.33 3.33v1.67" />
+      <circle cx="7.08" cy="5.83" r="3.33" />
+      <path d="M18.33 17.5v-1.67a3.33 3.33 0 0 0-2.5-3.23M12.92 2.6a3.33 3.33 0 0 1 0 6.45" />
+    </svg>
+  );
+}
+
+export function InstagramIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base} {...props}>
+      <rect x="2.5" y="2.5" width="15" height="15" rx="4" />
+      <circle cx="10" cy="10" r="3.75" />
+      <path d="M14.38 5.63h.01" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+export function LinkedinIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M7.12 20.45H3.55V9h3.57ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.47V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46Z" />
     </svg>
   );
 }
