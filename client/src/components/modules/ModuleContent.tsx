@@ -5,17 +5,18 @@ import type { ContentBlock } from "@/types/module";
 
 type ModuleContentProps = {
 	blocks: ContentBlock[];
+	embedded?: boolean;
 };
 
-export default function ModuleContent({ blocks }: ModuleContentProps) {
+export default function ModuleContent({ blocks, embedded = false }: ModuleContentProps) {
 	return (
-		<div className="rounded-3xl bg-white p-8 text-ink-soft shadow-[0px_10px_20px_rgba(0,0,0,0.08)] sm:p-10 lg:p-12">
+		<div className={embedded ? "min-w-0 px-6 pb-6 pt-8 text-ink-soft sm:px-10 sm:pb-10 lg:px-12 lg:pb-12" : "min-w-0 rounded-[10px] border border-gray-200 bg-white p-6 text-ink-soft shadow-[0_6px_9px_rgba(0,0,0,0.05)] sm:p-10 lg:p-12"}>
 			{blocks.map((block) => {
 				if (block.type === "text") {
 					return (
 						<div
 							key={block.id}
-							className="prose prose-neutral prose-lg mb-4 max-w-none last:mb-0 lg:prose-base"
+							className="prose prose-neutral prose-sm mb-4 max-w-none break-words last:mb-0 [&_table]:block [&_table]:overflow-x-auto"
 						>
 							<ReactMarkdown remarkPlugins={[remarkGfm]}>
 								{block.content}

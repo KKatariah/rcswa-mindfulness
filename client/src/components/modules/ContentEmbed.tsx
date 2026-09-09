@@ -15,7 +15,7 @@ export default function ContentEmbed({
 	attribution,
 }: ContentEmbedProps) {
 	return (
-		<div className="mx-auto my-8 w-full max-w-xl rounded-2xl border-l-4 border-brand-blue bg-surface-muted p-4">
+		<div className="my-10 w-full max-w-[540px]">
 			{title && (
 				<p className="mb-2 text-xs font-bold uppercase tracking-wide text-brand-blue">
 					{type === "video" ? "Watch" : "Listen"} · {title}
@@ -42,7 +42,7 @@ export default function ContentEmbed({
 						className="border-0"
 					/>
 					{attribution && (
-						<div className="mt-1 truncate text-[10px] text-[#999999]">
+						<div className="mt-2 break-words text-xs text-muted">
 							<a
 								href={attribution.artistUrl}
 								target="_blank"

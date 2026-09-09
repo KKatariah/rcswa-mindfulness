@@ -17,11 +17,11 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Resources", href: "/resources", icon: FolderIcon },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ responsive = false }: { responsive?: boolean }) {
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-screen overflow-y-auto w-[280px] flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+    <aside className={`flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full md:sticky md:top-6 md:h-[calc(100dvh-3rem)] md:overflow-y-auto" : "h-screen w-[280px] overflow-y-auto"}`}>
       <Link href="/" className="flex items-center gap-3">
         <span className="size-9 shrink-0 rounded-[10px] bg-brand-blue" />
         <span className="text-[18px] font-bold text-[#111827]">logo</span>
@@ -29,20 +29,21 @@ export default function Sidebar() {
 
       <div className="my-4 h-px w-full bg-[#E5E7EB]" />
 
-      <nav className="space-y-2">
+      <nav aria-label="Main navigation" className={responsive ? "grid grid-cols-2 gap-2 md:block md:space-y-2" : "space-y-2"}>
         {NAV_ITEMS.map(({ label, href, icon: Icon, isBold }) => {
           const isActive =
             href === "/"
               ? pathname === "/"
-              : pathname === href || pathname.startsWith(`${href}/`);
+              : pathname === href || pathname?.startsWith(`${href}/`);
 
           return (
             <Link
               key={href}
+              aria-current={isActive ? "page" : undefined}
               href={href}
               className={[
                 "flex h-[44px] w-full items-center gap-3 rounded-[5px] px-3 transition-colors",
-                isActive ? "bg-brand-blue shadow-[0_4px_2px_rgba(0,0,0,0.1)]" : "",
+                isActive ? "bg-brand-blue text-white shadow-[0_4px_2px_rgba(0,0,0,0.1)]" : "",
               ].join(" ")}
             >
               <Icon

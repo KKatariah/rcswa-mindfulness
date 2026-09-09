@@ -1,4 +1,6 @@
 import Head from "next/head";
+import Sidebar from "@/components/main/Sidebar";
+import NextSession from "@/components/modules/NextSession";
 import ModuleHeader from "@/components/modules/ModuleHeader";
 import ModuleContent from "@/components/modules/ModuleContent";
 import type { ContentBlock } from "@/types/module";
@@ -74,20 +76,30 @@ export default function ModulePage() {
 				<title>{MODULE.title}</title>
 			</Head>
 			<div
-				className="min-h-screen bg-cover bg-center bg-no-repeat px-6 py-10 sm:px-10 lg:px-12"
+				className="min-h-screen bg-cover bg-center bg-fixed bg-no-repeat p-4 lg:p-6 xl:h-dvh xl:overflow-hidden"
 				style={{ backgroundImage: "url(/images/module-background.jpg)" }}
 			>
-				<div className="mx-auto flex max-w-[1600px] gap-6">
-					{" "}
-					{/* IT LOOKS REALLY WEIRD AND BIG ATM BC IT WILL FILL ONCE OTHER COMPONENTS ARE IN */}
-					<div className="flex flex-1 flex-col gap-6">
+				<div className="mx-auto grid max-w-[1920px] items-start gap-6 md:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+					<Sidebar responsive />
+					<div
+						role="region"
+						aria-label="Module content"
+						tabIndex={0}
+						className="flex min-w-0 flex-col rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue xl:h-[calc(100dvh-3rem)] xl:overflow-y-auto xl:overscroll-contain xl:[scrollbar-width:thin] [&>*]:shrink-0"
+					>
 						<ModuleHeader
+							embedded
 							title={MODULE.title}
 							durationMinutes={MODULE.durationMinutes}
 							description={MODULE.description}
 						/>
 
-						<ModuleContent blocks={MODULE.blocks} />
+						<hr className="mx-6 mt-6 border-0 border-t border-gray-200 sm:mx-10 lg:mx-12" />
+						<ModuleContent blocks={MODULE.blocks} embedded />
+					</div>
+					<div className="min-w-0 md:col-start-2 xl:col-start-3 xl:sticky xl:top-6">
+						{/* Sample schedule until session data is connected. */}
+						<NextSession moduleTitle="Module Week 3" startsAt="2028-10-24T10:00:00+08:00" dateLabel="Tue, Oct 24" timeLabel="10:00 AM" />
 					</div>
 				</div>
 			</div>
