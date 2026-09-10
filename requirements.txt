@@ -1,0 +1,7 @@
+Django==6.0.8
+djangorestframework==3.18.1
+django-cors-headers==4.9.0
+django-browser-reload==1.21.0
+pywebpush==2.5.0
+python-dotenv==1.2.3
+google-auth==2.58.0
