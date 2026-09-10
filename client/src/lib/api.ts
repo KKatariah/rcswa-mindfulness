@@ -155,6 +155,8 @@ export async function updateForumPost(
 
 export async function deleteForumPost(id: number, token: string): Promise<void> {
 	return deleteRequest(`${API_BASE_URL}/forum/posts/${id}/`, token);
+}
+
 export async function loginWithGoogle(credential: string): Promise<AuthResponse> {
 	const res = await fetch(`${API_BASE_URL}/google-login/`, {
 		method: "POST",
