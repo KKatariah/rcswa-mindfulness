@@ -9,7 +9,7 @@ from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
-from .models import ContentCompletion, ContentItem, Module, NotificationPreference, PushSubscription, Survey, SurveyResponse
+from .models import ContentCompletion, ContentItem, Module, NotificationPreference, PushSubscription, Survey, SurveyResponse, User
 
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
