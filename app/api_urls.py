@@ -6,4 +6,7 @@ urlpatterns = [
     path("login/", views.login_view, name="login"),
     path("logout/", views.logout_view, name="logout"),
     path("google-login/", views.google_login_view, name="google-login"),
+    path("user/", views.current_user, name="current-user"),
+    path("dashboard/stats/", views.dashboard_stats_view, name="dashboard-stats"),
+    path("program-status/", views.program_status_view, name="program-status"),
 ]

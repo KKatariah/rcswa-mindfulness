@@ -15,7 +15,11 @@ export default function Navbar() {
 	const { user, logout } = useAuth();
 	const [isOpen, setIsOpen] = useState(false);
 	const [loginOpen, setLoginOpen] = useState(false);
-	const visibleLinks = [...NAV_LINKS, ...(user ? [{ label: "Forum", href: "/forum" }] : [])];
+	const visibleLinks = [
+		...NAV_LINKS,
+		...(user ? [{ label: "Forum", href: "/forum" }] : []),
+		...(user?.role === "admin" ? [{ label: "Admin", href: "/admin" }] : []),
+	];
 	const [signUpOpen, setSignUpOpen] = useState(false);
 
 	function openLogin() {

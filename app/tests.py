@@ -1,10 +1,14 @@
+from datetime import date, timedelta
+
 from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from .models import (
+    Cohort,
     ContentCompletion,
     ContentItem,
+    Enrollment,
     ForumPost,
     ForumThread,
     Module,
@@ -921,3 +925,334 @@ class SurveyFixtureFlowTests(APITestCase):
         list_resp3 = self.client.get("/api/surveys/")
         survey_data3 = next(s for s in list_resp3.data if s["id"] == survey.pk)
         self.assertTrue(survey_data3["has_responded"])
+
+
+# ── Admin portal: role in auth responses ─────────────────────────────────────────
+
+class AuthRoleTests(APITestCase):
+    def setUp(self):
+        self.student = User.objects.create_user(
+            email="student@test.local", password="testpass", full_name="Student One",
+        )
+
+    def test_login_response_includes_role(self):
+        resp = self.client.post(
+            "/api/login/",
+            {"email": "student@test.local", "password": "testpass"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["user"]["role"], "student")
+
+    def test_register_response_includes_role(self):
+        resp = self.client.post(
+            "/api/register/",
+            {"email": "new@test.local", "full_name": "New User", "password": "testpass"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp.data["user"]["role"], "student")
+
+    def test_current_user_returns_role(self):
+        self.client.force_login(self.student)
+        resp = self.client.get("/api/user/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["user"]["role"], "student")
+
+
+# ── Admin portal: Cohort CRUD permissions ────────────────────────────────────────
+
+class CohortAdminTests(APITestCase):
+    def setUp(self):
+        self.student = User.objects.create_user(
+            email="student@test.local", password="testpass",
+        )
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+
+    def test_student_cannot_create_cohort(self):
+        self.client.force_login(self.student)
+        resp = self.client.post(
+            "/api/cohorts/",
+            {"name": "Sem2 2026", "year": 2026, "start_date": "2026-07-20", "end_date": "2026-09-14"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_create_update_and_delete_cohort(self):
+        self.client.force_login(self.admin)
+        create_resp = self.client.post(
+            "/api/cohorts/",
+            {"name": "Sem2 2026", "year": 2026, "start_date": "2026-07-20", "end_date": "2026-09-14"},
+            content_type="application/json",
+        )
+        self.assertEqual(create_resp.status_code, status.HTTP_201_CREATED)
+        cohort_id = create_resp.data["id"]
+
+        update_resp = self.client.patch(
+            f"/api/cohorts/{cohort_id}/",
+            {"name": "Semester 2 2026"},
+            content_type="application/json",
+        )
+        self.assertEqual(update_resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(update_resp.data["name"], "Semester 2 2026")
+
+        delete_resp = self.client.delete(f"/api/cohorts/{cohort_id}/")
+        self.assertEqual(delete_resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(Cohort.objects.filter(pk=cohort_id).exists())
+
+    def test_cohort_end_date_before_start_date_rejected(self):
+        self.client.force_login(self.admin)
+        resp = self.client.post(
+            "/api/cohorts/",
+            {"name": "Bad Cohort", "year": 2026, "start_date": "2026-09-14", "end_date": "2026-07-20"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+# ── Admin portal: Module/ContentItem CRUD permissions ────────────────────────────
+
+class ModuleAdminTests(APITestCase):
+    def setUp(self):
+        self.student = User.objects.create_user(
+            email="student@test.local", password="testpass",
+        )
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.published = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+        self.unpublished = Module.objects.create(week_number=2, title="Week 2", is_published=False)
+
+    def test_student_cannot_create_module(self):
+        self.client.force_login(self.student)
+        resp = self.client.post(
+            "/api/modules/",
+            {"week_number": 3, "title": "Week 3"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_create_and_publish_module(self):
+        self.client.force_login(self.admin)
+        resp = self.client.post(
+            "/api/modules/",
+            {"week_number": 3, "title": "Week 3", "is_published": True},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(Module.objects.get(week_number=3).is_published)
+
+    def test_admin_sees_unpublished_modules_student_does_not(self):
+        self.client.force_login(self.admin)
+        admin_ids = [m["id"] for m in self.client.get("/api/modules/").data]
+        self.assertIn(self.unpublished.pk, admin_ids)
+
+        self.client.logout()
+        self.client.force_login(self.student)
+        student_ids = [m["id"] for m in self.client.get("/api/modules/").data]
+        self.assertNotIn(self.unpublished.pk, student_ids)
+
+    def test_text_content_item_requires_body(self):
+        self.client.force_login(self.admin)
+        resp = self.client.post(
+            "/api/content-items/",
+            {"module": self.published.pk, "title": "Notes", "type": "text", "body": ""},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_video_content_item_requires_provider_and_embed_url(self):
+        self.client.force_login(self.admin)
+        resp = self.client.post(
+            "/api/content-items/",
+            {"module": self.published.pk, "title": "Intro", "type": "video"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_can_create_text_content_item(self):
+        self.client.force_login(self.admin)
+        resp = self.client.post(
+            "/api/content-items/",
+            {
+                "module": self.published.pk,
+                "title": "Notes",
+                "type": "text",
+                "body": "## Welcome\nThis week we cover...",
+            },
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ContentItem.objects.get(title="Notes").type, "text")
+
+
+# ── Admin portal: module unlock computation ──────────────────────────────────────
+
+class ModuleUnlockTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.student = User.objects.create_user(
+            email="student@test.local", password="testpass",
+        )
+        self.week1 = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+        self.week3 = Module.objects.create(week_number=3, title="Week 3", is_published=True)
+        # Cohort started exactly 14 days ago: week 3 unlocks today, week 1 has been open a while.
+        self.cohort = Cohort.objects.create(
+            name="Test Cohort", year=2026,
+            start_date=date.today() - timedelta(days=14),
+            end_date=date.today() + timedelta(days=42),
+        )
+
+    def _unlocked_map(self):
+        resp = self.client.get("/api/modules/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        return {m["week_number"]: m["is_unlocked"] for m in resp.data}
+
+    def test_no_active_enrollment_locks_all_modules(self):
+        self.client.force_login(self.student)
+        unlocked = self._unlocked_map()
+        self.assertFalse(unlocked[1])
+        self.assertFalse(unlocked[3])
+
+    def test_module_unlocked_on_exact_unlock_date(self):
+        Enrollment.objects.create(user=self.student, cohort=self.cohort, status=Enrollment.Status.ACTIVE)
+        self.client.force_login(self.student)
+        unlocked = self._unlocked_map()
+        self.assertTrue(unlocked[1])   # unlocked on cohort.start_date, 14 days ago
+        self.assertTrue(unlocked[3])   # unlocks exactly (3-1)*7 = 14 days after start_date
+
+    def test_module_locked_day_before_unlock_date(self):
+        # Move week 3 to week 4: unlocks (4-1)*7 = 21 days after start_date, 7 days from now.
+        self.week3.week_number = 4
+        self.week3.save()
+        Enrollment.objects.create(user=self.student, cohort=self.cohort, status=Enrollment.Status.ACTIVE)
+        self.client.force_login(self.student)
+        unlocked = self._unlocked_map()
+        self.assertFalse(unlocked[4])
+
+    def test_admin_sees_all_modules_as_unlocked(self):
+        self.client.force_login(self.admin)
+        unlocked = self._unlocked_map()
+        self.assertTrue(unlocked[1])
+        self.assertTrue(unlocked[3])
+
+
+# ── Admin portal: forum archive gating ───────────────────────────────────────────
+
+class ForumArchiveTests(APITestCase):
+    def setUp(self):
+        self.student = User.objects.create_user(
+            email="student@test.local", password="testpass",
+        )
+        self.module = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+        self.thread = ForumThread.objects.create(
+            module=self.module, created_by=self.student, title="Existing Thread",
+        )
+        ForumPost.objects.create(thread=self.thread, author=self.student, body="Opening")
+
+    def _make_ended_cohort(self):
+        return Cohort.objects.create(
+            name="Ended Cohort", year=2025,
+            start_date=date.today() - timedelta(days=100),
+            end_date=date.today() - timedelta(days=1),
+        )
+
+    def test_thread_create_rejected_when_no_active_cohort(self):
+        self._make_ended_cohort()
+        self.client.force_login(self.student)
+        resp = self.client.post(
+            "/api/forum/threads/", {"body": "New thread"}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_thread_create_allowed_when_cohort_active(self):
+        Cohort.objects.create(
+            name="Active Cohort", year=2026,
+            start_date=date.today() - timedelta(days=7),
+            end_date=date.today() + timedelta(days=49),
+        )
+        self.client.force_login(self.student)
+        resp = self.client.post(
+            "/api/forum/threads/", {"body": "New thread"}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+    def test_post_create_rejected_when_program_inactive(self):
+        self._make_ended_cohort()
+        self.client.force_login(self.student)
+        resp = self.client.post(
+            "/api/forum/posts/",
+            {"thread": self.thread.pk, "body": "A reply"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_forum_reads_always_allowed_when_program_inactive(self):
+        self._make_ended_cohort()
+        self.client.force_login(self.student)
+        list_resp = self.client.get("/api/forum/threads/")
+        self.assertEqual(list_resp.status_code, status.HTTP_200_OK)
+        detail_resp = self.client.get(f"/api/forum/threads/{self.thread.pk}/")
+        self.assertEqual(detail_resp.status_code, status.HTTP_200_OK)
+
+    def test_program_status_endpoint_reflects_active_cohort(self):
+        self.client.force_login(self.student)
+        self.assertTrue(self.client.get("/api/program-status/").data["is_active"])
+
+        self._make_ended_cohort()
+        self.assertFalse(self.client.get("/api/program-status/").data["is_active"])
+
+
+# ── Admin portal: dashboard stats ────────────────────────────────────────────────
+
+class DashboardStatsTests(APITestCase):
+    def setUp(self):
+        self.student = User.objects.create_user(
+            email="student@test.local", password="testpass",
+        )
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.cohort = Cohort.objects.create(
+            name="Test Cohort", year=2026,
+            start_date=date.today() - timedelta(days=7),
+            end_date=date.today() + timedelta(days=49),
+        )
+        Enrollment.objects.create(user=self.student, cohort=self.cohort, status=Enrollment.Status.ACTIVE)
+        self.module = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+        self.item = ContentItem.objects.create(
+            module=self.module, title="Intro", type="video",
+            provider="youtube", embed_url="https://www.youtube.com/embed/x",
+        )
+
+    def test_student_cannot_access_dashboard_stats(self):
+        self.client.force_login(self.student)
+        resp = self.client.get("/api/dashboard/stats/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_dashboard_module_completion_pct_correct(self):
+        ContentCompletion.objects.create(user=self.student, content_item=self.item)
+        self.client.force_login(self.admin)
+        resp = self.client.get("/api/dashboard/stats/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        module_stat = next(m for m in resp.data["modules"] if m["id"] == self.module.pk)
+        self.assertEqual(module_stat["completed_count"], 1)
+        self.assertEqual(module_stat["eligible_count"], 1)
+        self.assertEqual(module_stat["completion_pct"], 100.0)
+
+    def test_dashboard_cohort_breakdown_counts(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get("/api/dashboard/stats/")
+        cohort_stat = next(c for c in resp.data["by_cohort"] if c["cohort_id"] == self.cohort.pk)
+        self.assertEqual(cohort_stat["enrolled"], 1)
+        self.assertEqual(cohort_stat["active"], 1)
+
+    def test_dashboard_enrollment_status_breakdown(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get("/api/dashboard/stats/")
+        self.assertEqual(resp.data["enrollment_status_breakdown"]["active"], 1)
+        self.assertEqual(resp.data["total_enrolled"], 1)

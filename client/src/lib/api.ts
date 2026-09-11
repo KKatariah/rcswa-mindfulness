@@ -1,9 +1,10 @@
+import type { AuthUser } from "@/types/user";
+
 const API_BASE_URL = "http://127.0.0.1:8000/api";
 
 type LoginPayload = { email: string; password: string };
 type RegisterPayload = { email: string; full_name: string; password: string };
 
-type AuthUser = { id: number; email: string; full_name: string };
 type AuthResponse = { message: string; token: string; user: AuthUser };
 
 async function handleResponse<T>(res: Response): Promise<T> {
@@ -155,6 +156,156 @@ export async function updateForumPost(
 
 export async function deleteForumPost(id: number, token: string): Promise<void> {
 	return deleteRequest(`${API_BASE_URL}/forum/posts/${id}/`, token);
+}
+
+export async function getProgramStatus(token: string): Promise<{ is_active: boolean }> {
+	const res = await fetch(`${API_BASE_URL}/program-status/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<{ is_active: boolean }>(res);
+}
+
+// ── Admin: Cohorts ─────────────────────────────────────────────────────────────
+
+import type { Cohort, AdminModule, AdminContentItem, Enrollment, DashboardStats } from "@/types/admin";
+
+export async function listCohorts(token: string): Promise<Cohort[]> {
+	const res = await fetch(`${API_BASE_URL}/cohorts/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<Cohort[]>(res);
+}
+
+export async function createCohort(
+	data: { name: string; year: number; start_date: string; end_date: string },
+	token: string,
+): Promise<Cohort> {
+	const res = await fetch(`${API_BASE_URL}/cohorts/`, {
+		method: "POST",
+		headers: authHeader(token),
+		body: JSON.stringify(data),
+	});
+	return handleResponse<Cohort>(res);
+}
+
+export async function updateCohort(
+	id: number,
+	data: Partial<{ name: string; year: number; start_date: string; end_date: string }>,
+	token: string,
+): Promise<Cohort> {
+	const res = await fetch(`${API_BASE_URL}/cohorts/${id}/`, {
+		method: "PATCH",
+		headers: authHeader(token),
+		body: JSON.stringify(data),
+	});
+	return handleResponse<Cohort>(res);
+}
+
+export async function deleteCohort(id: number, token: string): Promise<void> {
+	return deleteRequest(`${API_BASE_URL}/cohorts/${id}/`, token);
+}
+
+export async function listEnrollments(
+	params: { cohort?: number },
+	token: string,
+): Promise<Enrollment[]> {
+	const query = params.cohort ? `?cohort=${params.cohort}` : "";
+	const res = await fetch(`${API_BASE_URL}/enrollments/${query}`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<Enrollment[]>(res);
+}
+
+// ── Admin: Modules ─────────────────────────────────────────────────────────────
+
+export async function listModulesAdmin(token: string): Promise<AdminModule[]> {
+	const res = await fetch(`${API_BASE_URL}/modules/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<AdminModule[]>(res);
+}
+
+export async function getModule(id: number, token: string): Promise<AdminModule> {
+	const res = await fetch(`${API_BASE_URL}/modules/${id}/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<AdminModule>(res);
+}
+
+export async function createModule(
+	data: { week_number: number; title: string; description?: string; is_published?: boolean },
+	token: string,
+): Promise<AdminModule> {
+	const res = await fetch(`${API_BASE_URL}/modules/`, {
+		method: "POST",
+		headers: authHeader(token),
+		body: JSON.stringify(data),
+	});
+	return handleResponse<AdminModule>(res);
+}
+
+export async function updateModule(
+	id: number,
+	data: Partial<{ week_number: number; title: string; description: string; is_published: boolean }>,
+	token: string,
+): Promise<AdminModule> {
+	const res = await fetch(`${API_BASE_URL}/modules/${id}/`, {
+		method: "PATCH",
+		headers: authHeader(token),
+		body: JSON.stringify(data),
+	});
+	return handleResponse<AdminModule>(res);
+}
+
+export async function deleteModule(id: number, token: string): Promise<void> {
+	return deleteRequest(`${API_BASE_URL}/modules/${id}/`, token);
+}
+
+// ── Admin: Content Items ──────────────────────────────────────────────────────
+
+export async function listContentItems(moduleId: number, token: string): Promise<AdminContentItem[]> {
+	const res = await fetch(`${API_BASE_URL}/content-items/?module=${moduleId}`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<AdminContentItem[]>(res);
+}
+
+export async function createContentItem(
+	data: Partial<AdminContentItem> & { module: number; title: string; type: string },
+	token: string,
+): Promise<AdminContentItem> {
+	const res = await fetch(`${API_BASE_URL}/content-items/`, {
+		method: "POST",
+		headers: authHeader(token),
+		body: JSON.stringify(data),
+	});
+	return handleResponse<AdminContentItem>(res);
+}
+
+export async function updateContentItem(
+	id: number,
+	data: Partial<AdminContentItem>,
+	token: string,
+): Promise<AdminContentItem> {
+	const res = await fetch(`${API_BASE_URL}/content-items/${id}/`, {
+		method: "PATCH",
+		headers: authHeader(token),
+		body: JSON.stringify(data),
+	});
+	return handleResponse<AdminContentItem>(res);
+}
+
+export async function deleteContentItem(id: number, token: string): Promise<void> {
+	return deleteRequest(`${API_BASE_URL}/content-items/${id}/`, token);
+}
+
+// ── Admin: Dashboard ───────────────────────────────────────────────────────────
+
+export async function getDashboardStats(token: string): Promise<DashboardStats> {
+	const res = await fetch(`${API_BASE_URL}/dashboard/stats/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<DashboardStats>(res);
 }
 
 export async function loginWithGoogle(credential: string): Promise<AuthResponse> {

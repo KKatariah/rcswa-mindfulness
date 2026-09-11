@@ -9,6 +9,7 @@ import {
 	deleteForumPost,
 	deleteForumThread,
 	getForumThread,
+	getProgramStatus,
 	listForumThreads,
 	pinForumThread,
 	updateForumPost,
@@ -182,6 +183,7 @@ type ThreadDetailViewProps = {
 	onDeletePost: (id: number) => void;
 	onDeleteThread: () => void;
 	onPinThread: (id: number, is_pinned: boolean) => void;
+	isActive: boolean;
 };
 
 function ThreadDetailView({
@@ -192,6 +194,7 @@ function ThreadDetailView({
 	onDeletePost,
 	onDeleteThread,
 	onPinThread,
+	isActive,
 }: ThreadDetailViewProps) {
 	const [replyBody, setReplyBody] = useState("");
 	const [submitting, setSubmitting] = useState(false);
@@ -330,26 +333,32 @@ function ThreadDetailView({
 			)}
 
 			{/* Reply composer */}
-			<form onSubmit={handleReply} className="rounded-2xl border border-gray-200 bg-white p-5">
-				<p className="text-sm font-bold text-ink">Reply</p>
-				<textarea
-					value={replyBody}
-					onChange={(e) => setReplyBody(e.target.value)}
-					placeholder="Write your reply…"
-					rows={3}
-					required
-					className="mt-3 w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand-blue"
-				/>
-				<div className="mt-3 flex justify-end">
-					<button
-						type="submit"
-						disabled={submitting || !replyBody.trim()}
-						className="rounded-xl bg-brand-blue px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
-					>
-						{submitting ? "Posting…" : "Reply"}
-					</button>
-				</div>
-			</form>
+			{isActive ? (
+				<form onSubmit={handleReply} className="rounded-2xl border border-gray-200 bg-white p-5">
+					<p className="text-sm font-bold text-ink">Reply</p>
+					<textarea
+						value={replyBody}
+						onChange={(e) => setReplyBody(e.target.value)}
+						placeholder="Write your reply…"
+						rows={3}
+						required
+						className="mt-3 w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand-blue"
+					/>
+					<div className="mt-3 flex justify-end">
+						<button
+							type="submit"
+							disabled={submitting || !replyBody.trim()}
+							className="rounded-xl bg-brand-blue px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
+						>
+							{submitting ? "Posting…" : "Reply"}
+						</button>
+					</div>
+				</form>
+			) : (
+				<p className="rounded-2xl border border-gray-200 bg-white p-5 text-sm text-muted">
+					The forum is read-only — replies can&apos;t be posted right now.
+				</p>
+			)}
 		</div>
 	);
 }
@@ -360,12 +369,19 @@ type FeedViewProps = {
 	threads: ForumThread[];
 	onSelect: (id: number) => void;
 	onCreateThread: (body: string) => Promise<void>;
+	isActive: boolean;
 };
 
-function FeedView({ threads, onSelect, onCreateThread }: FeedViewProps) {
+function FeedView({ threads, onSelect, onCreateThread, isActive }: FeedViewProps) {
 	return (
 		<div className="mx-auto max-w-2xl space-y-4">
-			<Composer onSubmit={onCreateThread} />
+			{isActive ? (
+				<Composer onSubmit={onCreateThread} />
+			) : (
+				<p className="rounded-2xl border border-gray-200 bg-white p-5 text-sm text-muted">
+					The forum is read-only — new threads can&apos;t be started right now.
+				</p>
+			)}
 
 			{threads.length === 0 ? (
 				<p className="py-12 text-center text-sm text-muted">
@@ -418,6 +434,7 @@ export default function ForumPage() {
 	const [selectedThread, setSelectedThread] = useState<ForumThreadDetail | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
+	const [isActive, setIsActive] = useState(true);
 
 	useEffect(() => {
 		if (authLoading) return;
@@ -432,8 +449,14 @@ export default function ForumPage() {
 
 			const token = localStorage.getItem("token") ?? "";
 			try {
-				const data = await listForumThreads(token);
-				if (!cancelled) setThreads(data);
+				const [data, status] = await Promise.all([
+					listForumThreads(token),
+					getProgramStatus(token),
+				]);
+				if (!cancelled) {
+					setThreads(data);
+					setIsActive(status.is_active);
+				}
 			} catch (e) {
 				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load forum");
 			} finally {
@@ -538,22 +561,33 @@ export default function ForumPage() {
 								Dismiss
 							</button>
 						</div>
-					) : selectedThread ? (
-						<ThreadDetailView
-							thread={selectedThread}
-							onBack={() => setSelectedThread(null)}
-							onReply={handleReply}
-							onEditPost={handleEditPost}
-							onDeletePost={handleDeletePost}
-							onDeleteThread={handleDeleteThread}
-							onPinThread={handlePinThread}
-						/>
 					) : (
-						<FeedView
-							threads={threads}
-							onSelect={loadThread}
-							onCreateThread={handleCreateThread}
-						/>
+						<>
+							{!isActive && (
+								<div className="mx-auto mb-4 max-w-2xl rounded-2xl border border-amber-200 bg-amber-50 p-4 text-center text-sm font-semibold text-amber-700">
+									The program has ended — the forum is now read-only.
+								</div>
+							)}
+							{selectedThread ? (
+								<ThreadDetailView
+									thread={selectedThread}
+									onBack={() => setSelectedThread(null)}
+									onReply={handleReply}
+									onEditPost={handleEditPost}
+									onDeletePost={handleDeletePost}
+									onDeleteThread={handleDeleteThread}
+									onPinThread={handlePinThread}
+									isActive={isActive}
+								/>
+							) : (
+								<FeedView
+									threads={threads}
+									onSelect={loadThread}
+									onCreateThread={handleCreateThread}
+									isActive={isActive}
+								/>
+							)}
+						</>
 					)}
 				</main>
 

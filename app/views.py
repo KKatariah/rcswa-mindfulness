@@ -10,8 +10,10 @@ from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 
 from .models import (
+    Cohort,
     ContentCompletion,
     ContentItem,
+    Enrollment,
     ForumPost,
     ForumThread,
     Module,
@@ -20,13 +22,18 @@ from .models import (
     User,
 )
 
+from .permissions import IsAdminOrStaff
+
 
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 from django.conf import settings
 
 from .serializers import (
+    CohortSerializer,
     ContentCompletionSerializer,
+    ContentItemSerializer,
+    EnrollmentSerializer,
     ForumPostCreateSerializer,
     ForumPostSerializer,
     ForumThreadCreateSerializer,
@@ -40,7 +47,13 @@ from .serializers import (
     SurveyResponseUpdateSerializer,
     SurveySerializer,
     UserDisplayNameSerializer,
+    _is_program_active,
     _survey_is_unlocked,
+    _cohort_breakdown,
+    _module_completion_stats,
+    _survey_response_rates,
+    _forum_activity_stats,
+    _enrollment_status_breakdown,
 )
 
 # Create your views here.
@@ -60,6 +73,10 @@ def profile_view(request):
 # API views
 
 
+def _user_payload(user):
+    return {"id": user.id, "email": user.email, "full_name": user.full_name, "role": user.role}
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register_view(request):
@@ -71,11 +88,7 @@ def register_view(request):
         return Response(
             {
                 "message": "Registration successful",
-                "user": {
-                    "id": user.id,
-                    "email": user.email,
-                    "full_name": user.full_name,
-                },
+                "user": _user_payload(user),
             },
             status=status.HTTP_201_CREATED,
         )
@@ -112,11 +125,7 @@ def login_view(request):
         {
             "message": "Login successful",
             "token": token.key,
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-            },
+            "user": _user_payload(user),
         },
         status=status.HTTP_200_OK,
     )
@@ -177,31 +186,71 @@ def google_login_view(request):
         {
             "message": "Google login successful",
             "token": token_obj.key,
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-            },
+            "user": _user_payload(user),
         },
         status=status.HTTP_200_OK,
     )
 
 
-class ModuleViewSet(viewsets.ReadOnlyModelViewSet):
+class ModuleViewSet(viewsets.ModelViewSet):
     serializer_class = ModuleSerializer
-    queryset = (
-        Module.objects
-        .filter(is_published=True)
-        .prefetch_related(
-            # display_order already exists on ContentItem; secondary sort by id keeps
-            # ordering stable when display_order values tie (e.g. all default to 0).
-            Prefetch(
-                "content_items",
-                queryset=ContentItem.objects.order_by("display_order", "id"),
-            ),
-            "resources",
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        qs = (
+            Module.objects
+            .prefetch_related(
+                # display_order already exists on ContentItem; secondary sort by id keeps
+                # ordering stable when display_order values tie (e.g. all default to 0).
+                Prefetch(
+                    "content_items",
+                    queryset=ContentItem.objects.order_by("display_order", "id"),
+                ),
+                "resources",
+            )
         )
-    )
+        u = self.request.user
+        if getattr(u, "role", None) == "admin" or u.is_staff:
+            return qs  # admins see unpublished modules too
+        return qs.filter(is_published=True)
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsAuthenticated(), IsAdminOrStaff()]
+        return [IsAuthenticated()]
+
+
+class ContentItemViewSet(viewsets.ModelViewSet):
+    serializer_class = ContentItemSerializer
+    permission_classes = [IsAuthenticated, IsAdminOrStaff]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        qs = ContentItem.objects.select_related("module").order_by("module", "display_order")
+        module_id = self.request.query_params.get("module")
+        if module_id:
+            qs = qs.filter(module_id=module_id)
+        return qs
+
+
+class CohortViewSet(viewsets.ModelViewSet):
+    queryset = Cohort.objects.all().order_by("-start_date")
+    serializer_class = CohortSerializer
+    permission_classes = [IsAuthenticated, IsAdminOrStaff]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+
+class EnrollmentViewSet(viewsets.ModelViewSet):
+    serializer_class = EnrollmentSerializer
+    permission_classes = [IsAuthenticated, IsAdminOrStaff]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_queryset(self):
+        qs = Enrollment.objects.select_related("user", "cohort").order_by("-enrolled_at")
+        cohort_id = self.request.query_params.get("cohort")
+        if cohort_id:
+            qs = qs.filter(cohort_id=cohort_id)
+        return qs
 
 
 class ContentCompletionViewSet(
@@ -288,6 +337,8 @@ class ForumThreadViewSet(viewsets.ModelViewSet):
         return Response(out.data, status=status.HTTP_201_CREATED, headers=self.get_success_headers(out.data))
 
     def perform_create(self, serializer):
+        if not _is_program_active():
+            raise PermissionDenied("The program has ended; the forum is read-only.")
         body = serializer.validated_data.pop("body")
         title = _derive_title(body)
         thread = serializer.save(created_by=self.request.user, title=title)
@@ -326,6 +377,8 @@ class ForumPostViewSet(
         return Response(out.data, status=status.HTTP_201_CREATED, headers=self.get_success_headers(out.data))
 
     def perform_create(self, serializer):
+        if not _is_program_active():
+            raise PermissionDenied("The program has ended; the forum is read-only.")
         serializer.save(author=self.request.user)
 
     def perform_update(self, serializer):
@@ -482,8 +535,25 @@ class SurveyResponseViewSet(
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def current_user(request):
-    return Response({"user": {
-        "id": request.user.id,
-        "email": request.user.email,
-        "full_name": request.user.full_name,  # adjust to your actual field
-    }})
+    return Response({"user": _user_payload(request.user)})
+
+
+# ── Admin dashboard & program status ─────────────────────────────────────────────
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, IsAdminOrStaff])
+def dashboard_stats_view(request):
+    return Response({
+        "total_enrolled": Enrollment.objects.filter(status=Enrollment.Status.ACTIVE).count(),
+        "by_cohort": _cohort_breakdown(),
+        "modules": _module_completion_stats(),
+        "survey_response_rates": _survey_response_rates(),
+        "forum_activity": _forum_activity_stats(),
+        "enrollment_status_breakdown": _enrollment_status_breakdown(),
+    })
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def program_status_view(request):
+    return Response({"is_active": _is_program_active()})
