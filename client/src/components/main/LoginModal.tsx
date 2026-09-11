@@ -95,10 +95,10 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 					<span className="text-sm text-muted">or</span>
 					<div className="h-px flex-1 bg-gray-200" />
 				</div>
-				<GoogleLogin
+				{process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID && <GoogleLogin
 					onSuccess={handleGoogleSuccess}
 					onError={() => setError("Google login failed")}
-				/>
+				/>}
 			</div>
 		</Modal>
 	);

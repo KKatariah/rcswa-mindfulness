@@ -1,96 +1,76 @@
+import { useState } from "react";
 import Head from "next/head";
-import ModuleHeader from "@/components/modules/ModuleHeader";
-import ModuleContent from "@/components/modules/ModuleContent";
-import type { ContentBlock } from "@/types/module";
-
-// Stand-in for what GET /app/modules/{moduleId}/ would return once the API exists.
-const MODULE = {
-	title: "Module 1 - The Body Scan",
-	durationMinutes: 10,
-	description: "Description of the module here",
-	blocks: [
-		{
-			id: 1,
-			type: "text",
-			content: "Hello everyone",
-		},
-		{
-			id: 2,
-			type: "text",
-			content:
-				"Welcome to Week 1 of the WA Medical Schools Online Mindfulness Program.",
-		},
-		{
-			id: 3,
-			type: "text",
-			content:
-				"You should now have received an email with a link to your intake survey. If you have not yet completed these surveys, please do so now.",
-		},
-		{
-			id: 4,
-			type: "text",
-			content:
-				'Below is a link to the first teaching video on Multitasking and Mindfulness, plus a link to the guided mindfulness practice "Body Scan". You will also receive the link to this guided practice via SMS each week day this week at 6:30am. Don\'t forget to make a note of the days that you complete your mindfulness practice so that you can complete your weekly mindfulness feedback survey, which will be emailed to you at the end of the week.',
-		},
-		{
-			id: 5,
-			type: "video",
-			title: "Multitasking and Mindfulness",
-			embedUrl: "https://www.youtube.com/embed/Lc3_dVSEE_E?si=J419H99Q_QVe9thq",
-		},
-		{
-			id: 6,
-			type: "text",
-			content: 'Here is the guided mindfulness practice, "The Body Scan".',
-		},
-		{
-			id: 7,
-			type: "audio",
-			title: "The Body Scan",
-			embedUrl:
-				"https://w.soundcloud.com/player/?url=https%3A//api.soundcloud.com/tracks/soundcloud%253Atracks%253A1227212032&color=%23ff5500&auto_play=false&hide_related=false&show_comments=true&show_user=true&show_reposts=false&show_teaser=true",
-			attribution: {
-				artistName: "Dr Sarah Moore",
-				artistUrl: "https://soundcloud.com/user-124579650",
-				trackTitle: "The Body Scan",
-				trackUrl: "https://soundcloud.com/user-124579650/the-body-scan",
-			},
-		},
-		{
-			id: 8,
-			type: "text",
-			content:
-				"I would also like to remind you to consider finding a Mindfulness buddy who you can check in with during the 8-week program. With your buddy, you can discuss your learnings, share your challenges, and support one another to keep up with your practice. If you would like assistance with finding a buddy, please email me and I would be happy to help.",
-		},
-	] satisfies ContentBlock[],
-};
-
-// Background photo by Michael Metschl (Pexels): https://www.pexels.com/photo/18284929/
+import Link from "next/link";
+import { useRouter } from "next/router";
+import { useProgramme } from "@/hooks/useProgramme";
+import { programmeRequest, type Completion } from "@/lib/programme";
+import ContentEmbed from "@/components/modules/ContentEmbed";
+import Sidebar from "@/components/main/Sidebar";
 
 export default function ModulePage() {
-	return (
-		<>
-			<Head>
-				<title>{MODULE.title}</title>
-			</Head>
-			<div
-				className="min-h-screen bg-cover bg-center bg-no-repeat px-6 py-10 sm:px-10 lg:px-12"
-				style={{ backgroundImage: "url(/images/module-background.jpg)" }}
-			>
-				<div className="mx-auto flex max-w-[1600px] gap-6">
-					{" "}
-					{/* IT LOOKS REALLY WEIRD AND BIG ATM BC IT WILL FILL ONCE OTHER COMPONENTS ARE IN */}
-					<div className="flex flex-1 flex-col gap-6">
-						<ModuleHeader
-							title={MODULE.title}
-							durationMinutes={MODULE.durationMinutes}
-							description={MODULE.description}
-						/>
+  const router = useRouter();
+  const { user, loading, error, modules, completions, reload } = useProgramme();
+  const [saving, setSaving] = useState<number | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const selectedModule = modules.find((item) => String(item.id) === router.query.moduleId);
 
-						<ModuleContent blocks={MODULE.blocks} />
-					</div>
-				</div>
-			</div>
-		</>
-	);
+  async function complete(itemId: number) {
+    if (saving !== null) return;
+    setSaving(itemId);
+    setSaveError(null);
+    try {
+      await programmeRequest<Completion>("/progress/", { method: "POST", body: JSON.stringify({ content_item: itemId }) });
+      reload();
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Unable to save completion.");
+    } finally { setSaving(null); }
+  }
+
+  const message = !router.isReady || loading ? "Loading module…"
+    : error || (!selectedModule ? "This module is not available."
+    : !selectedModule.is_unlocked ? `This module unlocks ${selectedModule.unlock_at ? new Date(selectedModule.unlock_at).toLocaleString() : "soon"}.` : null);
+  if (message || !selectedModule) {
+    return (
+      <div className="min-h-screen bg-surface-muted p-6">
+        <div className="mx-auto max-w-3xl rounded-xl bg-white p-6">
+          <Link href="/progress" className="text-brand-blue-dark underline">Back to progress</Link>
+          <p role="status" className="mt-4">{message}</p>
+          {!loading && <button onClick={reload} className="mt-4 text-brand-blue-dark underline">Refresh</button>}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <Head><title>{selectedModule.title} | Wellbeing Course</title></Head>
+      <div className="min-h-screen bg-cover bg-center bg-fixed p-4 md:p-6" style={{ backgroundImage: "url(/images/module-background.jpg)" }}>
+        <div className="mx-auto grid max-w-[1600px] items-start gap-6 md:grid-cols-[240px_minmax(0,1fr)]">
+          <div className="hidden md:sticky md:top-6 md:block"><Sidebar responsive username={user?.full_name || user?.email || "Username"} /></div>
+          <article className="min-w-0 rounded-xl bg-white p-6 sm:p-10">
+            <Link href="/progress" className="text-sm text-brand-blue-dark underline">← Back to your progress</Link>
+            <p className="mt-6 text-sm text-muted">Week {selectedModule.week_number}</p>
+            <h1 className="mt-2 text-3xl font-extrabold text-ink">{selectedModule.title}</h1>
+            <p className="mt-4 whitespace-pre-wrap text-ink-soft">{selectedModule.description}</p>
+            <hr className="my-8 border-gray-200" />
+            {saveError && <p role="alert" className="mb-4 text-red-700">{saveError}</p>}
+            {!selectedModule.content_items.length && <p className="text-muted">Activities will appear here when they are added.</p>}
+            {selectedModule.content_items.map((item) => {
+              const done = completions.some((completion) => completion.content_item === item.id);
+              return (
+                <section key={item.id} className="mb-8 border-b border-gray-200 pb-6 last:border-0">
+                  <h2 className="text-lg font-bold">{item.title}</h2>
+                  <ContentEmbed type={item.type} title={item.title} embedUrl={item.embed_url} />
+                  <button type="button" disabled={done || saving !== null} onClick={() => void complete(item.id)} className="rounded-lg bg-brand-blue-dark px-4 py-3 text-sm font-semibold text-white disabled:opacity-60">
+                    {done ? "Completed ✓" : saving === item.id ? "Saving…" : "Mark as complete"}
+                  </button>
+                </section>
+              );
+            })}
+            {!!selectedModule.resources.length && <section><h2 className="font-bold">Resources</h2><ul className="mt-3 space-y-2">{selectedModule.resources.map((resource) => <li key={resource.id}><a className="text-brand-blue-dark underline" href={resource.url} target="_blank" rel="noopener noreferrer">{resource.title}</a></li>)}</ul></section>}
+          </article>
+        </div>
+      </div>
+    </>
+  );
 }
