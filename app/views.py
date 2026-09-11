@@ -12,6 +12,8 @@ from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 from .models import (
     ContentCompletion,
     ContentItem,
+    ContentView,
+    Enrollment,
     ForumPost,
     ForumThread,
     Module,
@@ -27,6 +29,7 @@ from django.conf import settings
 
 from .serializers import (
     ContentCompletionSerializer,
+    ContentViewSerializer,
     ForumPostCreateSerializer,
     ForumPostSerializer,
     ForumThreadCreateSerializer,
@@ -58,6 +61,17 @@ def profile_view(request):
 
 
 # API views
+
+
+def _active_cohort_start_date(user):
+    enrollment = (
+        Enrollment.objects
+        .filter(user=user, status=Enrollment.Status.ACTIVE)
+        .select_related("cohort")
+        .order_by("-enrolled_at")
+        .first()
+    )
+    return enrollment.cohort.start_date.isoformat() if enrollment else None
 
 
 @api_view(["POST"])
@@ -116,6 +130,7 @@ def login_view(request):
                 "id": user.id,
                 "email": user.email,
                 "full_name": user.full_name,
+                "cohort_start_date": _active_cohort_start_date(user),
             },
         },
         status=status.HTTP_200_OK,
@@ -181,6 +196,7 @@ def google_login_view(request):
                 "id": user.id,
                 "email": user.email,
                 "full_name": user.full_name,
+                "cohort_start_date": _active_cohort_start_date(user),
             },
         },
         status=status.HTTP_200_OK,
@@ -208,6 +224,7 @@ class ContentCompletionViewSet(
     mixins.CreateModelMixin,
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
     serializer_class = ContentCompletionSerializer
@@ -221,6 +238,32 @@ class ContentCompletionViewSet(
         obj, created = ContentCompletion.objects.get_or_create(
             user=request.user,
             content_item=serializer.validated_data["content_item"],
+        )
+        out = self.get_serializer(obj)
+        return Response(
+            out.data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class ContentViewViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Auto-recorded when a student opens a content item; separate from manual completion."""
+
+    serializer_class = ContentViewSerializer
+
+    def get_queryset(self):
+        return ContentView.objects.filter(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        obj, created = ContentView.objects.get_or_create(
+            user=request.user,
+            module=serializer.validated_data["module"],
         )
         out = self.get_serializer(obj)
         return Response(
@@ -486,4 +529,5 @@ def current_user(request):
         "id": request.user.id,
         "email": request.user.email,
         "full_name": request.user.full_name,  # adjust to your actual field
+        "cohort_start_date": _active_cohort_start_date(request.user),
     }})

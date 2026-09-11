@@ -10,6 +10,7 @@ from .models import (
     ContentItem,
     Resource,
     ContentCompletion,
+    ContentView,
     NotificationPreference,
     NotificationLog,
     Survey,
@@ -50,6 +51,7 @@ admin.site.register(Module)
 admin.site.register(ContentItem)
 admin.site.register(Resource)
 admin.site.register(ContentCompletion)
+admin.site.register(ContentView)
 admin.site.register(NotificationPreference)
 admin.site.register(NotificationLog)
 admin.site.register(Survey)

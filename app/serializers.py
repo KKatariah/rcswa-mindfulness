@@ -4,6 +4,7 @@ from rest_framework.exceptions import PermissionDenied
 from .models import (
     ContentCompletion,
     ContentItem,
+    ContentView,
     ForumPost,
     ForumThread,
     Module,
@@ -66,6 +67,16 @@ class ContentCompletionSerializer(serializers.ModelSerializer):
         model = ContentCompletion
         fields = ["id", "user", "content_item", "completed_at"]
         read_only_fields = ["completed_at"]
+
+
+class ContentViewSerializer(serializers.ModelSerializer):
+    # read_only=True: user is injected by the viewset, never accepted from the payload.
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = ContentView
+        fields = ["id", "user", "module", "viewed_at"]
+        read_only_fields = ["viewed_at"]
 
 
 # ── Forum ──────────────────────────────────────────────────────────────────────

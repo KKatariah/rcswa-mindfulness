@@ -219,6 +219,35 @@ class ContentCompletion(models.Model):
         return f"{self.user} completed {self.content_item}"
 
 
+class ContentView(models.Model):
+    """Auto-recorded the moment a user opens a module; distinct from ContentCompletion, which is manual."""
+
+    # CASCADE: view records belong to the user.
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="module_views",
+    )
+    # CASCADE: a view record is meaningless when its module is deleted.
+    module = models.ForeignKey(
+        Module,
+        on_delete=models.CASCADE,
+        related_name="views",
+    )
+    viewed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "module"],
+                name="unique_view_user_module",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} viewed {self.module}"
+
+
 # Notifications
 
 class NotificationPreference(models.Model):

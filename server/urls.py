@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 
 from app.views import (
     ContentCompletionViewSet,
+    ContentViewViewSet,
     ForumPostViewSet,
     ForumThreadViewSet,
     ModuleViewSet,
@@ -15,6 +16,7 @@ from app.views import (
 router = DefaultRouter()
 router.register("modules", ModuleViewSet, basename="module")
 router.register("progress", ContentCompletionViewSet, basename="progress")
+router.register("content-views", ContentViewViewSet, basename="content-view")
 router.register("forum/threads", ForumThreadViewSet, basename="forum-thread")
 router.register("forum/posts", ForumPostViewSet, basename="forum-post")
 router.register("users", UserProfileViewSet, basename="user")
