@@ -71,7 +71,7 @@ function Avatar({ name }: { name: string }) {
 // Shared across the new-thread composer and the reply form via localStorage,
 // since both actions share the same throttle scope on the backend.
 
-const POST_COOLDOWN_SECONDS = 60;
+const POST_COOLDOWN_SECONDS = 30;
 const LAST_POST_KEY = "forum:lastPostAt";
 
 function useForumPostCooldown() {
@@ -125,7 +125,7 @@ function Composer({ onSubmit }: { onSubmit: (body: string) => Promise<void> }) {
 			<form onSubmit={handleSubmit}>
 				<div className="flex items-center gap-3">
 					<Avatar name="U" />
-					<p className="text-sm font-bold text-ink">What's your mind?</p>
+					<p className="text-sm font-bold text-ink">What&apos;s your mind?</p>
 				</div>
 				<textarea
 					value={body}
