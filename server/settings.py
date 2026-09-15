@@ -136,5 +136,4 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         "forum_post": "1/min",
     },
-    
 }
