@@ -133,5 +133,8 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
-
+    "DEFAULT_THROTTLE_RATES": {
+        "forum_post": "1/min",
+    },
+    
 }

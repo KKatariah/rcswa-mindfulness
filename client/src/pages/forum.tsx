@@ -63,20 +63,55 @@ function Avatar({ name }: { name: string }) {
 	);
 }
 
+// ── Post cooldown ──────────────────────────────────────────────────────────────
+// Client-side mirror of the backend's ForumPostRateThrottle (1 post/minute/user).
+// This is purely UX — it stops people from firing a request that's guaranteed to
+// get a 429 back, and shows a countdown instead. The real enforcement lives on
+// the server; this can't be relied on for security since it's just localStorage.
+// Shared across the new-thread composer and the reply form via localStorage,
+// since both actions share the same throttle scope on the backend.
+
+const POST_COOLDOWN_SECONDS = 60;
+const LAST_POST_KEY = "forum:lastPostAt";
+
+function useForumPostCooldown() {
+	const [remaining, setRemaining] = useState(0);
+
+	useEffect(() => {
+		function tick() {
+			const last = Number(localStorage.getItem(LAST_POST_KEY) ?? 0);
+			const elapsedSeconds = (Date.now() - last) / 1000;
+			setRemaining(Math.max(0, Math.ceil(POST_COOLDOWN_SECONDS - elapsedSeconds)));
+		}
+		tick();
+		const id = setInterval(tick, 1000);
+		return () => clearInterval(id);
+	}, []);
+
+	function markPosted() {
+		localStorage.setItem(LAST_POST_KEY, String(Date.now()));
+		setRemaining(POST_COOLDOWN_SECONDS);
+	}
+
+	return { remaining, markPosted };
+}
+
 // ── Composer ───────────────────────────────────────────────────────────────────
 
 function Composer({ onSubmit }: { onSubmit: (body: string) => Promise<void> }) {
 	const [body, setBody] = useState("");
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const { remaining, markPosted } = useForumPostCooldown();
 
 	async function handleSubmit(e: FormEvent) {
 		e.preventDefault();
-		if (!body.trim()) return;
+		if (!body.trim() || remaining > 0) return;
 		setError(null);
 		setSubmitting(true);
 		try {
 			await onSubmit(body);
+			markPosted();
 			setBody("");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to post");
@@ -100,13 +135,18 @@ function Composer({ onSubmit }: { onSubmit: (body: string) => Promise<void> }) {
 					className="mt-3 w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-brand-blue"
 				/>
 				{error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-				<div className="mt-3 flex justify-end">
+				<div className="mt-3 flex items-center justify-between">
+					{remaining > 0 ? (
+						<p className="text-xs text-[#9CA3AF]">You can post again in {remaining}s</p>
+					) : (
+						<span />
+					)}
 					<button
 						type="submit"
-						disabled={submitting || !body.trim()}
+						disabled={submitting || !body.trim() || remaining > 0}
 						className="rounded-xl bg-[#0F172A] px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
 					>
-						{submitting ? "Posting…" : "Post"}
+						{submitting ? "Posting…" : remaining > 0 ? `Wait ${remaining}s` : "Post"}
 					</button>
 				</div>
 			</form>
@@ -227,13 +267,15 @@ function ThreadDetailView({
 	const [editingOpening, setEditingOpening] = useState(false);
 	const [draftOpening, setDraftOpening] = useState(thread.opening_post?.body ?? thread.body);
 	const [savingOpening, setSavingOpening] = useState(false);
+	const { remaining, markPosted } = useForumPostCooldown();
 
 	async function handleReply(e: FormEvent) {
 		e.preventDefault();
-		if (!replyBody.trim()) return;
+		if (!replyBody.trim() || remaining > 0) return;
 		setSubmitting(true);
 		try {
 			await onReply(replyBody);
+			markPosted();
 			setReplyBody("");
 		} finally {
 			setSubmitting(false);
@@ -369,13 +411,18 @@ function ThreadDetailView({
 					required
 					className="mt-3 w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-brand-blue"
 				/>
-				<div className="mt-3 flex justify-end">
+				<div className="mt-3 flex items-center justify-between">
+					{remaining > 0 ? (
+						<p className="text-xs text-[#9CA3AF]">You can post again in {remaining}s</p>
+					) : (
+						<span />
+					)}
 					<button
 						type="submit"
-						disabled={submitting || !replyBody.trim()}
+						disabled={submitting || !replyBody.trim() || remaining > 0}
 						className="rounded-xl bg-[#0F172A] px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
 					>
-						{submitting ? "Posting…" : "Reply"}
+						{submitting ? "Posting…" : remaining > 0 ? `Wait ${remaining}s` : "Reply"}
 					</button>
 				</div>
 			</form>
