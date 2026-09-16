@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconProps, HomeIcon, BookOpenIcon, BarChart2Icon, MessageCircleIcon, FolderIcon } from "@/components/ui/icons";
+import { IconProps, HomeIcon, BookOpenIcon, BarChart2Icon, MessageCircleIcon, FolderIcon, CalendarIcon } from "@/components/ui/icons";
 
 type NavItem = {
   label: string;
@@ -13,6 +13,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Home", href: "/", icon: HomeIcon },
   { label: "Modules", href: "/modules", icon: BookOpenIcon },
   { label: "Progress", href: "/progress", icon: BarChart2Icon },
+  { label: "Surveys", href: "/surveys", icon: CalendarIcon},
   { label: "Forum", href: "/forum", icon: MessageCircleIcon },
   { label: "Resources", href: "/resources", icon: FolderIcon },
 ];
