@@ -1,6 +1,7 @@
-import { type FormEvent, useEffect, useState } from "react";
+import { type FormEvent, useEffect, useMemo, useState } from "react";
 import Head from "next/head";
-import Navbar from "@/components/main/Navbar";
+import Image from "next/image";
+import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
 import { useAuth } from "@/context/AuthContext";
 import {
@@ -14,6 +15,30 @@ import {
 	updateForumPost,
 } from "@/lib/api";
 import type { ForumPost, ForumThread, ForumThreadDetail } from "@/types/forum";
+
+// ── Icons ──────────────────────────────────────────────────────────────────────
+// Small local icons so we don't need to touch the shared icon set for one page.
+
+function SearchIcon({ className = "h-4 w-4" }: { className?: string }) {
+	return (
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={className}>
+			<circle cx="11" cy="11" r="7" />
+			<path d="M21 21l-4.3-4.3" strokeLinecap="round" />
+		</svg>
+	);
+}
+
+function MessageIcon({ className = "h-4 w-4" }: { className?: string }) {
+	return (
+		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={className}>
+			<path
+				d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
+				strokeLinecap="round"
+				strokeLinejoin="round"
+			/>
+		</svg>
+	);
+}
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
 
@@ -38,20 +63,55 @@ function Avatar({ name }: { name: string }) {
 	);
 }
 
+// ── Post cooldown ──────────────────────────────────────────────────────────────
+// Client-side mirror of the backend's ForumPostRateThrottle (1 post/minute/user).
+// This is purely UX — it stops people from firing a request that's guaranteed to
+// get a 429 back, and shows a countdown instead. The real enforcement lives on
+// the server; this can't be relied on for security since it's just localStorage.
+// Shared across the new-thread composer and the reply form via localStorage,
+// since both actions share the same throttle scope on the backend.
+
+const POST_COOLDOWN_SECONDS = 30;
+const LAST_POST_KEY = "forum:lastPostAt";
+
+function useForumPostCooldown() {
+	const [remaining, setRemaining] = useState(0);
+
+	useEffect(() => {
+		function tick() {
+			const last = Number(localStorage.getItem(LAST_POST_KEY) ?? 0);
+			const elapsedSeconds = (Date.now() - last) / 1000;
+			setRemaining(Math.max(0, Math.ceil(POST_COOLDOWN_SECONDS - elapsedSeconds)));
+		}
+		tick();
+		const id = setInterval(tick, 1000);
+		return () => clearInterval(id);
+	}, []);
+
+	function markPosted() {
+		localStorage.setItem(LAST_POST_KEY, String(Date.now()));
+		setRemaining(POST_COOLDOWN_SECONDS);
+	}
+
+	return { remaining, markPosted };
+}
+
 // ── Composer ───────────────────────────────────────────────────────────────────
 
 function Composer({ onSubmit }: { onSubmit: (body: string) => Promise<void> }) {
 	const [body, setBody] = useState("");
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const { remaining, markPosted } = useForumPostCooldown();
 
 	async function handleSubmit(e: FormEvent) {
 		e.preventDefault();
-		if (!body.trim()) return;
+		if (!body.trim() || remaining > 0) return;
 		setError(null);
 		setSubmitting(true);
 		try {
 			await onSubmit(body);
+			markPosted();
 			setBody("");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to post");
@@ -61,23 +121,32 @@ function Composer({ onSubmit }: { onSubmit: (body: string) => Promise<void> }) {
 	}
 
 	return (
-		<div className="rounded-2xl border border-gray-200 bg-white p-5">
+		<div className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 			<form onSubmit={handleSubmit}>
+				<div className="flex items-center gap-3">
+					<Avatar name="U" />
+					<p className="text-sm font-bold text-ink">What&apos;s your mind?</p>
+				</div>
 				<textarea
 					value={body}
 					onChange={(e) => setBody(e.target.value)}
-					placeholder="What's on your mind?"
+					placeholder="Share your thoughts, ask a question, or offer support…"
 					rows={3}
-					className="w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand-blue"
+					className="mt-3 w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-brand-blue"
 				/>
 				{error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-				<div className="mt-3 flex justify-end">
+				<div className="mt-3 flex items-center justify-between">
+					{remaining > 0 ? (
+						<p className="text-xs text-[#9CA3AF]">You can post again in {remaining}s</p>
+					) : (
+						<span />
+					)}
 					<button
 						type="submit"
-						disabled={submitting || !body.trim()}
-						className="rounded-xl bg-brand-blue px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
+						disabled={submitting || !body.trim() || remaining > 0}
+						className="rounded-xl bg-[#0F172A] px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
 					>
-						{submitting ? "Posting…" : "Post"}
+						{submitting ? "Posting…" : remaining > 0 ? `Wait ${remaining}s` : "Post"}
 					</button>
 				</div>
 			</form>
@@ -112,11 +181,11 @@ function PostCard({ post, onEdit, onDelete }: PostCardProps) {
 	return (
 		<div className="flex gap-3">
 			<Avatar name={post.author_name} />
-			<div className="min-w-0 flex-1 rounded-2xl border border-gray-200 bg-white p-4">
+			<div className="min-w-0 flex-1 rounded-[10px] border border-gray-200 bg-white p-4">
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex items-baseline gap-2">
 						<span className="text-sm font-semibold text-ink">{post.author_name}</span>
-						<span className="text-xs text-muted">{formatRelativeTime(post.created_at)}</span>
+						<span className="text-xs text-[#9CA3AF]">{formatRelativeTime(post.created_at)}</span>
 					</div>
 					{post.can_edit && !editing && (
 						<div className="flex shrink-0 items-center gap-3">
@@ -144,28 +213,28 @@ function PostCard({ post, onEdit, onDelete }: PostCardProps) {
 							value={draft}
 							onChange={(e) => setDraft(e.target.value)}
 							rows={3}
-							className="w-full resize-none rounded-xl border border-gray-300 p-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+							className="w-full resize-none rounded-xl border border-gray-200 p-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
 						/>
 						<div className="flex gap-2">
 							<button
 								type="button"
 								onClick={handleSave}
 								disabled={saving}
-								className="rounded-lg bg-brand-blue px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+								className="rounded-lg bg-[#0F172A] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
 							>
 								{saving ? "Saving…" : "Save"}
 							</button>
 							<button
 								type="button"
 								onClick={() => setEditing(false)}
-								className="rounded-lg border border-gray-300 px-4 py-1.5 text-xs font-semibold text-ink"
+								className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs font-semibold text-ink"
 							>
 								Cancel
 							</button>
 						</div>
 					</div>
 				) : (
-					<p className="mt-2 whitespace-pre-wrap text-sm text-ink-soft">{post.body}</p>
+					<p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">{post.body}</p>
 				)}
 			</div>
 		</div>
@@ -198,13 +267,15 @@ function ThreadDetailView({
 	const [editingOpening, setEditingOpening] = useState(false);
 	const [draftOpening, setDraftOpening] = useState(thread.opening_post?.body ?? thread.body);
 	const [savingOpening, setSavingOpening] = useState(false);
+	const { remaining, markPosted } = useForumPostCooldown();
 
 	async function handleReply(e: FormEvent) {
 		e.preventDefault();
-		if (!replyBody.trim()) return;
+		if (!replyBody.trim() || remaining > 0) return;
 		setSubmitting(true);
 		try {
 			await onReply(replyBody);
+			markPosted();
 			setReplyBody("");
 		} finally {
 			setSubmitting(false);
@@ -223,7 +294,7 @@ function ThreadDetailView({
 	}
 
 	return (
-		<div className="mx-auto max-w-2xl space-y-4">
+		<div className="space-y-4">
 			<button
 				type="button"
 				onClick={onBack}
@@ -233,7 +304,7 @@ function ThreadDetailView({
 			</button>
 
 			{/* Opening post */}
-			<div className={`rounded-2xl border bg-white p-6 ${thread.is_pinned ? "border-amber-200" : "border-gray-200"}`}>
+			<div className={`rounded-[10px] border bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${thread.is_pinned ? "border-amber-200" : "border-gray-200"}`}>
 				{thread.is_pinned && (
 					<p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-600">
 						Pinned
@@ -246,7 +317,7 @@ function ThreadDetailView({
 						<div className="flex items-start justify-between gap-2">
 							<div className="flex items-baseline gap-2">
 								<span className="text-sm font-semibold text-ink">{thread.author_name}</span>
-								<span className="text-xs text-muted">{formatRelativeTime(thread.created_at)}</span>
+								<span className="text-xs text-[#9CA3AF]">{formatRelativeTime(thread.created_at)}</span>
 							</div>
 							<div className="flex shrink-0 items-center gap-3">
 								{thread.can_pin && !editingOpening && (
@@ -285,28 +356,28 @@ function ThreadDetailView({
 									value={draftOpening}
 									onChange={(e) => setDraftOpening(e.target.value)}
 									rows={4}
-									className="w-full resize-none rounded-xl border border-gray-300 p-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+									className="w-full resize-none rounded-xl border border-gray-200 p-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
 								/>
 								<div className="flex gap-2">
 									<button
 										type="button"
 										onClick={handleSaveOpeningPost}
 										disabled={savingOpening}
-										className="rounded-lg bg-brand-blue px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+										className="rounded-lg bg-[#0F172A] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
 									>
 										{savingOpening ? "Saving…" : "Save"}
 									</button>
 									<button
 										type="button"
 										onClick={() => setEditingOpening(false)}
-										className="rounded-lg border border-gray-300 px-4 py-1.5 text-xs font-semibold text-ink"
+										className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs font-semibold text-ink"
 									>
 										Cancel
 									</button>
 								</div>
 							</div>
 						) : (
-							<p className="mt-2 whitespace-pre-wrap text-sm text-ink-soft">{thread.body}</p>
+							<p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">{thread.body}</p>
 						)}
 					</div>
 				</div>
@@ -315,7 +386,7 @@ function ThreadDetailView({
 			{/* Replies */}
 			{thread.replies.length > 0 && (
 				<div className="space-y-3">
-					<p className="text-xs font-semibold uppercase tracking-wide text-muted">
+					<p className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">
 						{thread.replies.length} {thread.replies.length === 1 ? "Reply" : "Replies"}
 					</p>
 					{thread.replies.map((post) => (
@@ -330,7 +401,7 @@ function ThreadDetailView({
 			)}
 
 			{/* Reply composer */}
-			<form onSubmit={handleReply} className="rounded-2xl border border-gray-200 bg-white p-5">
+			<form onSubmit={handleReply} className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 				<p className="text-sm font-bold text-ink">Reply</p>
 				<textarea
 					value={replyBody}
@@ -338,15 +409,20 @@ function ThreadDetailView({
 					placeholder="Write your reply…"
 					rows={3}
 					required
-					className="mt-3 w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-brand-blue"
+					className="mt-3 w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-brand-blue"
 				/>
-				<div className="mt-3 flex justify-end">
+				<div className="mt-3 flex items-center justify-between">
+					{remaining > 0 ? (
+						<p className="text-xs text-[#9CA3AF]">You can post again in {remaining}s</p>
+					) : (
+						<span />
+					)}
 					<button
 						type="submit"
-						disabled={submitting || !replyBody.trim()}
-						className="rounded-xl bg-brand-blue px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
+						disabled={submitting || !replyBody.trim() || remaining > 0}
+						className="rounded-xl bg-[#0F172A] px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
 					>
-						{submitting ? "Posting…" : "Reply"}
+						{submitting ? "Posting…" : remaining > 0 ? `Wait ${remaining}s` : "Reply"}
 					</button>
 				</div>
 			</form>
@@ -364,48 +440,71 @@ type FeedViewProps = {
 
 function FeedView({ threads, onSelect, onCreateThread }: FeedViewProps) {
 	return (
-		<div className="mx-auto max-w-2xl space-y-4">
+		<>
 			<Composer onSubmit={onCreateThread} />
 
-			{threads.length === 0 ? (
-				<p className="py-12 text-center text-sm text-muted">
-					No threads yet. Be the first to start a conversation!
-				</p>
-			) : (
-				threads.map((t) => (
-					<button
-						key={t.id}
-						type="button"
-						onClick={() => onSelect(t.id)}
-						className={`w-full rounded-2xl border bg-white p-5 text-left transition-shadow hover:shadow-sm ${
-							t.is_pinned
-								? "border-amber-200"
-								: "border-gray-200 hover:border-brand-blue/40"
-						}`}
-					>
-						{t.is_pinned && (
-							<p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-600">
-								Pinned
-							</p>
-						)}
-						<div className="flex items-start gap-3">
-							<Avatar name={t.author_name} />
-							<div className="min-w-0 flex-1">
-								<div className="flex items-baseline gap-2">
-									<span className="text-sm font-semibold text-ink">{t.author_name}</span>
-									<span className="text-xs text-muted">{formatRelativeTime(t.updated_at)}</span>
-								</div>
-								<p className="mt-1.5 line-clamp-3 text-sm text-ink-soft">{t.body}</p>
-								<div className="mt-3">
-									<span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-semibold text-muted">
-										{t.reply_count} {t.reply_count === 1 ? "reply" : "replies"}
-									</span>
+			<div className="mt-4 rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+				{threads.length === 0 ? (
+					<p className="py-12 text-center text-sm text-[#9CA3AF]">
+						No threads yet. Be the first to start a conversation!
+					</p>
+				) : (
+					threads.map((t, i) => (
+						<button
+							key={t.id}
+							type="button"
+							onClick={() => onSelect(t.id)}
+							className={[
+								"w-full p-5 text-left transition-colors hover:bg-surface-muted",
+								i !== 0 ? "border-t border-gray-200" : "",
+							].join(" ")}
+						>
+							{t.is_pinned && (
+								<p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-600">
+									Pinned
+								</p>
+							)}
+							<div className="flex items-start gap-3">
+								<Avatar name={t.author_name} />
+								<div className="min-w-0 flex-1">
+									<div className="flex items-baseline gap-2">
+										<span className="text-sm font-semibold text-ink">{t.author_name}</span>
+										<span className="text-xs text-[#9CA3AF]">{formatRelativeTime(t.updated_at)}</span>
+									</div>
+									<p className="mt-1 line-clamp-2 text-sm text-[#4B5563]">{t.body}</p>
+									<div className="mt-3 flex items-center gap-1 text-[#9CA3AF]">
+										<MessageIcon className="h-3.5 w-3.5" />
+										<span className="text-xs font-medium">
+											{t.reply_count} {t.reply_count === 1 ? "reply" : "replies"}
+										</span>
+									</div>
 								</div>
 							</div>
-						</div>
-					</button>
-				))
-			)}
+						</button>
+					))
+				)}
+			</div>
+		</>
+	);
+}
+
+// ── Right column ─────────────────────────────────────────────────────────────
+
+function ForumSidebar({ query, onQueryChange }: { query: string; onQueryChange: (v: string) => void }) {
+	return (
+		<div className="hidden w-[280px] shrink-0 space-y-4 lg:block">
+			<div className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+				<p className="text-sm font-bold text-ink">Search</p>
+				<div className="mt-3 flex items-center gap-2 rounded-xl border border-gray-200 bg-surface-muted px-3 py-2">
+					<SearchIcon className="h-4 w-4 shrink-0 text-[#9CA3AF]" />
+					<input
+						value={query}
+						onChange={(e) => onQueryChange(e.target.value)}
+						placeholder="Search for keyword…"
+						className="w-full bg-transparent text-sm text-ink placeholder:text-[#9CA3AF] focus:outline-none"
+					/>
+				</div>
+			</div>
 		</div>
 	);
 }
@@ -418,6 +517,7 @@ export default function ForumPage() {
 	const [selectedThread, setSelectedThread] = useState<ForumThreadDetail | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
+	const [query, setQuery] = useState("");
 
 	useEffect(() => {
 		if (authLoading) return;
@@ -443,6 +543,14 @@ export default function ForumPage() {
 
 		return () => { cancelled = true; };
 	}, [user, authLoading]);
+
+	const filteredThreads = useMemo(() => {
+		const q = query.trim().toLowerCase();
+		if (!q) return threads;
+		return threads.filter(
+			(t) => t.body.toLowerCase().includes(q) || t.author_name.toLowerCase().includes(q)
+		);
+	}, [threads, query]);
 
 	async function loadThread(id: number) {
 		const token = localStorage.getItem("token") ?? "";
@@ -503,31 +611,35 @@ export default function ForumPage() {
 				<title>Forum — Wellbeing Course</title>
 			</Head>
 
-			<div className="min-h-screen bg-surface-muted">
-				<div className="relative bg-brand-blue-dark px-6 pb-10 pt-0 sm:px-10 lg:px-30">
-					<Navbar />
-					<div className="pt-20 pb-4">
-						<h1 className="text-3xl font-extrabold text-white">Community Forum</h1>
-						<p className="mt-2 text-sm text-white/70">
-							Share your experience and support fellow participants
-						</p>
-					</div>
-				</div>
-
-				<main className="px-6 py-8 sm:px-10 lg:px-30">
+			<AppShell
+				background={
+					<>
+						<Image
+							src="/pexels-michael-metschl-718198730-18284929.jpg"
+							alt=""
+							fill
+							priority
+							sizes="100vw"
+							className="object-cover"
+						/>
+						<div className="absolute inset-0 bg-gradient-to-b from-indigo-950/40 via-purple-900/35 to-indigo-950/60" />
+					</>
+				}
+			>
+				<main className="px-6 py-8 sm:px-10 lg:px-10">
 					{authLoading || loading ? (
 						<div className="flex justify-center py-20">
-							<span className="text-sm text-muted">Loading…</span>
+							<span className="text-sm text-[#9CA3AF]">Loading…</span>
 						</div>
 					) : !user ? (
-						<div className="mx-auto max-w-md rounded-2xl border border-gray-200 bg-white p-8 text-center">
+						<div className="mx-auto max-w-md rounded-[10px] border border-gray-200 bg-white p-8 text-center shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 							<p className="font-semibold text-ink">Please log in to access the forum.</p>
-							<p className="mt-2 text-sm text-muted">
-								Use the Log In button in the navigation bar above.
+							<p className="mt-2 text-sm text-[#9CA3AF]">
+								Log in from the home page to continue.
 							</p>
 						</div>
 					) : error ? (
-						<div className="mx-auto max-w-md rounded-2xl border border-red-200 bg-red-50 p-8 text-center">
+						<div className="mx-auto max-w-md rounded-[10px] border border-red-200 bg-red-50 p-8 text-center">
 							<p className="font-semibold text-red-700">Something went wrong</p>
 							<p className="mt-2 text-sm text-red-600">{error}</p>
 							<button
@@ -538,27 +650,44 @@ export default function ForumPage() {
 								Dismiss
 							</button>
 						</div>
-					) : selectedThread ? (
-						<ThreadDetailView
-							thread={selectedThread}
-							onBack={() => setSelectedThread(null)}
-							onReply={handleReply}
-							onEditPost={handleEditPost}
-							onDeletePost={handleDeletePost}
-							onDeleteThread={handleDeleteThread}
-							onPinThread={handlePinThread}
-						/>
 					) : (
-						<FeedView
-							threads={threads}
-							onSelect={loadThread}
-							onCreateThread={handleCreateThread}
-						/>
+						<div className="flex items-start gap-6">
+							<div className="min-w-0 flex-1">
+								{!selectedThread && (
+									<div className="mb-4 rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+										<h1 className="text-2xl font-extrabold text-ink">Forum</h1>
+										<p className="mt-1 text-sm text-[#9CA3AF]">
+											Connect, share, and support each other on your wellness journeys.
+										</p>
+									</div>
+								)}
+
+								{selectedThread ? (
+									<ThreadDetailView
+										thread={selectedThread}
+										onBack={() => setSelectedThread(null)}
+										onReply={handleReply}
+										onEditPost={handleEditPost}
+										onDeletePost={handleDeletePost}
+										onDeleteThread={handleDeleteThread}
+										onPinThread={handlePinThread}
+									/>
+								) : (
+									<FeedView
+										threads={filteredThreads}
+										onSelect={loadThread}
+										onCreateThread={handleCreateThread}
+									/>
+								)}
+							</div>
+
+							{!selectedThread && <ForumSidebar query={query} onQueryChange={setQuery} />}
+						</div>
 					)}
 				</main>
 
 				<Footer />
-			</div>
+			</AppShell>
 		</>
 	);
 }
