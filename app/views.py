@@ -617,8 +617,9 @@ def vapid_public_key_view(request):
     This endpoint is intentionally unauthenticated — the public key is public.
     """
     return Response({"vapid_public_key": django_settings.VAPID_PUBLIC_KEY})
-  
-@api_view(["GET"]) 
+
+
+@api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def current_user(request):
     return Response({"user": {
