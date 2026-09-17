@@ -68,6 +68,7 @@ class User(AbstractUser):
 
     email = models.EmailField(unique=True)
     full_name = models.CharField(max_length=200, blank=True)
+    display_name = models.CharField(max_length=100, blank=True)
     auth_provider = models.CharField(max_length=50, default="local")
     provider_uid = models.CharField(max_length=255, blank=True, null=True)  # noqa: DJ01 (so flake8 linting ignores null=True)
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.STUDENT)
@@ -223,6 +224,35 @@ class ContentCompletion(models.Model):
 
     def __str__(self):
         return f"{self.user} completed {self.content_item}"
+
+
+class ContentView(models.Model):
+    """Auto-recorded the moment a user opens a module; distinct from ContentCompletion, which is manual."""
+
+    # CASCADE: view records belong to the user.
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="module_views",
+    )
+    # CASCADE: a view record is meaningless when its module is deleted.
+    module = models.ForeignKey(
+        Module,
+        on_delete=models.CASCADE,
+        related_name="views",
+    )
+    viewed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "module"],
+                name="unique_view_user_module",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} viewed {self.module}"
 
 
 # Notifications
@@ -415,17 +445,16 @@ class ForumThread(models.Model):
         null=True,
     )
     title = models.CharField(max_length=200)
+    is_pinned = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
+            # Both null (general thread) is valid; only rejected when BOTH are set.
             models.CheckConstraint(
-                condition=(
-                    Q(module__isnull=False, content_item__isnull=True)
-                    | Q(module__isnull=True, content_item__isnull=False)
-                ),
-                name="forum_thread_exactly_one_context",
+                condition=~Q(module__isnull=False, content_item__isnull=False),
+                name="forum_thread_at_most_one_context",
             ),
         ]
 

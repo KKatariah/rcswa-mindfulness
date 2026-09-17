@@ -9,6 +9,7 @@ from .models import (
     ContentItem,
     Resource,
     ContentCompletion,
+    ContentView,
     NotificationPreference,
     NotificationLog,
     PushSubscription,
@@ -115,6 +116,7 @@ admin.site.register(Cohort)
 admin.site.register(Enrollment)
 admin.site.register(Resource)
 admin.site.register(ContentCompletion)
+admin.site.register(ContentView)
 admin.site.register(NotificationLog)
 admin.site.register(Survey)
 admin.site.register(SurveyResponse)

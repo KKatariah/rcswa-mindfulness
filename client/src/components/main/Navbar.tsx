@@ -15,6 +15,7 @@ export default function Navbar() {
 	const { user, logout } = useAuth();
 	const [isOpen, setIsOpen] = useState(false);
 	const [loginOpen, setLoginOpen] = useState(false);
+	const visibleLinks = [...NAV_LINKS, ...(user ? [{ label: "Forum", href: "/forum" }] : [])];
 	const [signUpOpen, setSignUpOpen] = useState(false);
 
 	function openLogin() {
@@ -42,7 +43,7 @@ export default function Navbar() {
 					</Link>
 
 					<ul className="hidden items-center gap-7 text-[15px] font-semibold text-white lg:flex">
-						{NAV_LINKS.map((link) => (
+						{visibleLinks.map((link) => (
 							<li key={link.href}>
 								<Link href={link.href}>{link.label}</Link>
 							</li>
@@ -100,7 +101,7 @@ export default function Navbar() {
 
 				{isOpen && (
 					<div className="mt-4 flex flex-col gap-1 rounded-2xl bg-white p-4 shadow-[0px_10px_20px_rgba(0,0,0,0.15)] lg:hidden">
-						{NAV_LINKS.map((link) => (
+						{visibleLinks.map((link) => (
 							<Link
 								key={link.href}
 								href={link.href}

@@ -16,6 +16,7 @@ export type VideoBlock = {
 	type: "video";
 	title?: string;
 	embedUrl?: string;
+	completed?: boolean;
 };
 
 export type AudioBlock = {
@@ -24,6 +25,7 @@ export type AudioBlock = {
 	title?: string;
 	embedUrl?: string;
 	attribution?: AudioAttribution;
+	completed?: boolean;
 };
 
 export type ContentBlock = TextBlock | VideoBlock | AudioBlock;
