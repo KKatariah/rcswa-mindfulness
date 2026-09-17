@@ -15,7 +15,6 @@ import os
 
 from pathlib import Path
 from dotenv import load_dotenv
-import os
 
 load_dotenv()
 GOOGLE_CLIENT_ID = os.environ.get("GOOGLE_CLIENT_ID")
@@ -174,5 +173,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
-
+    "DEFAULT_THROTTLE_RATES": {
+        "forum_post": "1/min",
+    },
 }
