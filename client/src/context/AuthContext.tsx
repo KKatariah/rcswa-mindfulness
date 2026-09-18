@@ -60,9 +60,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}
 
 	async function logout() {
-		await logoutUser();
-		setUser(null);
-		localStorage.removeItem("user");
+		try {
+			await logoutUser();
+		} finally {
+			setUser(null);
+			localStorage.removeItem("user");
+			localStorage.removeItem("token");
+		}
 	}
 
 	async function loginWithGoogle(credential: string) {

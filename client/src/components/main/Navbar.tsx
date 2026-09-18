@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useRouter } from "next/router";
 import Link from "next/link";
 import { MenuIcon, XIcon } from "@/components/ui/icons";
 import LoginModal from "@/components/main/LoginModal";
@@ -12,6 +13,7 @@ const NAV_LINKS = [
 ];
 
 export default function Navbar() {
+	const router = useRouter();
 	const { user, logout } = useAuth();
 	const [isOpen, setIsOpen] = useState(false);
 	const [loginOpen, setLoginOpen] = useState(false);
@@ -31,6 +33,7 @@ export default function Navbar() {
 	async function handleLogout() {
 		setIsOpen(false);
 		await logout();
+		await router.push("/");
 	}
 
 	return (

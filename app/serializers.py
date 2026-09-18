@@ -117,15 +117,23 @@ class ForumPostCreateSerializer(serializers.ModelSerializer):
 
 class ForumPostSerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
+    author_email = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = ForumPost
-        fields = ["id", "thread", "parent_post", "author_name", "body", "created_at", "updated_at", "can_edit"]
+        fields = [
+            "id", "thread", "parent_post",
+            "author_name", "author_email",
+            "body", "created_at", "updated_at", "can_edit",
+        ]
         read_only_fields = ["thread", "parent_post", "created_at", "updated_at"]
 
     def get_author_name(self, obj):
         return _forum_author_name(obj.author, self.context.get("request"))
+
+    def get_author_email(self, obj):
+        return getattr(obj.author, "email", None)
 
     def get_can_edit(self, obj):
         return _can_edit(obj, self.context.get("request"))
@@ -145,6 +153,7 @@ def _is_admin(request):
 
 class ForumThreadSerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
+    author_email = serializers.SerializerMethodField()
     body = serializers.SerializerMethodField()
     reply_count = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
@@ -154,13 +163,16 @@ class ForumThreadSerializer(serializers.ModelSerializer):
         model = ForumThread
         fields = [
             "id", "title", "module", "content_item",
-            "author_name", "created_at", "updated_at",
+            "author_name", "author_email", "created_at", "updated_at",
             "body", "reply_count", "can_edit", "is_pinned", "can_pin",
         ]
         read_only_fields = ["module", "content_item", "created_at", "updated_at"]
 
     def get_author_name(self, obj):
         return _forum_author_name(obj.created_by, self.context.get("request"))
+
+    def get_author_email(self, obj):
+        return getattr(obj.created_by, "email", None)
 
     def get_body(self, obj):
         posts = sorted(obj.posts.all(), key=lambda p: (p.created_at, p.pk))

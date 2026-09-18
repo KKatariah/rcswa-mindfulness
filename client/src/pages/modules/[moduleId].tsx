@@ -45,6 +45,12 @@ export default function ModulePage() {
 	const { moduleId } = router.query;
 	const { user, isLoading: authLoading } = useAuth();
 
+	useEffect(() => {
+		if (!authLoading && !user) {
+			router.replace("/");
+		}
+	}, [authLoading, user, router]);
+
 	const [module, setModule] = useState<ApiModuleDetail | null>(null);
 	const [completions, setCompletions] = useState<Map<number, number>>(new Map());
 	const [moduleViewed, setModuleViewed] = useState(false);
