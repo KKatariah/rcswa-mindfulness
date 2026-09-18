@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconProps, HomeIcon, BookOpenIcon, BarChart2Icon, MessageCircleIcon, FolderIcon, CalendarIcon } from "@/components/ui/icons";
+import { IconProps, HomeIcon, BookOpenIcon, MessageCircleIcon, FolderIcon, CalendarIcon } from "@/components/ui/icons";
 
 type NavItem = {
   label: string;
@@ -12,7 +12,6 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { label: "Home", href: "/", icon: HomeIcon },
   { label: "Modules", href: "/modules", icon: BookOpenIcon },
-  { label: "Progress", href: "/progress", icon: BarChart2Icon },
   { label: "Surveys", href: "/surveys", icon: CalendarIcon},
   { label: "Forum", href: "/forum", icon: MessageCircleIcon },
   { label: "Resources", href: "/resources", icon: FolderIcon },
@@ -22,7 +21,7 @@ export default function Sidebar({ responsive = false }: { responsive?: boolean }
   const pathname = usePathname();
 
   return (
-    <aside className={`flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full md:sticky md:top-6 md:h-[calc(100dvh-3rem)] md:overflow-y-auto" : "h-screen w-[280px] overflow-y-auto"}`}>
+    <aside className={`flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full md:sticky md:top-20 md:min-h-[calc(100dvh-8rem)] lg:top-24 lg:min-h-[calc(100dvh-9rem)]" : "h-screen w-[280px] overflow-y-auto"}`}>
       <Link href="/" className="flex items-center gap-3">
         <span className="size-9 shrink-0 rounded-[10px] bg-brand-blue" />
         <span className="text-[18px] font-bold text-[#111827]">logo</span>

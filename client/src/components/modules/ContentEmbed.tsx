@@ -1,4 +1,5 @@
-import { PlayIcon } from "@/components/ui/icons";
+import { useId } from "react";
+import { CheckIcon, PlayIcon } from "@/components/ui/icons";
 import type { AudioAttribution } from "@/types/module";
 
 type ContentEmbedProps = {
@@ -6,6 +7,8 @@ type ContentEmbedProps = {
 	title?: string;
 	embedUrl?: string;
 	attribution?: AudioAttribution;
+	completed?: boolean;
+	onToggleComplete?: () => void;
 };
 
 export default function ContentEmbed({
@@ -13,13 +16,39 @@ export default function ContentEmbed({
 	title,
 	embedUrl,
 	attribution,
+	completed = false,
+	onToggleComplete,
 }: ContentEmbedProps) {
+	const checkboxId = useId();
+
 	return (
 		<div className="my-10 w-full max-w-[540px]">
-			{title && (
-				<p className="mb-2 text-xs font-bold uppercase tracking-wide text-brand-blue">
-					{type === "video" ? "Watch" : "Listen"} · {title}
-				</p>
+			{(title || onToggleComplete) && (
+				<div className="mb-2 flex items-center gap-2">
+					{onToggleComplete && (
+						<>
+							<input
+								id={checkboxId}
+								type="checkbox"
+								checked={completed}
+								onChange={onToggleComplete}
+								className="peer sr-only"
+							/>
+							<label
+								htmlFor={checkboxId}
+								aria-label={completed ? "Mark as not complete" : "Mark as complete"}
+								className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-gray-300 text-transparent peer-checked:border-brand-blue peer-checked:bg-brand-blue peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-brand-blue"
+							>
+								<CheckIcon className="size-3" strokeWidth={3} />
+							</label>
+						</>
+					)}
+					{title && (
+						<p className="text-xs font-bold uppercase tracking-wide text-brand-blue">
+							{type === "video" ? "Watch" : "Listen"} · {title}
+						</p>
+					)}
+				</div>
 			)}
 
 			{!embedUrl ? (

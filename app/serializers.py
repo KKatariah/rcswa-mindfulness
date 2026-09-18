@@ -4,9 +4,12 @@ from rest_framework.exceptions import PermissionDenied
 from .models import (
     ContentCompletion,
     ContentItem,
+    Module,
+    NotificationPreference,
+    PushSubscription,
+    ContentView,
     ForumPost,
     ForumThread,
-    Module,
     Resource,
     Survey,
     SurveyResponse,
@@ -66,6 +69,16 @@ class ContentCompletionSerializer(serializers.ModelSerializer):
         model = ContentCompletion
         fields = ["id", "user", "content_item", "completed_at"]
         read_only_fields = ["completed_at"]
+
+
+class ContentViewSerializer(serializers.ModelSerializer):
+    # read_only=True: user is injected by the viewset, never accepted from the payload.
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = ContentView
+        fields = ["id", "user", "module", "viewed_at"]
+        read_only_fields = ["viewed_at"]
 
 
 # ── Forum ──────────────────────────────────────────────────────────────────────
@@ -351,3 +364,31 @@ class SurveyResponseAdminSerializer(serializers.ModelSerializer):
 
     def get_survey_title(self, obj):
         return obj.survey.title if obj.survey else ""
+
+
+# ── Push notifications ─────────────────────────────────────────────────────────
+
+class PushSubscriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PushSubscription
+        fields = ["id", "endpoint", "p256dh", "auth", "created_at", "last_seen"]
+        read_only_fields = ["id", "created_at", "last_seen"]
+        extra_kwargs = {
+            # Uniqueness is enforced by the view's update_or_create upsert, not the
+            # serializer — removing the auto-added UniqueValidator lets two users
+            # register the same endpoint and the view handles the reassignment.
+            "endpoint": {"validators": []},
+        }
+
+
+class NotificationPreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationPreference
+        fields = [
+            "id",
+            "email_enabled",
+            "inapp_enabled",
+            "reminder_time",
+            "push_denied",
+        ]
+        read_only_fields = ["id"]

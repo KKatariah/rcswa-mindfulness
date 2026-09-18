@@ -3,7 +3,7 @@ const API_BASE_URL = "http://127.0.0.1:8000/api";
 type LoginPayload = { email: string; password: string };
 type RegisterPayload = { email: string; full_name: string; password: string };
 
-type AuthUser = { id: number; email: string; full_name: string };
+type AuthUser = { id: number; email: string; full_name: string; cohort_start_date?: string | null };
 type AuthResponse = { message: string; token: string; user: AuthUser };
 
 async function handleResponse<T>(res: Response): Promise<T> {
@@ -48,13 +48,77 @@ export async function logoutUser(): Promise<void> {
 
 // ── Modules ────────────────────────────────────────────────────────────────────
 
-export type ApiModule = { id: number; week_number: number; title: string };
+export type ApiContentItem = {
+	id: number;
+	title: string;
+	type: "video" | "audio";
+	provider: string;
+	embed_url: string;
+	display_order: number;
+};
+
+export type ApiModule = { id: number; week_number: number; title: string; content_items: ApiContentItem[] };
+
+export type ApiModuleDetail = ApiModule & { description: string };
 
 export async function listModules(token: string): Promise<ApiModule[]> {
 	const res = await fetch(`${API_BASE_URL}/modules/`, {
 		headers: { Authorization: `Token ${token}` },
 	});
 	return handleResponse<ApiModule[]>(res);
+}
+
+export async function getModule(id: number | string, token: string): Promise<ApiModuleDetail> {
+	const res = await fetch(`${API_BASE_URL}/modules/${id}/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<ApiModuleDetail>(res);
+}
+
+export type ApiContentCompletion = { id: number; user: number; content_item: number; completed_at: string };
+
+export async function listProgress(token: string): Promise<ApiContentCompletion[]> {
+	const res = await fetch(`${API_BASE_URL}/progress/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<ApiContentCompletion[]>(res);
+}
+
+export async function markContentComplete(contentItemId: number, token: string): Promise<ApiContentCompletion> {
+	const res = await fetch(`${API_BASE_URL}/progress/`, {
+		method: "POST",
+		headers: { Authorization: `Token ${token}`, "Content-Type": "application/json" },
+		body: JSON.stringify({ content_item: contentItemId }),
+	});
+	return handleResponse<ApiContentCompletion>(res);
+}
+
+export async function deleteContentCompletion(completionId: number, token: string): Promise<void> {
+	const res = await fetch(`${API_BASE_URL}/progress/${completionId}/`, {
+		method: "DELETE",
+		headers: { Authorization: `Token ${token}` },
+	});
+	if (!res.ok) {
+		throw new Error("Failed to unmark completion");
+	}
+}
+
+export type ApiModuleView = { id: number; user: number; module: number; viewed_at: string };
+
+export async function listModuleViews(token: string): Promise<ApiModuleView[]> {
+	const res = await fetch(`${API_BASE_URL}/content-views/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<ApiModuleView[]>(res);
+}
+
+export async function markModuleViewed(moduleId: number, token: string): Promise<ApiModuleView> {
+	const res = await fetch(`${API_BASE_URL}/content-views/`, {
+		method: "POST",
+		headers: { Authorization: `Token ${token}`, "Content-Type": "application/json" },
+		body: JSON.stringify({ module: moduleId }),
+	});
+	return handleResponse<ApiModuleView>(res);
 }
 
 // ── Forum ──────────────────────────────────────────────────────────────────────
