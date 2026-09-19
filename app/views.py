@@ -694,3 +694,4 @@ def change_password_view(request):
         {"message": "Password changed successfully", "token": new_token.key},
         status=status.HTTP_200_OK,
     )
+    
