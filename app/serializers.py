@@ -81,13 +81,14 @@ class ContentViewSerializer(serializers.ModelSerializer):
         read_only_fields = ["viewed_at"]
 
 
-# ── Forum ──────────────────────────────────────────────────────────────────────
+# ── Forum ──────────────────────────────────────────────────────────────────────────────
 
 def _forum_author_name(author, request):
     """
     Resolve the public name for a forum author.
     - Null author (deleted account) → "Deleted user".
-    - Admin/staff viewer → real full_name, regardless of display_name.
+    - Admin/staff viewer → "display_name (full_name)" if a display_name is set,
+      otherwise just full_name.
     - Everyone else → display_name if set, else full_name.
     """
     if author is None:
@@ -95,6 +96,8 @@ def _forum_author_name(author, request):
     if request and request.user.is_authenticated:
         u = request.user
         if getattr(u, "role", None) == "admin" or u.is_staff:
+            if author.display_name:
+                return f"{author.display_name} ({author.full_name})"
             return author.full_name
     return author.display_name or author.full_name
 
@@ -119,15 +122,23 @@ class ForumPostCreateSerializer(serializers.ModelSerializer):
 
 class ForumPostSerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
+    author_email = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = ForumPost
-        fields = ["id", "thread", "parent_post", "author_name", "body", "created_at", "updated_at", "can_edit"]
+        fields = [
+            "id", "thread", "parent_post",
+            "author_name", "author_email",
+            "body", "created_at", "updated_at", "can_edit",
+        ]
         read_only_fields = ["thread", "parent_post", "created_at", "updated_at"]
 
     def get_author_name(self, obj):
         return _forum_author_name(obj.author, self.context.get("request"))
+
+    def get_author_email(self, obj):
+        return getattr(obj.author, "email", None)
 
     def get_can_edit(self, obj):
         return _can_edit(obj, self.context.get("request"))
@@ -147,6 +158,7 @@ def _is_admin(request):
 
 class ForumThreadSerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
+    author_email = serializers.SerializerMethodField()
     body = serializers.SerializerMethodField()
     reply_count = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
@@ -156,13 +168,16 @@ class ForumThreadSerializer(serializers.ModelSerializer):
         model = ForumThread
         fields = [
             "id", "title", "module", "content_item",
-            "author_name", "created_at", "updated_at",
+            "author_name", "author_email", "created_at", "updated_at",
             "body", "reply_count", "can_edit", "is_pinned", "can_pin",
         ]
         read_only_fields = ["module", "content_item", "created_at", "updated_at"]
 
     def get_author_name(self, obj):
         return _forum_author_name(obj.created_by, self.context.get("request"))
+
+    def get_author_email(self, obj):
+        return getattr(obj.created_by, "email", None)
 
     def get_body(self, obj):
         posts = sorted(obj.posts.all(), key=lambda p: (p.created_at, p.pk))
@@ -366,6 +381,17 @@ class SurveyResponseAdminSerializer(serializers.ModelSerializer):
         return obj.survey.title if obj.survey else ""
 
 
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["display_name"]
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+
 # ── Push notifications ─────────────────────────────────────────────────────────
 
 class PushSubscriptionSerializer(serializers.ModelSerializer):
@@ -374,9 +400,6 @@ class PushSubscriptionSerializer(serializers.ModelSerializer):
         fields = ["id", "endpoint", "p256dh", "auth", "created_at", "last_seen"]
         read_only_fields = ["id", "created_at", "last_seen"]
         extra_kwargs = {
-            # Uniqueness is enforced by the view's update_or_create upsert, not the
-            # serializer — removing the auto-added UniqueValidator lets two users
-            # register the same endpoint and the view handles the reassignment.
             "endpoint": {"validators": []},
         }
 

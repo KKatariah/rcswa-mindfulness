@@ -3,7 +3,7 @@ const API_BASE_URL = "http://127.0.0.1:8000/api";
 type LoginPayload = { email: string; password: string };
 type RegisterPayload = { email: string; full_name: string; password: string };
 
-type AuthUser = { id: number; email: string; full_name: string; cohort_start_date?: string | null };
+type AuthUser = { id: number; email: string; full_name: string; display_name?: string; auth_provider?: string; cohort_start_date?: string | null };
 type AuthResponse = { message: string; token: string; user: AuthUser };
 
 async function handleResponse<T>(res: Response): Promise<T> {
@@ -242,4 +242,31 @@ export async function getCurrentUser(): Promise<{ user: AuthUser }> {
 		headers: { Authorization: `Token ${token}` },
 	});
 	return handleResponse<{ user: AuthUser }>(res);
+}
+
+export async function updateProfile(payload: { display_name: string }, token: string) {
+	const res = await fetch(`${API_BASE_URL}/profile/`, {
+		method: "PATCH",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Token ${token}`,
+		},
+		body: JSON.stringify(payload),
+	});
+	return handleResponse(res);
+}
+
+export async function changePassword(
+	payload: { current_password: string; new_password: string },
+	token: string
+) {
+	const res = await fetch(`${API_BASE_URL}/change-password/`, {
+		method: "POST",
+		headers: {
+			"Content-Type": "application/json",
+			Authorization: `Token ${token}`,
+		},
+		body: JSON.stringify(payload),
+	});
+	return handleResponse<{ message: string; token: string }>(res);
 }

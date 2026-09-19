@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useRouter } from "next/router";
 import Head from "next/head";
 import Link from "next/link";
 import Navbar from "@/components/main/Navbar";
@@ -77,8 +78,15 @@ function encouragement(percent: number) {
 }
 
 export default function ModulesIndexPage() {
+	const router = useRouter();
 	const { user, isLoading: authLoading } = useAuth();
 	const [modules, setModules] = useState<ApiModule[]>([]);
+
+	useEffect(() => {
+		if (!authLoading && !user) {
+			router.replace("/");
+		}
+	}, [authLoading, user, router]);
 	const [completedItemIds, setCompletedItemIds] = useState<Set<number>>(new Set());
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
