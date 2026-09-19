@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react";
 import { loginUser, registerUser, logoutUser, loginWithGoogle as loginWithGoogleApi, getCurrentUser } from "@/lib/api";
 
-type AuthUser = { id: number; email: string; full_name: string; cohort_start_date?: string | null };
+type AuthUser = { id: number; email: string; full_name: string; display_name?: string; auth_provider?: string };
 
 type AuthContextValue = {
 	user: AuthUser | null;
@@ -57,6 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 	async function register(email: string, fullName: string, password: string) {
 		await registerUser({ email, full_name: fullName, password });
+		await login(email, password);
 	}
 
 	async function logout() {

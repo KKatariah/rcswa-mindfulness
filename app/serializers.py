@@ -79,13 +79,14 @@ class ContentViewSerializer(serializers.ModelSerializer):
         read_only_fields = ["viewed_at"]
 
 
-# ── Forum ──────────────────────────────────────────────────────────────────────
+# ── Forum ──────────────────────────────────────────────────────────────────────────────
 
 def _forum_author_name(author, request):
     """
     Resolve the public name for a forum author.
     - Null author (deleted account) → "Deleted user".
-    - Admin/staff viewer → real full_name, regardless of display_name.
+    - Admin/staff viewer → "display_name (full_name)" if a display_name is set,
+      otherwise just full_name.
     - Everyone else → display_name if set, else full_name.
     """
     if author is None:
@@ -93,6 +94,8 @@ def _forum_author_name(author, request):
     if request and request.user.is_authenticated:
         u = request.user
         if getattr(u, "role", None) == "admin" or u.is_staff:
+            if author.display_name:
+                return f"{author.display_name} ({author.full_name})"
             return author.full_name
     return author.display_name or author.full_name
 
@@ -374,3 +377,14 @@ class SurveyResponseAdminSerializer(serializers.ModelSerializer):
 
     def get_survey_title(self, obj):
         return obj.survey.title if obj.survey else ""
+
+
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["display_name"]
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)

@@ -6,6 +6,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
+from .serializers import ProfileUpdateSerializer, ChangePasswordSerializer
 
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 
@@ -89,6 +90,9 @@ def register_view(request):
                     "id": user.id,
                     "email": user.email,
                     "full_name": user.full_name,
+                    "display_name": user.display_name,
+                    "auth_provider": user.auth_provider,
+                    "cohort_start_date": _active_cohort_start_date(user),
                 },
             },
             status=status.HTTP_201_CREATED,
@@ -130,6 +134,8 @@ def login_view(request):
                 "id": user.id,
                 "email": user.email,
                 "full_name": user.full_name,
+                "display_name": user.display_name,
+                "auth_provider": user.auth_provider,
                 "cohort_start_date": _active_cohort_start_date(user),
             },
         },
@@ -179,7 +185,7 @@ def google_login_view(request):
 
     user, created = User.objects.get_or_create(
         email=email,
-        defaults={"full_name": full_name},
+        defaults={"full_name": full_name, "auth_provider": "google"},
     )
 
     if created:
@@ -196,6 +202,8 @@ def google_login_view(request):
                 "id": user.id,
                 "email": user.email,
                 "full_name": user.full_name,
+                "display_name": user.display_name,
+                "auth_provider": user.auth_provider,
                 "cohort_start_date": _active_cohort_start_date(user),
             },
         },
@@ -528,6 +536,64 @@ def current_user(request):
     return Response({"user": {
         "id": request.user.id,
         "email": request.user.email,
-        "full_name": request.user.full_name,  # adjust to your actual field
+        "full_name": request.user.full_name,
+        "display_name": request.user.display_name,
+        "auth_provider": request.user.auth_provider,
         "cohort_start_date": _active_cohort_start_date(request.user),
     }})
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def update_profile_view(request):
+    serializer = ProfileUpdateSerializer(request.user, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(
+            {
+                "message": "Profile updated",
+                "user": {
+                    "id": request.user.id,
+                    "email": request.user.email,
+                    "full_name": request.user.full_name,
+                    "display_name": request.user.display_name,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def change_password_view(request):
+    if not request.user.has_usable_password():
+        return Response(
+            {"error": "Password change is not available for accounts signed in with Google."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = ChangePasswordSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    current_password = serializer.validated_data["current_password"]
+    new_password = serializer.validated_data["new_password"]
+
+    if not request.user.check_password(current_password):
+        return Response(
+            {"error": "Current password is incorrect."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    request.user.set_password(new_password)
+    request.user.save()
+
+    # Password change invalidates old sessions/tokens for security — issue a fresh token
+    request.user.auth_token.delete()
+    new_token = Token.objects.create(user=request.user)
+
+    return Response(
+        {"message": "Password changed successfully", "token": new_token.key},
+        status=status.HTTP_200_OK,
+    )

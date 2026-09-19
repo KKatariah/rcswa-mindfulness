@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/router";
 import Modal from "@/components/main/Modal";
 import { useAuth } from "@/context/AuthContext";
 import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
@@ -9,6 +10,7 @@ type LoginModalProps = {
 };
 
 export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
+	const router = useRouter();
 	const { login, loginWithGoogle } = useAuth();
 	const [email, setEmail] = useState("");
 	const [password, setPassword] = useState("");
@@ -23,6 +25,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 		try {
 			await login(email, password);
 			onClose();
+			await router.push("/modules");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Login failed");
 		} finally {
@@ -36,6 +39,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 		try {
 			await loginWithGoogle(credentialResponse.credential);
 			onClose();
+			await router.push("/modules");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Google login failed");
 		}

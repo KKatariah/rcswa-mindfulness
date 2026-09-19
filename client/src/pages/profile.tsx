@@ -1,12 +1,13 @@
 import Head from "next/head";
 import { useRouter } from "next/router";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Navbar from "@/components/main/Navbar";
 import Sidebar from "@/components/main/Sidebar";
 import NextSession from "@/components/modules/NextSession";
 import { LockIcon } from "@/components/ui/icons";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAuth } from "@/context/AuthContext";
+import { updateProfile, changePassword } from "@/lib/api";
 
 type NotificationPreferences = {
   dailyContentReminder: boolean;
@@ -14,25 +15,7 @@ type NotificationPreferences = {
   dailySurveyCompletionReminder: boolean;
 };
 
-type UserProfile = {
-  username: string;
-  displayName: string;
-  email: string;
-  notifications: NotificationPreferences;
-};
-
 type SaveStatus = "idle" | "saving" | "success" | "error";
-
-const INITIAL_PROFILE: UserProfile = {
-  username: "Username",
-  displayName: "",
-  email: "user@example.com",
-  notifications: {
-    dailyContentReminder: true,
-    surveyUnlockedReminder: false,
-    dailySurveyCompletionReminder: false,
-  },
-};
 
 function ToggleSwitch({
   id,
@@ -78,47 +61,109 @@ function ToggleSwitch({
   );
 }
 
+function ChangePasswordForm() {
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    setError(null);
+    setSuccess(false);
+    setIsSubmitting(true);
+
+    const token = localStorage.getItem("token") ?? "";
+
+    try {
+      const data = await changePassword(
+        { current_password: currentPassword, new_password: newPassword },
+        token
+      );
+      localStorage.setItem("token", data.token);
+      setSuccess(true);
+      setCurrentPassword("");
+      setNewPassword("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to change password");
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-3">
+      {error && <p className="text-sm text-red-600">{error}</p>}
+      {success && <p className="text-sm text-green-600">Password changed successfully.</p>}
+
+      <input
+        type="password"
+        required
+        value={currentPassword}
+        onChange={(e) => setCurrentPassword(e.target.value)}
+        placeholder="Current password"
+        className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+      <input
+        type="password"
+        required
+        minLength={8}
+        value={newPassword}
+        onChange={(e) => setNewPassword(e.target.value)}
+        placeholder="New password (min. 8 characters)"
+        className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="w-fit rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-600 disabled:opacity-60"
+      >
+        {isSubmitting ? "Changing..." : "Change Password"}
+      </button>
+    </form>
+  );
+}
+
 export default function ProfilePage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
-  const [profile, setProfile] = useState<UserProfile>(INITIAL_PROFILE);
+  const [displayName, setDisplayName] = useState("");
+  const [notifications, setNotifications] = useState<NotificationPreferences>({
+    dailyContentReminder: true,
+    surveyUnlockedReminder: false,
+    dailySurveyCompletionReminder: false,
+  });
+  const [status, setStatus] = useState<SaveStatus>("idle");
+  const [showPasswordForm, setShowPasswordForm] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
       router.replace("/");
     }
   }, [authLoading, user, router]);
-  const [status, setStatus] = useState<SaveStatus>("idle");
-  const signedInName = user?.full_name?.trim() || profile.username;
+
+  // Load the real display name once the user is available
+  useEffect(() => {
+    if (user?.display_name) {
+      setDisplayName(user.display_name);
+    }
+  }, [user]);
+
+  const signedInName = user?.full_name?.trim() || "User";
+  const isGoogleUser = user?.auth_provider === "google";
 
   const updateNotification = (key: keyof NotificationPreferences, value: boolean) => {
-    setProfile((prev) => ({
-      ...prev,
-      notifications: { ...prev.notifications, [key]: value },
-    }));
+    setNotifications((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleSave = async () => {
     setStatus("saving");
+    const token = localStorage.getItem("token") ?? "";
 
     try {
-      const res = await fetch("/api/profile/", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          display_name: profile.displayName || null,
-          notifications: {
-            daily_content_reminder: profile.notifications.dailyContentReminder,
-            survey_unlocked_reminder: profile.notifications.surveyUnlockedReminder,
-            daily_survey_completion_reminder: profile.notifications.dailySurveyCompletionReminder,
-          },
-        }),
-      });
-
-      if (!res.ok) {
-        throw new Error(`Save failed: ${res.status}`);
-      }
-
+      await updateProfile({ display_name: displayName }, token);
       setStatus("success");
     } catch {
       setStatus("error");
@@ -146,7 +191,7 @@ export default function ProfilePage() {
             <div className="overflow-hidden rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
               <div className="flex items-center gap-4 border-b border-gray-100 p-6">
                 <UserAvatar
-                  email={user?.email ?? profile.email}
+                  email={user?.email ?? ""}
                   fullName={signedInName}
                   size={64}
                   className="border border-gray-200 bg-white"
@@ -174,10 +219,8 @@ export default function ProfilePage() {
                   id="displayName"
                   type="text"
                   placeholder="(optional)"
-                  value={profile.displayName}
-                  onChange={(event) =>
-                    setProfile((prev) => ({ ...prev, displayName: event.target.value }))
-                  }
+                  value={displayName}
+                  onChange={(event) => setDisplayName(event.target.value)}
                   className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <p className="mt-1.5 text-sm text-gray-500">
@@ -188,7 +231,7 @@ export default function ProfilePage() {
               <div className="border-b border-gray-100 p-6">
                 <span className="mb-1 block text-sm font-medium text-gray-900">Email</span>
                 <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
-                  <span className="text-sm text-gray-500">{profile.email}</span>
+                  <span className="text-sm text-gray-500">{user?.email ?? ""}</span>
                   <span className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
                     <LockIcon className="h-3.5 w-3.5" />
                     Locked
@@ -203,21 +246,21 @@ export default function ProfilePage() {
                     id="dailyContentReminder"
                     label="Daily content reminder"
                     description="Notify me daily around 5pm to complete any unviewed module content"
-                    checked={profile.notifications.dailyContentReminder}
+                    checked={notifications.dailyContentReminder}
                     onChange={(value) => updateNotification("dailyContentReminder", value)}
                   />
                   <ToggleSwitch
                     id="surveyUnlockedReminder"
                     label="New survey unlocked reminder"
                     description="Notify me when a module's survey is unlocked"
-                    checked={profile.notifications.surveyUnlockedReminder}
+                    checked={notifications.surveyUnlockedReminder}
                     onChange={(value) => updateNotification("surveyUnlockedReminder", value)}
                   />
                   <ToggleSwitch
                     id="dailySurveyCompletionReminder"
                     label="Daily survey completion reminder"
                     description="Notify me daily around 5pm to submit any uncompleted surveys."
-                    checked={profile.notifications.dailySurveyCompletionReminder}
+                    checked={notifications.dailySurveyCompletionReminder}
                     onChange={(value) => updateNotification("dailySurveyCompletionReminder", value)}
                   />
                 </div>
@@ -225,12 +268,31 @@ export default function ProfilePage() {
 
               <div className="border-b border-gray-100 p-6">
                 <h2 className="mb-2 text-sm font-medium text-gray-900">Password</h2>
-                <button
-                  type="button"
-                  className="rounded-lg border border-blue-500 px-4 py-2 text-sm font-medium text-blue-500 transition-colors hover:bg-blue-50"
-                >
-                  Reset Password
-                </button>
+                {isGoogleUser ? (
+                  <div className="rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-600">
+                    You&apos;re signed in with Google. To change your password, visit your{" "}
+                    <a
+                      href="https://myaccount.google.com/security"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-blue-500 hover:underline"
+                    >
+                      Google Account settings
+                    </a>
+                    .
+                  </div>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordForm((prev) => !prev)}
+                      className="rounded-lg border border-blue-500 px-4 py-2 text-sm font-medium text-blue-500 transition-colors hover:bg-blue-50"
+                    >
+                      {showPasswordForm ? "Cancel" : "Reset Password"}
+                    </button>
+                    {showPasswordForm && <ChangePasswordForm />}
+                  </>
+                )}
               </div>
 
               <div className="p-6 pt-0">
