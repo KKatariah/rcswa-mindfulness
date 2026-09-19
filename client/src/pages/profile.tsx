@@ -129,7 +129,12 @@ function ChangePasswordForm() {
 export default function ProfilePage() {
   const router = useRouter();
   const { user, isLoading: authLoading } = useAuth();
-  const [displayName, setDisplayName] = useState("");
+
+  // null means "the user hasn't edited the field yet", so we show the saved name.
+  // Once they type (even to clear the field), their edit takes over.
+  const [editedDisplayName, setEditedDisplayName] = useState<string | null>(null);
+  const displayName = editedDisplayName ?? user?.display_name ?? "";
+
   const [notifications, setNotifications] = useState<NotificationPreferences>({
     dailyContentReminder: true,
     surveyUnlockedReminder: false,
@@ -143,13 +148,6 @@ export default function ProfilePage() {
       router.replace("/");
     }
   }, [authLoading, user, router]);
-
-  // Load the real display name once the user is available
-  useEffect(() => {
-    if (user?.display_name) {
-      setDisplayName(user.display_name);
-    }
-  }, [user]);
 
   const signedInName = user?.full_name?.trim() || "User";
   const isGoogleUser = user?.auth_provider === "google";
@@ -220,7 +218,7 @@ export default function ProfilePage() {
                   type="text"
                   placeholder="(optional)"
                   value={displayName}
-                  onChange={(event) => setDisplayName(event.target.value)}
+                  onChange={(event) => setEditedDisplayName(event.target.value)}
                   className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <p className="mt-1.5 text-sm text-gray-500">
@@ -307,7 +305,7 @@ export default function ProfilePage() {
                 {status === "success" && <p className="mt-2 text-sm text-green-600">Changes saved.</p>}
                 {status === "error" && (
                   <p className="mt-2 text-sm text-red-600">
-                    Couldn't save your changes. Check your connection and try again.
+                    Couldn&apos;t save your changes. Check your connection and try again.
                   </p>
                 )}
               </div>
