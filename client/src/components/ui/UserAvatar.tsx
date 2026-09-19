@@ -66,11 +66,12 @@ export function UserAvatar({
   className = "",
 }: UserAvatarProps) {
   const gravatarUrl = useGravatarUrl(email, size);
-  const [hasError, setHasError] = useState(false);
 
-  useEffect(() => {
-    setHasError(false);
-  }, [gravatarUrl]);
+  // Remember which URL failed to load instead of a boolean flag that has to be
+  // reset in an effect. If gravatarUrl changes, failedUrl no longer matches,
+  // so hasError is automatically false again.
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const hasError = failedUrl === gravatarUrl;
 
   const fallbackInitials = getInitials(fullName);
 
@@ -79,7 +80,7 @@ export function UserAvatar({
       <img
         src={gravatarUrl}
         alt={fullName ? `${fullName} profile picture` : "Profile picture"}
-        onError={() => setHasError(true)}
+        onError={() => setFailedUrl(gravatarUrl)}
         className={`rounded-full object-cover ${className}`}
         style={{ width: size, height: size }}
       />
