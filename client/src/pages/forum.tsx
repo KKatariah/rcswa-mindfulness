@@ -1,4 +1,5 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/router";
 import Head from "next/head";
 import Image from "next/image";
 import AppShell from "@/components/main/AppShell";
@@ -15,6 +16,8 @@ import {
 	updateForumPost,
 } from "@/lib/api";
 import type { ForumPost, ForumThread, ForumThreadDetail } from "@/types/forum";
+
+import { UserAvatar } from "@/components/ui/UserAvatar";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 // Small local icons so we don't need to touch the shared icon set for one page.
@@ -53,13 +56,14 @@ function formatRelativeTime(iso: string) {
 	return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
 }
 
-function Avatar({ name }: { name: string }) {
-	const trimmed = name.trim();
-	const initial = trimmed && trimmed !== "Deleted user" ? trimmed[0].toUpperCase() : "?";
+function Avatar({ name, email }: { name: string; email?: string | null }) {
 	return (
-		<div className="flex size-9 shrink-0 items-center justify-center rounded-full bg-brand-blue text-sm font-bold text-white">
-			{initial}
-		</div>
+		<UserAvatar
+			email={email}
+			fullName={name === "Deleted user" ? "Deleted user" : name}
+			size={36}
+			className="shrink-0"
+		/>
 	);
 }
 
@@ -98,7 +102,13 @@ function useForumPostCooldown() {
 
 // ── Composer ───────────────────────────────────────────────────────────────────
 
-function Composer({ onSubmit }: { onSubmit: (body: string) => Promise<void> }) {
+function Composer({
+	onSubmit,
+	user,
+}: {
+	onSubmit: (body: string) => Promise<void>;
+	user: { full_name?: string | null; email?: string | null } | null;
+}) {
 	const [body, setBody] = useState("");
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -124,7 +134,7 @@ function Composer({ onSubmit }: { onSubmit: (body: string) => Promise<void> }) {
 		<div className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 			<form onSubmit={handleSubmit}>
 				<div className="flex items-center gap-3">
-					<Avatar name="U" />
+					<Avatar name={user?.full_name || "User"} email={user?.email} />
 					<p className="text-sm font-bold text-ink">What&apos;s your mind?</p>
 				</div>
 				<textarea
@@ -180,7 +190,7 @@ function PostCard({ post, onEdit, onDelete }: PostCardProps) {
 
 	return (
 		<div className="flex gap-3">
-			<Avatar name={post.author_name} />
+			<Avatar name={post.author_name} email={post.author_email} />
 			<div className="min-w-0 flex-1 rounded-[10px] border border-gray-200 bg-white p-4">
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex items-baseline gap-2">
@@ -312,7 +322,7 @@ function ThreadDetailView({
 				)}
 
 				<div className="flex items-start gap-3">
-					<Avatar name={thread.author_name} />
+					<Avatar name={thread.author_name} email={thread.author_email} />
 					<div className="min-w-0 flex-1">
 						<div className="flex items-start justify-between gap-2">
 							<div className="flex items-baseline gap-2">
@@ -436,12 +446,13 @@ type FeedViewProps = {
 	threads: ForumThread[];
 	onSelect: (id: number) => void;
 	onCreateThread: (body: string) => Promise<void>;
+	user: { full_name?: string | null; email?: string | null } | null;
 };
 
-function FeedView({ threads, onSelect, onCreateThread }: FeedViewProps) {
+function FeedView({ threads, onSelect, onCreateThread, user }: FeedViewProps) {
 	return (
 		<>
-			<Composer onSubmit={onCreateThread} />
+			<Composer onSubmit={onCreateThread} user={user} />
 
 			<div className="mt-4 rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 				{threads.length === 0 ? (
@@ -465,7 +476,7 @@ function FeedView({ threads, onSelect, onCreateThread }: FeedViewProps) {
 								</p>
 							)}
 							<div className="flex items-start gap-3">
-								<Avatar name={t.author_name} />
+								<Avatar name={t.author_name} email={t.author_email} />
 								<div className="min-w-0 flex-1">
 									<div className="flex items-baseline gap-2">
 										<span className="text-sm font-semibold text-ink">{t.author_name}</span>
@@ -512,8 +523,15 @@ function ForumSidebar({ query, onQueryChange }: { query: string; onQueryChange: 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
 export default function ForumPage() {
+	const router = useRouter();
 	const { user, isLoading: authLoading } = useAuth();
 	const [threads, setThreads] = useState<ForumThread[]>([]);
+
+	useEffect(() => {
+		if (!authLoading && !user) {
+			router.replace("/");
+		}
+	}, [authLoading, user, router]);
 	const [selectedThread, setSelectedThread] = useState<ForumThreadDetail | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
@@ -674,10 +692,11 @@ export default function ForumPage() {
 									/>
 								) : (
 									<FeedView
-										threads={filteredThreads}
-										onSelect={loadThread}
-										onCreateThread={handleCreateThread}
-									/>
+											threads={filteredThreads}
+											onSelect={loadThread}
+											onCreateThread={handleCreateThread}
+											user={user}
+										/>
 								)}
 							</div>
 

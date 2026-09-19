@@ -30,7 +30,6 @@ router.register("notifications/preferences", NotificationPreferenceViewSet, base
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('__reload__/', include('django_browser_reload.urls')),
     path('app/', include('app.urls')),
     path('api/', include('app.api_urls')),
     path('api/', include(router.urls)),
