@@ -1,18 +1,31 @@
+import datetime
+from io import StringIO
+from unittest.mock import patch
+
 from django.contrib.auth import get_user_model
+from django.core.management import call_command
+from django.test import TestCase
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework.authtoken.models import Token
 
 from .models import (
+    Cohort,
     ContentCompletion,
     ContentItem,
+    Enrollment,
     ForumPost,
     ForumThread,
     Module,
+    NotificationLog,
+    NotificationPreference,
+    PushSubscription,
     Survey,
     SurveyResponse,
 )
 
 from .serializers import ForumPostSerializer
+
 User = get_user_model()
 
 
@@ -921,3 +934,208 @@ class SurveyFixtureFlowTests(APITestCase):
         list_resp3 = self.client.get("/api/surveys/")
         survey_data3 = next(s for s in list_resp3.data if s["id"] == survey.pk)
         self.assertTrue(survey_data3["has_responded"])
+
+
+# ── Notification tests (Issue #74) ─────────────────────────────────────────────
+
+def _make_user(email, password="pw"):
+    return User.objects.create_user(email=email, password=password)
+
+
+def _make_cohort(name="C1", days_ago=7, duration=56):
+    today = datetime.date.today()
+    start = today - datetime.timedelta(days=days_ago)
+    return Cohort.objects.create(
+        name=name, year=today.year, start_date=start, end_date=start + datetime.timedelta(days=duration)
+    )
+
+
+def _make_module(week=1, published=True):
+    return Module.objects.create(week_number=week, title=f"Week {week}", is_published=published)
+
+
+def _make_audio_item(module, day_offset=0, title="Meditation"):
+    return ContentItem.objects.create(
+        module=module, title=title, type="audio", provider="soundcloud",
+        embed_url="https://soundcloud.com/x/y", display_order=1, day_offset=day_offset,
+    )
+
+
+def _perth_midnight_utc(date):
+    """Reproduce the command's formula so tests don't import from the command."""
+    from zoneinfo import ZoneInfo
+    from datetime import timezone as stdlib_tz
+    PERTH_TZ = ZoneInfo("Australia/Perth")
+    return datetime.datetime.combine(date, datetime.time.min, tzinfo=PERTH_TZ).astimezone(stdlib_tz.utc)
+
+
+class PushSubscriptionEndpointReuseTests(APITestCase):
+    """T1: registering the same push endpoint under a different user reassigns it."""
+
+    def setUp(self):
+        self.user_a = _make_user("a@test.local")
+        self.user_b = _make_user("b@test.local")
+        Token.objects.get_or_create(user=self.user_a)
+        Token.objects.get_or_create(user=self.user_b)
+
+    def test_endpoint_reassigned_to_new_user(self):
+        payload = {"endpoint": "https://push.example.com/sub/123", "p256dh": "key", "auth": "auth"}
+
+        self.client.force_authenticate(user=self.user_a)
+        resp_a = self.client.post("/api/notifications/subscriptions/", payload)
+        self.assertIn(resp_a.status_code, [status.HTTP_200_OK, status.HTTP_201_CREATED])
+
+        sub_id = resp_a.data["id"]
+        self.assertEqual(PushSubscription.objects.get(pk=sub_id).user_id, self.user_a.pk)
+
+        self.client.force_authenticate(user=self.user_b)
+        resp_b = self.client.post("/api/notifications/subscriptions/", payload)
+        self.assertIn(resp_b.status_code, [status.HTTP_200_OK, status.HTTP_201_CREATED])
+
+        # Endpoint is unique — exactly one row exists and it now belongs to user B.
+        self.assertEqual(PushSubscription.objects.filter(endpoint=payload["endpoint"]).count(), 1)
+        sub = PushSubscription.objects.get(endpoint=payload["endpoint"])
+        self.assertEqual(sub.user_id, self.user_b.pk)
+
+
+class PushDeniedNoEmailFallbackTests(TestCase):
+    """T2: push_denied=True skips both push and email."""
+
+    def test_deliver_skips_when_push_denied(self):
+        user = _make_user("denied@test.local")
+        NotificationPreference.objects.create(user=user, push_denied=True, email_enabled=True)
+
+        with patch("app.notifications.send_mail") as mock_mail:
+            from app.notifications import deliver
+            channel, success = deliver(
+                user=user,
+                payload_dict={"title": "test"},
+                subject="Test",
+                email_template="app/reminder_email.txt",
+                email_context={"user": user, "item": None, "module": None},
+            )
+
+        self.assertFalse(success)
+        self.assertIsNone(channel)
+        mock_mail.assert_not_called()
+
+
+class FailedSendRetriesNextRunTests(TestCase):
+    """T3: a FAILED NotificationLog entry does not block the next run."""
+
+    def setUp(self):
+        self.user = _make_user("retry@test.local")
+        # reminder_time defaults to 08:00 Perth — the mock will set current hour to 8
+        self.cohort = _make_cohort(days_ago=0, duration=56)
+        Enrollment.objects.create(user=self.user, cohort=self.cohort)
+        self.module = _make_module(week=1)
+        self.item = _make_audio_item(self.module, day_offset=0)
+
+        today = datetime.date.today()
+        scheduled_for = _perth_midnight_utc(today)
+
+        NotificationLog.objects.create(
+            user=self.user,
+            type=NotificationLog.NotificationType.CONTENT_REMINDER,
+            content_item=self.item,
+            module=self.module,
+            channel=NotificationLog.Channel.EMAIL,
+            scheduled_for=scheduled_for,
+            status=NotificationLog.Status.FAILED,
+        )
+
+    def test_failed_log_does_not_prevent_retry(self):
+        from zoneinfo import ZoneInfo
+        PERTH_TZ = ZoneInfo("Australia/Perth")
+        fake_now = datetime.datetime.combine(
+            datetime.date.today(), datetime.time(8, 0), tzinfo=PERTH_TZ
+        )
+
+        with patch("app.management.commands.send_due_reminders._perth_now", return_value=fake_now):
+            out = StringIO()
+            call_command("send_due_reminders", "--dry-run", stdout=out)
+
+        output = out.getvalue()
+        self.assertIn("dry-run", output)
+        self.assertIn(self.user.email, output)
+
+
+class PerthDateBoundaryTests(TestCase):
+    """T4: scheduled_for stores Perth midnight in UTC (i.e. 16:00 UTC previous day)."""
+
+    def test_perth_midnight_is_16_hours_behind_utc(self):
+        perth_date = datetime.date(2024, 6, 15)
+        expected_utc = datetime.datetime(2024, 6, 14, 16, 0, 0, tzinfo=datetime.timezone.utc)
+        actual = _perth_midnight_utc(perth_date)
+        self.assertEqual(actual, expected_utc)
+
+    def test_idempotency_key_uses_perth_date_not_utc_date(self):
+        """A notification sent at 23:30 UTC (07:30 Perth next day) stores the Perth date."""
+        from zoneinfo import ZoneInfo
+        PERTH_TZ = ZoneInfo("Australia/Perth")
+        # 2024-06-14 23:30 UTC = 2024-06-15 07:30 Perth
+        utc_time = datetime.datetime(2024, 6, 14, 23, 30, 0, tzinfo=datetime.timezone.utc)
+        perth_date = utc_time.astimezone(PERTH_TZ).date()
+        scheduled_for = _perth_midnight_utc(perth_date)
+
+        self.assertEqual(perth_date, datetime.date(2024, 6, 15))
+        self.assertEqual(scheduled_for, datetime.datetime(2024, 6, 14, 16, 0, 0, tzinfo=datetime.timezone.utc))
+
+
+class VerifyMissingOffsetTests(TestCase):
+    """T5: --verify exits non-zero when audio items have no day_offset."""
+
+    def setUp(self):
+        self.user = _make_user("verify@test.local")
+        cohort = _make_cohort(days_ago=7, duration=56)
+        Enrollment.objects.create(user=self.user, cohort=cohort, status=Enrollment.Status.ACTIVE)
+        module = _make_module(week=1)
+        # Audio item with no day_offset (unscheduled).
+        ContentItem.objects.create(
+            module=module, title="Unscheduled Audio", type="audio",
+            provider="soundcloud", embed_url="https://soundcloud.com/x/y",
+            display_order=1, day_offset=None,
+        )
+
+    def test_verify_exits_nonzero_for_unscheduled_audio(self):
+        with self.assertRaises(SystemExit) as ctx:
+            call_command("send_due_reminders", "--verify", stderr=StringIO(), stdout=StringIO())
+        self.assertNotEqual(ctx.exception.code, 0)
+
+
+class S21NotifiesOnlyActiveCohortTests(TestCase):
+    """T6: notify_content_update sends only to ACTIVE enrollments in running cohorts."""
+
+    def setUp(self):
+        self.active_user = _make_user("active@test.local")
+        self.ended_user = _make_user("ended@test.local")
+
+        today = datetime.date.today()
+        active_cohort = Cohort.objects.create(
+            name="Active", year=today.year,
+            start_date=today - datetime.timedelta(days=7),
+            end_date=today + datetime.timedelta(days=49),
+        )
+        ended_cohort = Cohort.objects.create(
+            name="Ended", year=today.year - 1,
+            start_date=today - datetime.timedelta(days=365),
+            end_date=today - datetime.timedelta(days=300),
+        )
+
+        Enrollment.objects.create(user=self.active_user, cohort=active_cohort, status=Enrollment.Status.ACTIVE)
+        Enrollment.objects.create(user=self.ended_user, cohort=ended_cohort, status=Enrollment.Status.ACTIVE)
+
+        self.module = _make_module(week=1)
+
+    def test_only_active_cohort_users_notified(self):
+        # Suppress SMTP; console backend is fine since we just check the log rows.
+        with self.settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
+            from app.notifications import notify_content_update
+            notify_content_update(module=self.module)
+
+        logs = NotificationLog.objects.filter(
+            type=NotificationLog.NotificationType.CONTENT_UPDATE
+        )
+        notified_user_ids = set(logs.values_list("user_id", flat=True))
+        self.assertIn(self.active_user.pk, notified_user_ids)
+        self.assertNotIn(self.ended_user.pk, notified_user_ids)

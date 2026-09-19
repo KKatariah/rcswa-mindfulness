@@ -4,10 +4,12 @@ from rest_framework.exceptions import PermissionDenied
 from .models import (
     ContentCompletion,
     ContentItem,
+    Module,
+    NotificationPreference,
+    PushSubscription,
     ContentView,
     ForumPost,
     ForumThread,
-    Module,
     Resource,
     Survey,
     SurveyResponse,
@@ -388,3 +390,28 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
 class ChangePasswordSerializer(serializers.Serializer):
     current_password = serializers.CharField(write_only=True)
     new_password = serializers.CharField(write_only=True, min_length=8)
+
+
+# ── Push notifications ─────────────────────────────────────────────────────────
+
+class PushSubscriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PushSubscription
+        fields = ["id", "endpoint", "p256dh", "auth", "created_at", "last_seen"]
+        read_only_fields = ["id", "created_at", "last_seen"]
+        extra_kwargs = {
+            "endpoint": {"validators": []},
+        }
+
+
+class NotificationPreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationPreference
+        fields = [
+            "id",
+            "email_enabled",
+            "inapp_enabled",
+            "reminder_time",
+            "push_denied",
+        ]
+        read_only_fields = ["id"]

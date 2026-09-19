@@ -10,6 +10,8 @@ Foreign keys use ``settings.AUTH_USER_MODEL`` rather than the ``User`` class
 directly, the recommended pattern for pluggable user models.
 """
 
+import datetime
+
 from django.conf import settings
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
@@ -104,6 +106,8 @@ class Enrollment(models.Model):
         on_delete=models.CASCADE,
         related_name="enrollments",
     )
+    # TODO: current_week is never written by any application code — appears to be
+    # dead. Candidate for removal in a separate cleanup issue.
     current_week = models.PositiveSmallIntegerField(default=1)
     status = models.CharField(
         max_length=12, choices=Status.choices, default=Status.ACTIVE
@@ -159,6 +163,9 @@ class ContentItem(models.Model):
     provider = models.CharField(max_length=20, choices=Provider.choices)
     embed_url = models.URLField()
     display_order = models.PositiveSmallIntegerField(default=0)
+    # Day within the module's week (0 = first day). Null = never scheduled.
+    # Due date = cohort.start_date + timedelta((module.week_number-1)*7 + day_offset)
+    day_offset = models.PositiveSmallIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -259,7 +266,11 @@ class NotificationPreference(models.Model):
     )
     inapp_enabled = models.BooleanField(default=True)
     email_enabled = models.BooleanField(default=True)
-    reminder_time = models.TimeField()
+    # Default: 8am Perth. Command filters by this hour when running on an hourly cron.
+    reminder_time = models.TimeField(default=datetime.time(8, 0))
+    # Set by the frontend when Notification.permission === 'denied'.
+    # When True: no push attempted, no email fallback (user explicitly refused).
+    push_denied = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Preferences for {self.user}"
@@ -275,6 +286,7 @@ class NotificationLog(models.Model):
     class Channel(models.TextChoices):
         INAPP = "inapp", "In-App"
         EMAIL = "email", "Email"
+        PUSH = "push", "Web Push"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
@@ -315,6 +327,37 @@ class NotificationLog(models.Model):
 
     def __str__(self):
         return f"{self.get_type_display()} to {self.user} ({self.status})"
+
+
+class PushSubscription(models.Model):
+    """Browser Push API subscription registered by the frontend.
+
+    Frontend registration payload — POST /api/notifications/subscriptions/:
+        {
+            "endpoint": "<push service URL from PushSubscription.endpoint>",
+            "p256dh":   "<base64url from PushSubscription.getKey('p256dh')>",
+            "auth":     "<base64url from PushSubscription.getKey('auth')>"
+        }
+    user_agent is extracted from the User-Agent request header server-side.
+    The VAPID public key for pushManager.subscribe() is at GET /api/notifications/vapid-public-key/.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="push_subscriptions",
+    )
+    # Globally unique per browser/device. Upsert key on registration.
+    endpoint = models.TextField(unique=True)
+    p256dh = models.TextField()
+    auth = models.TextField()
+    user_agent = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Updated on every re-registration (e.g. after a service worker update).
+    last_seen = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Push sub for {self.user} ({self.endpoint[:60]}…)"
 
 
 # Surveys
