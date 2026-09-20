@@ -270,3 +270,60 @@ export async function changePassword(
 	});
 	return handleResponse<{ message: string; token: string }>(res);
 }
+
+// ── Surveys ────────────────────────────────────────────────────────────────────
+
+export type ApiSurvey = {
+	id: number;
+	code: string;
+	title: string;
+	type: string;
+	module: number | null;
+	is_unlocked: boolean;
+	has_responded: boolean;
+};
+
+export type ApiSurveyDetail = ApiSurvey & {
+	questions: Array<{
+		id: string;
+		type: string;
+		text: string;
+		min?: number;
+		max?: number;
+		unit?: string;
+		section?: string;
+		skip_if?: {
+			question_id: string;
+			value: number;
+		};
+	}>;
+}
+
+export async function listSurveys(token: string): Promise<ApiSurvey[]> {
+	const res = await fetch(`${API_BASE_URL}/surveys/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<ApiSurvey[]>(res);
+}
+
+export async function getSurvey(id: number | string, token: string): Promise<ApiSurveyDetail> {
+  const res = await fetch(`${API_BASE_URL}/surveys/${id}/`, {
+    headers: { Authorization: `Token ${token}` },
+  });
+  return handleResponse<ApiSurveyDetail>(res);
+}
+
+export async function submitSurveyResponse(
+  payload: { survey: number; answers: Record<string, number | string> },
+  token: string,
+): Promise<{ id: number; survey: number; answers: Record<string, number | string>; submitted_at: string }> {
+  const res = await fetch(`${API_BASE_URL}/survey-responses/`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Token ${token}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  return handleResponse(res);
+}

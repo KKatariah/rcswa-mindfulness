@@ -126,11 +126,11 @@ export default function SurveyQuestions({
 				<div className="mt-5 grid gap-4 sm:max-w-[900px]">
 					<label className="grid gap-2 text-sm leading-5 text-ink sm:grid-cols-[minmax(0,1fr)_170px] sm:items-center sm:text-base">
 						<span>1. How many times did you do formal meditation practice in the <u>past week</u>?</span>
-						<input type="number" min="0" placeholder="Enter number..." className="h-8 rounded-xl border border-[#5b5a5a] px-4 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30" onChange={(event) => updateAnswer(1, event.target.value)} />
+						<input type="number" min="0" placeholder="Enter number..." className="h-8 rounded-xl border border-[#5b5a5a] px-4 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30" onChange={(event) => updateAnswer(1, Number(event.target.value || 0))} />
 					</label>
 					<label className="grid gap-2 text-sm leading-5 text-ink sm:grid-cols-[minmax(0,1fr)_170px] sm:items-center sm:text-base">
 						<span>2. What was the average duration of each meditation session (estimate in minutes)?</span>
-						<input type="number" min="0" placeholder="Enter number..." className="h-8 rounded-xl border border-[#5b5a5a] px-4 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30" onChange={(event) => updateAnswer(2, event.target.value)} />
+						<input type="number" min="0" placeholder="Enter number..." className="h-8 rounded-xl border border-[#5b5a5a] px-4 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30" onChange={(event) => updateAnswer(2, Number(event.target.value || 0))} />
 					</label>
 				</div>
 				<p className="mt-4 text-xs leading-4 text-ink sm:text-sm">(Note: If you did not do <u>any</u> meditation practice in the past week, skip to question 7.)</p>
