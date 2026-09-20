@@ -71,15 +71,15 @@ function ScaleQuestionGroup({
 	return (
 		<div className="mt-5 grid gap-4">
 			{questions.map((question) => (
-				<fieldset key={question.id} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,530px)] sm:items-center sm:gap-6">
-					<legend className="max-w-[620px] text-sm leading-5 text-ink sm:text-base">
+				<fieldset key={question.id} className="grid gap-3">
+					<legend className="max-w-[620px] text-sm leading-5 text-ink">
 						<span className="mr-2 font-semibold">{question.id}.</span>{question.text}
 					</legend>
-					<div aria-label={`Question ${question.id} scale`}>
-						<div className="grid grid-cols-7 gap-2 text-center text-xs font-bold sm:gap-3" aria-hidden="true">
+					<div aria-label={`Question ${question.id} scale`} className="w-full max-w-[768px]">
+						<div className="grid grid-cols-7 gap-2 text-center text-xs font-bold" aria-hidden="true">
 							{SCALE_VALUES.map((value) => <span key={value} className="underline">{value}</span>)}
 						</div>
-						<div className="mt-2 grid grid-cols-7 gap-2 sm:gap-3">
+						<div className="mt-2 grid grid-cols-7 gap-2">
 							{SCALE_VALUES.map((value) => (
 								<label key={value} className="flex justify-center">
 									<span className="sr-only">{value}</span>
