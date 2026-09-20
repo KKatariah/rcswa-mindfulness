@@ -154,7 +154,14 @@ export default function SurveyQuestions({
 				<textarea rows={3} placeholder="Enter reflection..." className="mt-6 w-full resize-y rounded-xl border border-[#5b5a5a] px-4 py-3 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30" onChange={(event) => updateAnswer(13, event.target.value)} />
 			</section>
 
-			{onSubmit && <button type="submit" className="w-fit rounded-md bg-brand-blue px-5 py-2 text-sm font-semibold text-white transition hover:bg-brand-blue-dark hover:cursor-pointerfocus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">Submit survey</button>}
+			<div className="flex justify-end pt-2">
+				<button
+					type="submit"
+					className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					Submit survey
+				</button>
+			</div>
 		</form>
 	);
 }
