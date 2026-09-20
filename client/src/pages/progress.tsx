@@ -50,7 +50,7 @@ export default function ProgressPage() {
       >
         <div className="mx-auto grid max-w-[1920px] items-start gap-4 md:grid-cols-[240px_minmax(0,1fr)] md:gap-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
           <div className="hidden md:sticky md:top-6 md:block">
-            <Sidebar responsive username={user?.full_name || user?.email || "Username"} />
+            <Sidebar responsive />
           </div>
 
           <div className="min-w-0 space-y-4">
