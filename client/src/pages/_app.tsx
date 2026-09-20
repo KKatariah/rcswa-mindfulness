@@ -12,7 +12,7 @@ const workSans = Work_Sans({
 
 export default function App({ Component, pageProps }: AppProps) {
   return (
-    <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID!}>
+    <GoogleOAuthProvider clientId={process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? ""}>
       <AuthProvider>
         <main className={`${workSans.variable} font-sans`}>
           <Component {...pageProps} />

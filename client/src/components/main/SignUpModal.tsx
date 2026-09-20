@@ -136,10 +136,10 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 					<span className="text-sm text-muted">or</span>
 					<div className="h-px flex-1 bg-gray-200" />
 				</div>
-				<GoogleLogin
+				{process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID && <GoogleLogin
 					onSuccess={handleGoogleSuccess}
 					onError={() => setError("Google sign up failed")}
-				/>
+				/>}
 			</div>
 		</Modal>
 	);

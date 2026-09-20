@@ -17,7 +17,7 @@ export default function ModuleContent({ blocks, embedded = false, onToggleComple
 					return (
 						<div
 							key={block.id}
-							className="prose prose-neutral prose-sm mb-4 max-w-none break-words last:mb-0 [&_table]:block [&_table]:overflow-x-auto"
+							className="prose prose-neutral prose-lg lg:prose-base mb-4 max-w-none break-words last:mb-0 [&_table]:block [&_table]:overflow-x-auto"
 						>
 							<ReactMarkdown remarkPlugins={[remarkGfm]}>
 								{block.content}

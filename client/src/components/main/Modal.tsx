@@ -1,4 +1,4 @@
-import { useEffect, useId, type ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { XIcon } from "@/components/ui/icons";
 
 type ModalProps = {
@@ -9,8 +9,6 @@ type ModalProps = {
 };
 
 export default function Modal({ isOpen, onClose, title, children }: ModalProps) {
-	const titleId = useId();
-
 	useEffect(() => {
 		if (!isOpen) return;
 
