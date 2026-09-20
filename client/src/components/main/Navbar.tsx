@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useRouter } from "next/router";
 import Link from "next/link";
 import { MenuIcon, XIcon } from "@/components/ui/icons";
 import LoginModal from "@/components/main/LoginModal";
@@ -7,14 +8,18 @@ import { useAuth } from "@/context/AuthContext";
 
 const NAV_LINKS = [
 	{ label: "Home", href: "/" },
-	{ label: "Modules", href: "/modules" },
 	{ label: "About Us", href: "/about" },
 ];
 
 export default function Navbar() {
+	const router = useRouter();
 	const { user, logout } = useAuth();
 	const [isOpen, setIsOpen] = useState(false);
 	const [loginOpen, setLoginOpen] = useState(false);
+	const visibleLinks = [
+		...NAV_LINKS,
+		...(user ? [{ label: "Modules", href: "/modules" }, { label: "Forum", href: "/forum" }] : []),
+	];
 	const [signUpOpen, setSignUpOpen] = useState(false);
 
 	function openLogin() {
@@ -30,31 +35,35 @@ export default function Navbar() {
 	async function handleLogout() {
 		setIsOpen(false);
 		await logout();
+		await router.push("/");
 	}
 
 	return (
 		<>
 			<nav className="absolute inset-x-0 top-0 z-20 px-6 py-4 sm:px-10 lg:px-30 lg:py-5.5">
-				<div className="flex items-center justify-between">
+				<div className="grid grid-cols-[1fr_auto_1fr] items-center">
 					<Link href="/" className="flex items-center gap-3">
 						<span className="size-9 shrink-0 rounded-[10px] bg-brand-blue" />
 						<span className="text-lg font-bold text-white">logo</span>
 					</Link>
 
-					<ul className="hidden items-center gap-7 text-[15px] font-semibold text-white lg:flex">
-						{NAV_LINKS.map((link) => (
+					<ul className="hidden items-center justify-self-center gap-7 text-[15px] font-semibold text-white lg:flex">
+						{visibleLinks.map((link) => (
 							<li key={link.href}>
 								<Link href={link.href}>{link.label}</Link>
 							</li>
 						))}
 					</ul>
 
-					<div className="hidden items-center gap-4 lg:flex">
+					<div className="hidden items-center justify-self-end gap-4 lg:flex">
 						{user ? (
 							<>
-								<span className="text-[15px] font-semibold text-white">
+								<Link
+									href="/profile"
+									className="text-[15px] font-semibold text-white hover:underline"
+								>
 									Hi, {user.full_name}
-								</span>
+								</Link>
 								<button
 									type="button"
 									onClick={handleLogout}
@@ -88,7 +97,7 @@ export default function Navbar() {
 						onClick={() => setIsOpen((open) => !open)}
 						aria-label={isOpen ? "Close menu" : "Open menu"}
 						aria-expanded={isOpen}
-						className="flex size-10 items-center justify-center rounded-lg text-white lg:hidden"
+						className="col-start-3 flex size-10 items-center justify-self-end rounded-lg text-white lg:hidden"
 					>
 						{isOpen ? (
 							<XIcon className="size-6" />
@@ -100,7 +109,7 @@ export default function Navbar() {
 
 				{isOpen && (
 					<div className="mt-4 flex flex-col gap-1 rounded-2xl bg-white p-4 shadow-[0px_10px_20px_rgba(0,0,0,0.15)] lg:hidden">
-						{NAV_LINKS.map((link) => (
+						{visibleLinks.map((link) => (
 							<Link
 								key={link.href}
 								href={link.href}
@@ -112,13 +121,22 @@ export default function Navbar() {
 						))}
 						<div className="my-2 h-px w-full bg-gray-200" />
 						{user ? (
-							<button
-								type="button"
-								onClick={handleLogout}
-								className="flex h-11 items-center justify-center rounded-xl bg-brand-blue text-[15px] font-bold text-white"
-							>
-								Log Out
-							</button>
+							<>
+								<Link
+									href="/profile"
+									onClick={() => setIsOpen(false)}
+									className="rounded-lg px-3 py-2.5 text-left text-[15px] font-semibold text-ink"
+								>
+									Hi, {user.full_name}
+								</Link>
+								<button
+									type="button"
+									onClick={handleLogout}
+									className="flex h-11 items-center justify-center rounded-xl bg-brand-blue text-[15px] font-bold text-white"
+								>
+									Log Out
+								</button>
+							</>
 						) : (
 							<>
 								<button

@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconProps, HomeIcon, BookOpenIcon, BarChart2Icon, MessageCircleIcon, FolderIcon } from "@/components/ui/icons";
+import { IconProps, HomeIcon, BookOpenIcon, MessageCircleIcon, FolderIcon, CalendarIcon } from "@/components/ui/icons";
+import { useAuth } from "@/context/AuthContext";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 
 type NavItem = {
   label: string;
@@ -12,16 +14,24 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { label: "Home", href: "/", icon: HomeIcon },
   { label: "Modules", href: "/modules", icon: BookOpenIcon },
-  { label: "Progress", href: "/progress", icon: BarChart2Icon },
+  { label: "Surveys", href: "/surveys", icon: CalendarIcon},
   { label: "Forum", href: "/forum", icon: MessageCircleIcon },
   { label: "Resources", href: "/resources", icon: FolderIcon },
 ];
 
-export default function Sidebar({ responsive = false, username = "Username" }: { responsive?: boolean; username?: string }) {
+export default function Sidebar({ responsive = false }: { responsive?: boolean }) {
   const pathname = usePathname();
+  const { user } = useAuth();
+  const fullName = user?.full_name?.trim() || "Username";
+  const initials = fullName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "U";
 
   return (
-    <aside className={`flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full md:sticky md:top-6 md:h-[calc(100dvh-3rem)] md:overflow-y-auto" : "h-screen w-[280px] overflow-y-auto"}`}>
+    <aside className={`flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full md:sticky md:top-20 md:min-h-[calc(100dvh-8rem)] lg:top-24 lg:min-h-[calc(100dvh-9rem)]" : "h-screen w-[280px] overflow-y-auto"}`}>
       <Link href="/" className="flex items-center gap-3">
         <span className="size-9 shrink-0 rounded-[10px] bg-brand-blue" />
         <span className="text-[18px] font-bold text-[#111827]">logo</span>
@@ -66,12 +76,19 @@ export default function Sidebar({ responsive = false, username = "Username" }: {
 
       <div className="mt-auto pt-6" />
 
-      <div className="flex w-full items-center gap-3 rounded-[10px] border border-[#E5E7EB] bg-[#F9FAFB] px-3 py-[10px]">
-        <div className="flex size-8 items-center justify-center rounded-full bg-[#E5E7EB]">
-          <span className="text-[12px] font-bold text-[#6B7280]">U</span>
-        </div>
-        <span className="text-[14px] font-semibold text-[#111827]">{username}</span>
-      </div>
+      <Link
+        href="/profile"
+        aria-current={pathname === "/profile" ? "page" : undefined}
+        className={[
+          "flex w-full items-center gap-3 rounded-[10px] border px-3 py-[10px] transition-colors",
+          pathname === "/profile"
+            ? "border-brand-blue bg-brand-blue/5"
+            : "border-[#E5E7EB] bg-[#F9FAFB] hover:bg-[#F3F4F6]",
+        ].join(" ")}
+      >
+        <UserAvatar email={user?.email} fullName={fullName} size={32} className="shrink-0" />
+        <span className="text-[14px] font-semibold text-[#111827]">{fullName}</span>
+      </Link>
     </aside>
   );
 }

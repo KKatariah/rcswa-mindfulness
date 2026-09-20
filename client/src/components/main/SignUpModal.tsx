@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { useRouter } from "next/router";
 import Modal from "@/components/main/Modal";
 import { useAuth } from "@/context/AuthContext";
 import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
@@ -9,6 +10,7 @@ type SignUpModalProps = {
 };
 
 export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
+	const router = useRouter();
 	const { register, loginWithGoogle } = useAuth();
 	const [email, setEmail] = useState("");
 	const [fullName, setFullName] = useState("");
@@ -30,6 +32,7 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 		try {
 			await register(email, fullName, password);
 			onClose();
+			await router.push("/modules");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Registration failed");
 		} finally {
@@ -43,6 +46,7 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 		try {
 			await loginWithGoogle(credentialResponse.credential);
 			onClose();
+			await router.push("/modules");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Google sign up failed");
 		}
