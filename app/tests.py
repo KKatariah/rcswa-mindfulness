@@ -874,8 +874,7 @@ class SurveyFixtureFlowTests(APITestCase):
         "q2": 20,
         "q3": 5, "q4": 4, "q5": 5, "q6": 4,
         "q7": 5, "q8": 4, "q9": 3, "q10": 5, "q11": 4, "q12": 3,
-        "q13": "Feeling more present and calm.",
-        "q14": "Regular practice helped me stay focused.",
+        "q13": "Feeling more present and calm. Regular practice helped me stay focused.",
     }
 
     def setUp(self):
