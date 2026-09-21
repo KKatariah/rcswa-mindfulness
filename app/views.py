@@ -1,5 +1,6 @@
 from django.conf import settings as django_settings
 from django.shortcuts import render
+from django.utils import timezone
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -217,6 +218,12 @@ def google_login_view(request):
 
 
 class ModuleViewSet(viewsets.ReadOnlyModelViewSet):
+    def retrieve(self, request, *args, **kwargs):
+        module = self.get_object()
+        if module.unlock_at and module.unlock_at > timezone.now():
+            raise PermissionDenied("This module is not available yet.")
+        return Response(self.get_serializer(module).data)
+
     serializer_class = ModuleSerializer
     queryset = (
         Module.objects
