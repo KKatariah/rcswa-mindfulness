@@ -1,3 +1,4 @@
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
@@ -45,6 +46,18 @@ class ContentItemSerializer(serializers.ModelSerializer):
 
 
 class ModuleSerializer(serializers.ModelSerializer):
+    is_unlocked = serializers.SerializerMethodField()
+
+    def get_is_unlocked(self, obj):
+        return obj.unlock_at is None or obj.unlock_at <= timezone.now()
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not self.get_is_unlocked(instance):
+            data["content_items"] = []
+            data["resources"] = []
+        return data
+
     # related_name="content_items" and related_name="resources" on the FK definitions
     content_items = ContentItemSerializer(many=True, read_only=True)
     resources = ResourceSerializer(many=True, read_only=True)
@@ -54,6 +67,8 @@ class ModuleSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "week_number",
+            "unlock_at",
+            "is_unlocked",
             "title",
             "description",
             "content_items",
@@ -62,6 +77,12 @@ class ModuleSerializer(serializers.ModelSerializer):
 
 
 class ContentCompletionSerializer(serializers.ModelSerializer):
+    def validate_content_item(self, item):
+        module = item.module
+        if not module.is_published or (module.unlock_at and module.unlock_at > timezone.now()):
+            raise serializers.ValidationError("This module is not available yet.")
+        return item
+
     # read_only=True: user is injected by the viewset, never accepted from the payload.
     user = serializers.PrimaryKeyRelatedField(read_only=True)
 
@@ -253,6 +274,8 @@ def _survey_is_unlocked(survey, user):
         if survey.type == Survey.SurveyType.WEEKLY:
             return False
         return True
+    if not survey.module.is_published or (survey.module.unlock_at and survey.module.unlock_at > timezone.now()):
+        return False
     required_ids = set(
         ContentItem.objects.filter(module_id=survey.module_id).values_list("id", flat=True)
     )
@@ -327,6 +350,8 @@ class SurveySerializer(serializers.ModelSerializer):
                 if obj.type == Survey.SurveyType.WEEKLY:
                     return False
                 return True
+            if not obj.module.is_published or (obj.module.unlock_at and obj.module.unlock_at > timezone.now()):
+                return False
             required_ids = {ci.id for ci in obj.module.content_items.all()}
             return not required_ids or required_ids <= completed_ids
         return _survey_is_unlocked(obj, request.user)
