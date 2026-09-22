@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import BottomNavbar from "@/components/main/BottomNavbar";
 import { IconProps, BookOpenIcon, MessageCircleIcon, FolderIcon, CalendarIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { UserAvatar } from "@/components/ui/UserAvatar";
