@@ -16,8 +16,6 @@ from app.views import (
     SurveyViewSet,
     vapid_public_key_view,
     ContentViewViewSet,
-    ForumPostViewSet,
-    ForumThreadViewSet,
     UserProfileViewSet,
 )
 
