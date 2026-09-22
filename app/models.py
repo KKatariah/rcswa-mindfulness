@@ -53,8 +53,8 @@ _SOUNDCLOUD_EMBED_PREFIX = "https://w.soundcloud.com/player/"
 def normalize_soundcloud_embed_url(url: str) -> str:
     """Rewrite a plain SoundCloud share link (track or set) to the canonical
     embeddable player URL, which wraps the URL-encoded share link rather than
-    needing SoundCloud's internal numeric track ID. An already-correct player 
-    embed URL is left unchanged; anything that isn't a recognisable SoundCloud 
+    needing SoundCloud's internal numeric track ID. An already-correct player
+    embed URL is left unchanged; anything that isn't a recognisable SoundCloud
     share link (YouTube links included) is returned unchanged too."""
     if url.startswith(_SOUNDCLOUD_EMBED_PREFIX):
         return url
