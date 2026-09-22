@@ -78,6 +78,85 @@ class ModuleListTests(APITestCase):
         self.assertEqual(items[1]["title"], "Second item")
 
 
+# ── Embed URL normalization ───────────────────────────────────────────────────────
+
+class EmbedUrlNormalizationTests(TestCase):
+    def setUp(self):
+        self.module = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+
+    def _make(self, embed_url, provider=ContentItem.Provider.YOUTUBE):
+        return ContentItem.objects.create(
+            module=self.module, title="Video", type=ContentItem.ContentType.VIDEO,
+            provider=provider, embed_url=embed_url,
+        )
+
+    def test_watch_url_converted_to_embed(self):
+        item = self._make("https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+        self.assertEqual(item.embed_url, "https://www.youtube.com/embed/dQw4w9WgXcQ")
+
+    def test_watch_url_with_extra_query_params_converted(self):
+        item = self._make("https://www.youtube.com/watch?list=PL123&v=dQw4w9WgXcQ&index=3")
+        self.assertEqual(item.embed_url, "https://www.youtube.com/embed/dQw4w9WgXcQ")
+
+    def test_short_url_converted_to_embed(self):
+        item = self._make("https://youtu.be/dQw4w9WgXcQ?t=30")
+        self.assertEqual(item.embed_url, "https://www.youtube.com/embed/dQw4w9WgXcQ")
+
+    def test_shorts_url_converted_to_embed(self):
+        item = self._make("https://www.youtube.com/shorts/dQw4w9WgXcQ")
+        self.assertEqual(item.embed_url, "https://www.youtube.com/embed/dQw4w9WgXcQ")
+
+    def test_mobile_url_converted_to_embed(self):
+        item = self._make("https://m.youtube.com/watch?v=dQw4w9WgXcQ")
+        self.assertEqual(item.embed_url, "https://www.youtube.com/embed/dQw4w9WgXcQ")
+
+    def test_already_embed_url_left_equivalent(self):
+        item = self._make("https://www.youtube.com/embed/dQw4w9WgXcQ")
+        self.assertEqual(item.embed_url, "https://www.youtube.com/embed/dQw4w9WgXcQ")
+
+    def test_youtube_url_on_soundcloud_item_left_unchanged(self):
+        item = self._make(
+            "https://www.youtube.com/watch?v=dQw4w9WgXcQ", provider=ContentItem.Provider.SOUNDCLOUD,
+        )
+        self.assertEqual(item.embed_url, "https://www.youtube.com/watch?v=dQw4w9WgXcQ")
+
+    def test_unrecognised_url_left_unchanged(self):
+        item = self._make("https://example.com/video")
+        self.assertEqual(item.embed_url, "https://example.com/video")
+
+    def test_soundcloud_track_url_converted_to_embed(self):
+        item = self._make(
+            "https://soundcloud.com/artist/track", provider=ContentItem.Provider.SOUNDCLOUD,
+        )
+        self.assertEqual(
+            item.embed_url,
+            "https://w.soundcloud.com/player/?url=https%3A%2F%2Fsoundcloud.com%2Fartist%2Ftrack",
+        )
+
+    def test_soundcloud_set_url_converted_to_embed(self):
+        item = self._make(
+            "https://soundcloud.com/artist/sets/playlist-name", provider=ContentItem.Provider.SOUNDCLOUD,
+        )
+        self.assertEqual(
+            item.embed_url,
+            "https://w.soundcloud.com/player/?url=https%3A%2F%2Fsoundcloud.com%2Fartist%2Fsets%2Fplaylist-name",
+        )
+
+    def test_soundcloud_www_url_converted_to_embed(self):
+        item = self._make(
+            "https://www.soundcloud.com/artist/track", provider=ContentItem.Provider.SOUNDCLOUD,
+        )
+        self.assertEqual(
+            item.embed_url,
+            "https://w.soundcloud.com/player/?url=https%3A%2F%2Fwww.soundcloud.com%2Fartist%2Ftrack",
+        )
+
+    def test_soundcloud_already_embed_url_left_unchanged(self):
+        embed = "https://w.soundcloud.com/player/?url=https%3A%2F%2Fsoundcloud.com%2Fartist%2Ftrack"
+        item = self._make(embed, provider=ContentItem.Provider.SOUNDCLOUD)
+        self.assertEqual(item.embed_url, embed)
+
+
 class ContentCompletionTests(APITestCase):
     def setUp(self):
         self.student1 = User.objects.create_user(
