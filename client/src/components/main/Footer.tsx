@@ -1,33 +1,23 @@
 import Link from "next/link";
-import { InstagramIcon, LinkedinIcon } from "@/components/ui/icons";
+import { GlobeIcon, LinkedinIcon } from "@/components/ui/icons";
 
 const FOOTER_COLUMNS = [
 	{
 		title: "Course",
 		links: [
 			{ label: "Overview", href: "/" },
-			{ label: "Modules", href: "/modules" },
+			{ label: "Programme", href: "/modules" },
 		],
 	},
 	{
 		title: "Company",
-		links: [
-			{ label: "About Us", href: "/about" },
-			{ label: "Contact", href: "/contact" },
-		],
-	},
-	{
-		title: "Legal",
-		links: [
-			{ label: "Privacy", href: "/privacy" },
-			{ label: "Terms", href: "/terms" },
-		],
+		links: [{ label: "About Us", href: "/about" }],
 	},
 ];
 
 const SOCIAL_LINKS = [
-	{ label: "Instagram", href: "https://instagram.com", icon: InstagramIcon },
-	{ label: "LinkedIn", href: "https://linkedin.com", icon: LinkedinIcon },
+	{ label: "LinkedIn", href: "https://www.linkedin.com/in/dr-sarah-moore-84a0902a/", icon: LinkedinIcon },
+	{ label: "Research Repository", href: "https://research-repository.uwa.edu.au/en/persons/sarah-moore/", icon: GlobeIcon },
 ];
 
 export default function Footer() {
@@ -41,7 +31,7 @@ export default function Footer() {
 					</p>
 				</div>
 
-				<div className="grid grid-cols-3 gap-8 sm:gap-16">
+				<div className="grid grid-cols-2 gap-8 sm:gap-16">
 					{FOOTER_COLUMNS.map((column) => (
 						<div key={column.title} className="flex flex-col gap-3">
 							<h3 className="text-sm font-bold text-white">{column.title}</h3>
