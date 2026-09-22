@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import BottomNavbar from "@/components/main/BottomNavbar";
 import { IconProps, HomeIcon, BookOpenIcon, MessageCircleIcon, FolderIcon, CalendarIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { UserAvatar } from "@/components/ui/UserAvatar";
@@ -31,64 +32,66 @@ export default function Sidebar({ responsive = false }: { responsive?: boolean }
     .join("") || "U";
 
   return (
-    <aside className={`flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-4 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full md:sticky md:top-4 md:bottom-4 md:min-h-[calc(100dvh-2rem)] lg:top-6 lg:bottom-6 lg:min-h-[calc(100dvh-3rem)]" : "h-screen w-[280px] overflow-y-auto"}`}>
-      <Link href="/" className="flex items-center gap-3">
-        <span className="size-9 shrink-0 rounded-[10px] bg-brand-blue" />
-        <span className="text-[18px] font-bold text-[#111827]">logo</span>
-      </Link>
+    <>
+      <aside className={`hidden md:flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-4 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full md:sticky md:top-4 md:bottom-4 md:min-h-[calc(100dvh-2rem)] lg:top-6 lg:bottom-6 lg:min-h-[calc(100dvh-3rem)]" : "h-screen w-[280px] overflow-y-auto"}`}>
+        <Link href="/" className="flex items-center gap-3">
+          <span className="size-9 shrink-0 rounded-[10px] bg-brand-blue" />
+          <span className="text-[18px] font-bold text-[#111827]">logo</span>
+        </Link>
 
-      <div className="my-3 h-px w-full bg-[#E5E7EB]" />
+        <div className="my-3 h-px w-full bg-[#E5E7EB]" />
 
-      <nav aria-label="Main navigation" className={responsive ? "grid grid-cols-2 gap-2 md:block md:space-y-2" : "space-y-2"}>
-        {NAV_ITEMS.map(({ label, href, icon: Icon, isBold }) => {
-          const isActive =
-            href === "/"
-              ? pathname === "/"
-              : pathname === href || pathname?.startsWith(`${href}/`);
+        <nav aria-label="Main navigation" className={responsive ? "grid grid-cols-2 gap-2 md:block md:space-y-2" : "space-y-2"}>
+          {NAV_ITEMS.map(({ label, href, icon: Icon, isBold }) => {
+            const isActive =
+              href === "/"
+                ? pathname === "/"
+                : pathname === href || pathname?.startsWith(`${href}/`);
 
-          return (
-            <Link
-              key={href}
-              aria-current={isActive ? "page" : undefined}
-              href={href}
-              className={[
-                "flex h-[44px] w-full items-center gap-3 rounded-[5px] px-3 transition-colors",
-                isActive ? "bg-brand-blue text-white shadow-[0_4px_2px_rgba(0,0,0,0.1)]" : "",
-              ].join(" ")}
-            >
-              <Icon
-                className="h-[20px] w-[20px] shrink-0"
-              />
-
-              <span
+            return (
+              <Link
+                key={href}
+                aria-current={isActive ? "page" : undefined}
+                href={href}
                 className={[
-                  "text-[14px] leading-none",
-                  isActive ? "text-white" : "text-[#374151]",
-                  isBold || isActive ? "font-bold" : "font-semibold",
+                  "flex h-[44px] w-full items-center gap-3 rounded-[5px] px-3 transition-colors",
+                  isActive ? "bg-brand-blue text-white shadow-[0_4px_2px_rgba(0,0,0,0.1)]" : "",
                 ].join(" ")}
               >
-                {label}
-              </span>
-            </Link>
-          );
-        })}
-      </nav>
+                <Icon className="h-[20px] w-[20px] shrink-0" />
 
-      <div className="mt-auto pt-6" />
+                <span
+                  className={[
+                    "text-[14px] leading-none",
+                    isActive ? "text-white" : "text-[#374151]",
+                    isBold || isActive ? "font-bold" : "font-semibold",
+                  ].join(" ")}
+                >
+                  {label}
+                </span>
+              </Link>
+            );
+          })}
+        </nav>
 
-      <Link
-        href="/profile"
-        aria-current={pathname === "/profile" ? "page" : undefined}
-        className={[
-          "flex w-full items-center gap-3 rounded-[10px] border px-3 py-[10px] transition-colors",
-          pathname === "/profile"
-            ? "border-brand-blue bg-brand-blue/5"
-            : "border-[#E5E7EB] bg-[#F9FAFB] hover:bg-[#F3F4F6]",
-        ].join(" ")}
-      >
-        <UserAvatar email={user?.email} fullName={fullName} size={32} className="shrink-0" />
-        <span className="text-[14px] font-semibold text-[#111827]">{fullName}</span>
-      </Link>
-    </aside>
+        <div className="mt-auto pt-6" />
+
+        <Link
+          href="/profile"
+          aria-current={pathname === "/profile" ? "page" : undefined}
+          className={[
+            "flex w-full items-center gap-3 rounded-[10px] border px-3 py-[10px] transition-colors",
+            pathname === "/profile"
+              ? "border-brand-blue bg-brand-blue/5"
+              : "border-[#E5E7EB] bg-[#F9FAFB] hover:bg-[#F3F4F6]",
+          ].join(" ")}
+        >
+          <UserAvatar email={user?.email} fullName={fullName} size={32} className="shrink-0" />
+          <span className="text-[14px] font-semibold text-[#111827]">{fullName}</span>
+        </Link>
+      </aside>
+
+      <BottomNavbar className="md:hidden" />
+    </>
   );
 }
