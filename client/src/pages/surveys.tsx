@@ -1,9 +1,65 @@
+import { useEffect, useState} from "react";
 import Head from "next/head";
+import { useRouter } from "next/router";
 import Sidebar from "@/components/main/Sidebar";
 import SurveyHeader from "@/components/surveys/SurveyHeader";
-import SurveyLinks from "@/components/surveys/SurveyLinks";
+import SurveyLinks, {type SurveyLinkItem } from "@/components/surveys/SurveyLinks";
+import { useAuth } from "@/context/AuthContext";
+import { listSurveys } from "@/lib/api";
 
 export default function SurveysHomePage() {
+	const router = useRouter();
+	const { user, isLoading } = useAuth();
+	const [items, setItems] = useState<SurveyLinkItem[]>([]);
+
+	useEffect(() => {
+		if (!isLoading && !user) {
+			router.replace("/");
+			return;
+		}
+	}, [isLoading, user, router]);
+
+	useEffect(() => {
+		if (isLoading || !user) return;
+
+		let cancelled = false;
+
+		async function loadSurverys() {
+			try {
+				const token = localStorage.getItem("token") ?? "";
+				const data = await listSurveys(token);
+
+				if (cancelled) return;
+
+				const mapped: SurveyLinkItem[] = data.map((survey) => ({
+					id: survey.id,
+					label: survey.title || `Week ${survey.id}`,
+					status: survey.has_responded
+						? "completed"
+						: survey.is_unlocked
+							? "current"
+							: "locked",
+					href: survey.is_unlocked ? `/surveys/${survey.id}` : undefined,
+				}));
+
+				setItems(mapped);
+			} catch (error) {
+				console.error("Error loading surveys:", error);
+				if (!cancelled) setItems([]);
+			}
+		}
+
+		loadSurverys();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [isLoading, user]);
+
+	if (isLoading) {
+		return <div className="flex min-h-screen items-center justify-center">Loading...</div>;
+	}
+
 	return (
 		<>
 			<Head>
@@ -24,7 +80,7 @@ export default function SurveysHomePage() {
 							title="Weekly Surveys"
 							description="Complete each weekly survey to track your mindfulness practice."
 						/>
-						<SurveyLinks />
+						<SurveyLinks items={items} />
 					</main>
 				</div>
 			</div>

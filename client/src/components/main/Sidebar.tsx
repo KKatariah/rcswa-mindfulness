@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconProps, HomeIcon, BookOpenIcon, MessageCircleIcon, FolderIcon, CalendarIcon } from "@/components/ui/icons";
+import { IconProps, BookOpenIcon, MessageCircleIcon, FolderIcon, CalendarIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 
@@ -12,7 +12,6 @@ type NavItem = {
 };
 
 const NAV_ITEMS: NavItem[] = [
-  { label: "Home", href: "/", icon: HomeIcon },
   { label: "Modules", href: "/modules", icon: BookOpenIcon },
   { label: "Surveys", href: "/surveys", icon: CalendarIcon},
   { label: "Forum", href: "/forum", icon: MessageCircleIcon },
@@ -31,13 +30,13 @@ export default function Sidebar({ responsive = false }: { responsive?: boolean }
     .join("") || "U";
 
   return (
-    <aside className={`flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full md:sticky md:top-20 md:min-h-[calc(100dvh-8rem)] lg:top-24 lg:min-h-[calc(100dvh-9rem)]" : "h-screen w-[280px] overflow-y-auto"}`}>
+    <aside className={`flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-4 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full md:sticky md:top-4 md:bottom-4 md:min-h-[calc(100dvh-2rem)] lg:top-6 lg:bottom-6 lg:min-h-[calc(100dvh-3rem)]" : "h-screen w-[280px] overflow-y-auto"}`}>
       <Link href="/" className="flex items-center gap-3">
         <span className="size-9 shrink-0 rounded-[10px] bg-brand-blue" />
         <span className="text-[18px] font-bold text-[#111827]">logo</span>
       </Link>
 
-      <div className="my-4 h-px w-full bg-[#E5E7EB]" />
+      <div className="my-3 h-px w-full bg-[#E5E7EB]" />
 
       <nav aria-label="Main navigation" className={responsive ? "grid grid-cols-2 gap-2 md:block md:space-y-2" : "space-y-2"}>
         {NAV_ITEMS.map(({ label, href, icon: Icon, isBold }) => {
