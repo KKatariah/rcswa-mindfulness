@@ -35,7 +35,7 @@ export type Enrollment = {
 	user_full_name: string;
 	cohort: number;
 	current_week: number;
-	status: "active" | "completed" | "withdrawn";
+	status: "pending" | "active" | "completed" | "withdrawn";
 	enrolled_at: string;
 };
 

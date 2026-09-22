@@ -342,14 +342,33 @@ export async function deleteCohort(id: number, token: string): Promise<void> {
 }
 
 export async function listEnrollments(
-	params: { cohort?: number },
+	params: { cohort?: number; status?: Enrollment["status"] },
 	token: string,
 ): Promise<Enrollment[]> {
-	const query = params.cohort ? `?cohort=${params.cohort}` : "";
+	const search = new URLSearchParams();
+	if (params.cohort) search.set("cohort", String(params.cohort));
+	if (params.status) search.set("status", params.status);
+	const query = search.toString() ? `?${search.toString()}` : "";
 	const res = await fetch(`${API_BASE_URL}/enrollments/${query}`, {
 		headers: { Authorization: `Token ${token}` },
 	});
 	return handleResponse<Enrollment[]>(res);
+}
+
+export async function approveEnrollment(id: number, token: string): Promise<Enrollment> {
+	const res = await fetch(`${API_BASE_URL}/enrollments/${id}/approve/`, {
+		method: "POST",
+		headers: authHeader(token),
+	});
+	return handleResponse<Enrollment>(res);
+}
+
+export async function rejectEnrollment(id: number, token: string): Promise<Enrollment> {
+	const res = await fetch(`${API_BASE_URL}/enrollments/${id}/reject/`, {
+		method: "POST",
+		headers: authHeader(token),
+	});
+	return handleResponse<Enrollment>(res);
 }
 
 // ── Admin: Modules ─────────────────────────────────────────────────────────────
