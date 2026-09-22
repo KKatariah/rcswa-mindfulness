@@ -71,15 +71,15 @@ function ScaleQuestionGroup({
 	return (
 		<div className="mt-5 grid gap-4">
 			{questions.map((question) => (
-				<fieldset key={question.id} className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,530px)] sm:items-center sm:gap-6">
-					<legend className="max-w-[620px] text-sm leading-5 text-ink sm:text-base">
+				<fieldset key={question.id} className="grid gap-3">
+					<legend className="max-w-[620px] text-sm leading-5 text-ink">
 						<span className="mr-2 font-semibold">{question.id}.</span>{question.text}
 					</legend>
-					<div aria-label={`Question ${question.id} scale`}>
-						<div className="grid grid-cols-7 gap-2 text-center text-xs font-bold sm:gap-3" aria-hidden="true">
+					<div aria-label={`Question ${question.id} scale`} className="w-full max-w-[768px]">
+						<div className="grid grid-cols-7 gap-2 text-center text-xs font-bold" aria-hidden="true">
 							{SCALE_VALUES.map((value) => <span key={value} className="underline">{value}</span>)}
 						</div>
-						<div className="mt-2 grid grid-cols-7 gap-2 sm:gap-3">
+						<div className="mt-2 grid grid-cols-7 gap-2">
 							{SCALE_VALUES.map((value) => (
 								<label key={value} className="flex justify-center">
 									<span className="sr-only">{value}</span>
@@ -126,11 +126,11 @@ export default function SurveyQuestions({
 				<div className="mt-5 grid gap-4 sm:max-w-[900px]">
 					<label className="grid gap-2 text-sm leading-5 text-ink sm:grid-cols-[minmax(0,1fr)_170px] sm:items-center sm:text-base">
 						<span>1. How many times did you do formal meditation practice in the <u>past week</u>?</span>
-						<input type="number" min="0" placeholder="Enter number..." className="h-8 rounded-xl border border-[#5b5a5a] px-4 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30" onChange={(event) => updateAnswer(1, event.target.value)} />
+						<input type="number" min="0" placeholder="Enter number..." className="h-8 rounded-xl border border-[#5b5a5a] px-4 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30" onChange={(event) => updateAnswer(1, Number(event.target.value || 0))} />
 					</label>
 					<label className="grid gap-2 text-sm leading-5 text-ink sm:grid-cols-[minmax(0,1fr)_170px] sm:items-center sm:text-base">
 						<span>2. What was the average duration of each meditation session (estimate in minutes)?</span>
-						<input type="number" min="0" placeholder="Enter number..." className="h-8 rounded-xl border border-[#5b5a5a] px-4 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30" onChange={(event) => updateAnswer(2, event.target.value)} />
+						<input type="number" min="0" placeholder="Enter number..." className="h-8 rounded-xl border border-[#5b5a5a] px-4 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30" onChange={(event) => updateAnswer(2, Number(event.target.value || 0))} />
 					</label>
 				</div>
 				<p className="mt-4 text-xs leading-4 text-ink sm:text-sm">(Note: If you did not do <u>any</u> meditation practice in the past week, skip to question 7.)</p>
@@ -154,7 +154,14 @@ export default function SurveyQuestions({
 				<textarea rows={3} placeholder="Enter reflection..." className="mt-6 w-full resize-y rounded-xl border border-[#5b5a5a] px-4 py-3 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30" onChange={(event) => updateAnswer(13, event.target.value)} />
 			</section>
 
-			{onSubmit && <button type="submit" className="w-fit rounded-md bg-brand-blue px-5 py-2 text-sm font-semibold text-white transition hover:bg-brand-blue-dark focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">Submit survey</button>}
+			<div className="flex justify-end pt-2">
+				<button
+					type="submit"
+					className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					Submit survey
+				</button>
+			</div>
 		</form>
 	);
 }

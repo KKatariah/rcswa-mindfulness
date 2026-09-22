@@ -5,7 +5,7 @@
     "fields": {
       "module": 1,
       "code": "weekly-maq-w1",
-      "title": "Week 1 Weekly Survey",
+      "title": "Week 1",
       "type": "weekly",
       "questions": [
         {
@@ -110,12 +110,7 @@
         {
           "id": "q13",
           "type": "longtext",
-          "text": "How are you feeling this week?"
-        },
-        {
-          "id": "q14",
-          "type": "longtext",
-          "text": "What has been your experience with the mindfulness practice this week?"
+          "text": "How are you feeling this week? What has been your experience with the mindfulness practice this week?"
         }
       ]
     }
@@ -126,7 +121,7 @@
     "fields": {
       "module": 2,
       "code": "weekly-maq-w2",
-      "title": "Week 2 Weekly Survey",
+      "title": "Week 2",
       "type": "weekly",
       "questions": [
         {
@@ -231,12 +226,7 @@
         {
           "id": "q13",
           "type": "longtext",
-          "text": "How are you feeling this week?"
-        },
-        {
-          "id": "q14",
-          "type": "longtext",
-          "text": "What has been your experience with the mindfulness practice this week?"
+          "text": "How are you feeling this week? What has been your experience with the mindfulness practice this week?"
         }
       ]
     }
