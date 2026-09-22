@@ -6,7 +6,7 @@ import remarkGfm from "remark-gfm";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { PencilIcon, TrashIcon } from "@/components/ui/icons";
 import {
-	getModule,
+	getModuleAdmin,
 	updateModule,
 	createContentItem,
 	updateContentItem,
@@ -166,7 +166,7 @@ export default function AdminModuleEditorPage() {
 		const token = localStorage.getItem("token") ?? "";
 		(async () => {
 			try {
-				const data = await getModule(Number(moduleId), token);
+				const data = await getModuleAdmin(Number(moduleId), token);
 				if (!cancelled) setModule(data);
 			} catch (e) {
 				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load module");
@@ -180,7 +180,7 @@ export default function AdminModuleEditorPage() {
 	async function refresh() {
 		if (!module) return;
 		const token = localStorage.getItem("token") ?? "";
-		const data = await getModule(module.id, token);
+		const data = await getModuleAdmin(module.id, token);
 		setModule(data);
 	}
 

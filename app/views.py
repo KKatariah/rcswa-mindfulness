@@ -1,4 +1,6 @@
+from django.conf import settings as django_settings
 from django.shortcuts import render
+from django.utils import timezone
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -6,6 +8,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
+from .serializers import ProfileUpdateSerializer, ChangePasswordSerializer
 
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 
@@ -13,10 +16,13 @@ from .models import (
     Cohort,
     ContentCompletion,
     ContentItem,
+    ContentView,
     Enrollment,
     ForumPost,
     ForumThread,
     Module,
+    NotificationPreference,
+    PushSubscription,
     Survey,
     SurveyResponse,
     User,
@@ -33,6 +39,7 @@ from .serializers import (
     CohortSerializer,
     ContentCompletionSerializer,
     ContentItemSerializer,
+    ContentViewSerializer,
     EnrollmentSerializer,
     ForumPostCreateSerializer,
     ForumPostSerializer,
@@ -40,6 +47,8 @@ from .serializers import (
     ForumThreadDetailSerializer,
     ForumThreadSerializer,
     ModuleSerializer,
+    NotificationPreferenceSerializer,
+    PushSubscriptionSerializer,
     RegisterSerializer,
     SurveyDetailSerializer,
     SurveyResponseAdminSerializer,
@@ -73,8 +82,27 @@ def profile_view(request):
 # API views
 
 
+def _active_cohort_start_date(user):
+    enrollment = (
+        Enrollment.objects
+        .filter(user=user, status=Enrollment.Status.ACTIVE)
+        .select_related("cohort")
+        .order_by("-enrolled_at")
+        .first()
+    )
+    return enrollment.cohort.start_date.isoformat() if enrollment else None
+
+
 def _user_payload(user):
-    return {"id": user.id, "email": user.email, "full_name": user.full_name, "role": user.role}
+    return {
+        "id": user.id,
+        "email": user.email,
+        "full_name": user.full_name,
+        "role": user.role,
+        "display_name": user.display_name,
+        "auth_provider": user.auth_provider,
+        "cohort_start_date": _active_cohort_start_date(user),
+    }
 
 
 @api_view(["POST"])
@@ -173,7 +201,7 @@ def google_login_view(request):
 
     user, created = User.objects.get_or_create(
         email=email,
-        defaults={"full_name": full_name},
+        defaults={"full_name": full_name, "auth_provider": "google"},
     )
 
     if created:
@@ -213,6 +241,12 @@ class ModuleViewSet(viewsets.ModelViewSet):
         if getattr(u, "role", None) == "admin" or u.is_staff:
             return qs  # admins see unpublished modules too
         return qs.filter(is_published=True)
+
+    def retrieve(self, request, *args, **kwargs):
+        module = self.get_object()
+        if module.unlock_at and module.unlock_at > timezone.now():
+            raise PermissionDenied("This module is not available yet.")
+        return Response(self.get_serializer(module).data)
 
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "destroy"):
@@ -257,6 +291,7 @@ class ContentCompletionViewSet(
     mixins.CreateModelMixin,
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
+    mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
     serializer_class = ContentCompletionSerializer
@@ -270,6 +305,32 @@ class ContentCompletionViewSet(
         obj, created = ContentCompletion.objects.get_or_create(
             user=request.user,
             content_item=serializer.validated_data["content_item"],
+        )
+        out = self.get_serializer(obj)
+        return Response(
+            out.data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class ContentViewViewSet(
+    mixins.CreateModelMixin,
+    mixins.ListModelMixin,
+    viewsets.GenericViewSet,
+):
+    """Auto-recorded when a student opens a content item; separate from manual completion."""
+
+    serializer_class = ContentViewSerializer
+
+    def get_queryset(self):
+        return ContentView.objects.filter(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        obj, created = ContentView.objects.get_or_create(
+            user=request.user,
+            module=serializer.validated_data["module"],
         )
         out = self.get_serializer(obj)
         return Response(
@@ -532,10 +593,150 @@ class SurveyResponseViewSet(
         serializer.save(user=self.request.user)
 
 
+# ── Push notification subscriptions ───────────────────────────────────────────
+
+class PushSubscriptionViewSet(
+    mixins.ListModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    Register and manage browser Push API subscriptions.
+
+    POST   /api/notifications/subscriptions/       register or refresh
+    GET    /api/notifications/subscriptions/       list own subscriptions
+    DELETE /api/notifications/subscriptions/{id}/  unregister
+
+    Registration is an upsert keyed on `endpoint`.  If the endpoint already
+    belongs to a different user (e.g. shared campus browser), the subscription
+    is reassigned to the currently authenticated user.
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = PushSubscriptionSerializer
+
+    def get_queryset(self):
+        return PushSubscription.objects.filter(user=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        obj, created = PushSubscription.objects.update_or_create(
+            endpoint=serializer.validated_data["endpoint"],
+            defaults={
+                "user": request.user,
+                "p256dh": serializer.validated_data["p256dh"],
+                "auth": serializer.validated_data["auth"],
+                "user_agent": request.META.get("HTTP_USER_AGENT", ""),
+            },
+        )
+        out = self.get_serializer(obj)
+        return Response(
+            out.data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+# ── Notification preferences ───────────────────────────────────────────────────
+
+class NotificationPreferenceViewSet(
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    """
+    GET  /api/notifications/preferences/me/  — retrieve (auto-creates on first call)
+    PATCH /api/notifications/preferences/me/ — update
+    """
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = NotificationPreferenceSerializer
+    http_method_names = ["get", "patch", "head", "options"]
+
+    def _get_or_create_pref(self):
+        pref, _ = NotificationPreference.objects.get_or_create(user=self.request.user)
+        return pref
+
+    @action(detail=False, methods=["get", "patch"], url_path="me")
+    def me(self, request):
+        pref = self._get_or_create_pref()
+        if request.method == "GET":
+            return Response(self.get_serializer(pref).data)
+        serializer = self.get_serializer(pref, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    def get_queryset(self):
+        return NotificationPreference.objects.filter(user=self.request.user)
+
+
+# ── VAPID public key (unauthenticated) ─────────────────────────────────────────
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def vapid_public_key_view(request):
+    """
+    Return the VAPID public key so the frontend can call
+    pushManager.subscribe({ applicationServerKey: key }).
+    This endpoint is intentionally unauthenticated — the public key is public.
+    """
+    return Response({"vapid_public_key": django_settings.VAPID_PUBLIC_KEY})
+
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def current_user(request):
     return Response({"user": _user_payload(request.user)})
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def update_profile_view(request):
+    serializer = ProfileUpdateSerializer(request.user, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response(
+            {"message": "Profile updated", "user": _user_payload(request.user)},
+            status=status.HTTP_200_OK,
+        )
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def change_password_view(request):
+    if not request.user.has_usable_password():
+        return Response(
+            {"error": "Password change is not available for accounts signed in with Google."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    serializer = ChangePasswordSerializer(data=request.data)
+    if not serializer.is_valid():
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+    current_password = serializer.validated_data["current_password"]
+    new_password = serializer.validated_data["new_password"]
+
+    if not request.user.check_password(current_password):
+        return Response(
+            {"error": "Current password is incorrect."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    request.user.set_password(new_password)
+    request.user.save()
+
+    # Password change invalidates old sessions/tokens for security — issue a fresh token
+    request.user.auth_token.delete()
+    new_token = Token.objects.create(user=request.user)
+
+    return Response(
+        {"message": "Password changed successfully", "token": new_token.key},
+        status=status.HTTP_200_OK,
+    )
 
 
 # ── Admin dashboard & program status ─────────────────────────────────────────────

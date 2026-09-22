@@ -1,6 +1,7 @@
-from datetime import date, timedelta
+from datetime import date
 
 from django.db.models import Count, Q
+from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
@@ -8,10 +9,13 @@ from .models import (
     Cohort,
     ContentCompletion,
     ContentItem,
+    ContentView,
     Enrollment,
     ForumPost,
     ForumThread,
     Module,
+    NotificationPreference,
+    PushSubscription,
     Resource,
     Survey,
     SurveyResponse,
@@ -93,29 +97,44 @@ class ContentItemSerializer(serializers.ModelSerializer):
 
 
 class ModuleSerializer(serializers.ModelSerializer):
+    is_unlocked = serializers.SerializerMethodField()
+
+    def get_is_unlocked(self, obj):
+        return obj.unlock_at is None or obj.unlock_at <= timezone.now()
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not self.get_is_unlocked(instance):
+            data["content_items"] = []
+            data["resources"] = []
+        return data
+
     # related_name="content_items" and related_name="resources" on the FK definitions
     content_items = ContentItemSerializer(many=True, read_only=True)
     resources = ResourceSerializer(many=True, read_only=True)
-    is_unlocked = serializers.SerializerMethodField()
 
     class Meta:
         model = Module
         fields = [
             "id",
             "week_number",
+            "unlock_at",
+            "is_unlocked",
             "title",
             "description",
             "is_published",
-            "is_unlocked",
             "content_items",
             "resources",
         ]
 
-    def get_is_unlocked(self, obj):
-        return _module_is_unlocked(obj, self.context.get("request"))
-
 
 class ContentCompletionSerializer(serializers.ModelSerializer):
+    def validate_content_item(self, item):
+        module = item.module
+        if not module.is_published or (module.unlock_at and module.unlock_at > timezone.now()):
+            raise serializers.ValidationError("This module is not available yet.")
+        return item
+
     # read_only=True: user is injected by the viewset, never accepted from the payload.
     user = serializers.PrimaryKeyRelatedField(read_only=True)
 
@@ -125,13 +144,24 @@ class ContentCompletionSerializer(serializers.ModelSerializer):
         read_only_fields = ["completed_at"]
 
 
-# ── Forum ──────────────────────────────────────────────────────────────────────
+class ContentViewSerializer(serializers.ModelSerializer):
+    # read_only=True: user is injected by the viewset, never accepted from the payload.
+    user = serializers.PrimaryKeyRelatedField(read_only=True)
+
+    class Meta:
+        model = ContentView
+        fields = ["id", "user", "module", "viewed_at"]
+        read_only_fields = ["viewed_at"]
+
+
+# ── Forum ──────────────────────────────────────────────────────────────────────────────
 
 def _forum_author_name(author, request):
     """
     Resolve the public name for a forum author.
     - Null author (deleted account) → "Deleted user".
-    - Admin/staff viewer → real full_name, regardless of display_name.
+    - Admin/staff viewer → "display_name (full_name)" if a display_name is set,
+      otherwise just full_name.
     - Everyone else → display_name if set, else full_name.
     """
     if author is None:
@@ -139,6 +169,8 @@ def _forum_author_name(author, request):
     if request and request.user.is_authenticated:
         u = request.user
         if getattr(u, "role", None) == "admin" or u.is_staff:
+            if author.display_name:
+                return f"{author.display_name} ({author.full_name})"
             return author.full_name
     return author.display_name or author.full_name
 
@@ -163,15 +195,23 @@ class ForumPostCreateSerializer(serializers.ModelSerializer):
 
 class ForumPostSerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
+    author_email = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = ForumPost
-        fields = ["id", "thread", "parent_post", "author_name", "body", "created_at", "updated_at", "can_edit"]
+        fields = [
+            "id", "thread", "parent_post",
+            "author_name", "author_email",
+            "body", "created_at", "updated_at", "can_edit",
+        ]
         read_only_fields = ["thread", "parent_post", "created_at", "updated_at"]
 
     def get_author_name(self, obj):
         return _forum_author_name(obj.author, self.context.get("request"))
+
+    def get_author_email(self, obj):
+        return getattr(obj.author, "email", None)
 
     def get_can_edit(self, obj):
         return _can_edit(obj, self.context.get("request"))
@@ -189,35 +229,9 @@ def _is_admin(request):
     return getattr(u, "role", None) == "admin" or u.is_staff
 
 
-# ── Cohort-driven module unlock & forum archive ─────────────────────────────────
-# Both computed on read, not stored: no scheduled job exists in this repo, and none
-# is being added. Unlock/archive state is always derived fresh from today's date.
-
-def _active_enrollment(user):
-    """Most recently enrolled ACTIVE Enrollment for user, or None."""
-    return (
-        Enrollment.objects.filter(user=user, status=Enrollment.Status.ACTIVE)
-        .select_related("cohort")
-        .order_by("-enrolled_at")
-        .first()
-    )
-
-
-def _module_unlock_date(module, cohort):
-    """cohort.start_date is Monday of week 1; week N unlocks (N-1)*7 days later."""
-    return cohort.start_date + timedelta(days=(module.week_number - 1) * 7)
-
-
-def _module_is_unlocked(module, request):
-    if not request or not request.user.is_authenticated:
-        return False
-    if _is_admin(request):  # admins/staff always see full content for editing/preview
-        return True
-    enrollment = _active_enrollment(request.user)
-    if enrollment is None:
-        return False
-    return date.today() >= _module_unlock_date(module, enrollment.cohort)
-
+# ── Forum archive ────────────────────────────────────────────────────────────────
+# Computed on read, not stored: no scheduled job exists in this repo, and none is
+# being added. Archive state is always derived fresh from today's date.
 
 def _is_program_active(today=None):
     """True if `today` falls within [start_date, end_date] of ANY cohort.
@@ -231,6 +245,7 @@ def _is_program_active(today=None):
 
 class ForumThreadSerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
+    author_email = serializers.SerializerMethodField()
     body = serializers.SerializerMethodField()
     reply_count = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
@@ -240,13 +255,16 @@ class ForumThreadSerializer(serializers.ModelSerializer):
         model = ForumThread
         fields = [
             "id", "title", "module", "content_item",
-            "author_name", "created_at", "updated_at",
+            "author_name", "author_email", "created_at", "updated_at",
             "body", "reply_count", "can_edit", "is_pinned", "can_pin",
         ]
         read_only_fields = ["module", "content_item", "created_at", "updated_at"]
 
     def get_author_name(self, obj):
         return _forum_author_name(obj.created_by, self.context.get("request"))
+
+    def get_author_email(self, obj):
+        return getattr(obj.created_by, "email", None)
 
     def get_body(self, obj):
         posts = sorted(obj.posts.all(), key=lambda p: (p.created_at, p.pk))
@@ -322,6 +340,8 @@ def _survey_is_unlocked(survey, user):
         if survey.type == Survey.SurveyType.WEEKLY:
             return False
         return True
+    if not survey.module.is_published or (survey.module.unlock_at and survey.module.unlock_at > timezone.now()):
+        return False
     required_ids = set(
         ContentItem.objects.filter(module_id=survey.module_id).values_list("id", flat=True)
     )
@@ -396,6 +416,8 @@ class SurveySerializer(serializers.ModelSerializer):
                 if obj.type == Survey.SurveyType.WEEKLY:
                     return False
                 return True
+            if not obj.module.is_published or (obj.module.unlock_at and obj.module.unlock_at > timezone.now()):
+                return False
             required_ids = {ci.id for ci in obj.module.content_items.all()}
             return not required_ids or required_ids <= completed_ids
         return _survey_is_unlocked(obj, request.user)
@@ -544,3 +566,41 @@ def _enrollment_status_breakdown():
     for row in rows:
         breakdown[row["status"]] = row["n"]
     return breakdown
+
+
+# ── Profile ────────────────────────────────────────────────────────────────────
+
+class ProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["display_name"]
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True, min_length=8)
+
+
+# ── Push notifications ─────────────────────────────────────────────────────────
+
+class PushSubscriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PushSubscription
+        fields = ["id", "endpoint", "p256dh", "auth", "created_at", "last_seen"]
+        read_only_fields = ["id", "created_at", "last_seen"]
+        extra_kwargs = {
+            "endpoint": {"validators": []},
+        }
+
+
+class NotificationPreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationPreference
+        fields = [
+            "id",
+            "email_enabled",
+            "inapp_enabled",
+            "reminder_time",
+            "push_denied",
+        ]
+        read_only_fields = ["id"]
