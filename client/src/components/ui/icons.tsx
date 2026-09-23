@@ -151,6 +151,39 @@ export function InstagramIcon(props: IconProps) {
   );
 }
 
+export function PlusIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 18 18" {...base} {...props}>
+      <path d="M9 3.75v10.5M3.75 9h10.5" />
+    </svg>
+  );
+}
+
+export function PencilIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 18 18" {...base} {...props}>
+      <path d="M12.19 2.81a1.5 1.5 0 0 1 2.12 2.12l-8.5 8.5-3 .75.75-3z" />
+    </svg>
+  );
+}
+
+export function TrashIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 18 18" {...base} {...props}>
+      <path d="M2.25 4.5h13.5M6 4.5V3a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 12 3v1.5m2.25 0-.6 9.6a1.5 1.5 0 0 1-1.5 1.4H5.85a1.5 1.5 0 0 1-1.5-1.4l-.6-9.6" />
+    </svg>
+  );
+}
+
+export function SettingsIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base} {...props}>
+      <circle cx="10" cy="10" r="2.5" />
+      <path d="M16.17 12.5a1.38 1.38 0 0 0 .28 1.52l.05.05a1.67 1.67 0 1 1-2.36 2.36l-.05-.05a1.38 1.38 0 0 0-1.52-.28 1.38 1.38 0 0 0-.84 1.26v.14a1.67 1.67 0 1 1-3.33 0v-.08a1.38 1.38 0 0 0-.9-1.26 1.38 1.38 0 0 0-1.52.28l-.05.05a1.67 1.67 0 1 1-2.36-2.36l.05-.05a1.38 1.38 0 0 0 .28-1.52 1.38 1.38 0 0 0-1.26-.84h-.14a1.67 1.67 0 1 1 0-3.33h.08a1.38 1.38 0 0 0 1.26-.9 1.38 1.38 0 0 0-.28-1.52l-.05-.05a1.67 1.67 0 1 1 2.36-2.36l.05.05a1.38 1.38 0 0 0 1.52.28h.06a1.38 1.38 0 0 0 .84-1.26v-.14a1.67 1.67 0 1 1 3.33 0v.08a1.38 1.38 0 0 0 .84 1.26 1.38 1.38 0 0 0 1.52-.28l.05-.05a1.67 1.67 0 1 1 2.36 2.36l-.05.05a1.38 1.38 0 0 0-.28 1.52v.06a1.38 1.38 0 0 0 1.26.84h.14a1.67 1.67 0 1 1 0 3.33h-.08a1.38 1.38 0 0 0-1.26.84z" />
+    </svg>
+  );
+}
+
 export function VideoIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 20 20" {...base} {...props}>

@@ -1,16 +1,21 @@
+from datetime import date
+
+from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from .models import (
+    Cohort,
     ContentCompletion,
     ContentItem,
+    ContentView,
+    Enrollment,
+    ForumPost,
+    ForumThread,
     Module,
     NotificationPreference,
     PushSubscription,
-    ContentView,
-    ForumPost,
-    ForumThread,
     Resource,
     Survey,
     SurveyResponse,
@@ -33,6 +38,37 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
 
 
+# ── Cohorts & Enrollment ──────────────────────────────────────────────────────
+
+class CohortSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Cohort
+        fields = ["id", "name", "year", "start_date", "end_date"]
+
+    def validate(self, attrs):
+        start = attrs.get("start_date", getattr(self.instance, "start_date", None))
+        end = attrs.get("end_date", getattr(self.instance, "end_date", None))
+        if start and end and end <= start:
+            raise serializers.ValidationError({"end_date": "end_date must be after start_date."})
+        return attrs
+
+
+class EnrollmentSerializer(serializers.ModelSerializer):
+    user_email = serializers.SerializerMethodField()
+    user_full_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Enrollment
+        fields = ["id", "user", "user_email", "user_full_name", "cohort", "current_week", "status", "enrolled_at"]
+        read_only_fields = ["enrolled_at"]
+
+    def get_user_email(self, obj):
+        return obj.user.email if obj.user else None
+
+    def get_user_full_name(self, obj):
+        return obj.user.full_name if obj.user else None
+
+
 class ResourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Resource
@@ -42,7 +78,22 @@ class ResourceSerializer(serializers.ModelSerializer):
 class ContentItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContentItem
-        fields = ["id", "title", "type", "provider", "embed_url", "display_order"]
+        fields = ["id", "module", "title", "type", "provider", "embed_url", "body", "display_order"]
+
+    def validate(self, attrs):
+        type_ = attrs.get("type", getattr(self.instance, "type", None))
+        if type_ == ContentItem.ContentType.TEXT:
+            body = attrs.get("body", getattr(self.instance, "body", ""))
+            if not body or not body.strip():
+                raise serializers.ValidationError({"body": "Text content items require a non-empty body."})
+        else:
+            provider = attrs.get("provider", getattr(self.instance, "provider", ""))
+            embed_url = attrs.get("embed_url", getattr(self.instance, "embed_url", ""))
+            if not provider:
+                raise serializers.ValidationError({"provider": "Video/audio content items require a provider."})
+            if not embed_url:
+                raise serializers.ValidationError({"embed_url": "Video/audio content items require an embed_url."})
+        return attrs
 
 
 class ModuleSerializer(serializers.ModelSerializer):
@@ -71,9 +122,18 @@ class ModuleSerializer(serializers.ModelSerializer):
             "is_unlocked",
             "title",
             "description",
+            "is_published",
             "content_items",
             "resources",
         ]
+
+
+class ModuleSummarySerializer(serializers.ModelSerializer):
+    """Public-safe module summary (short blurb only, no full content) for marketing pages."""
+
+    class Meta:
+        model = Module
+        fields = ["id", "week_number", "title", "summary"]
 
 
 class ContentCompletionSerializer(serializers.ModelSerializer):
@@ -175,6 +235,20 @@ def _is_admin(request):
         return False
     u = request.user
     return getattr(u, "role", None) == "admin" or u.is_staff
+
+
+# ── Forum archive ────────────────────────────────────────────────────────────────
+# Computed on read, not stored: no scheduled job exists in this repo, and none is
+# being added. Archive state is always derived fresh from today's date.
+
+def _is_program_active(today=None):
+    """True if `today` falls within [start_date, end_date] of ANY cohort.
+    The forum is read-only (not hidden) whenever this is False. If no cohort has
+    ever been created, there is no "programme" to have ended yet, so stay open."""
+    if not Cohort.objects.exists():
+        return True
+    today = today or date.today()
+    return Cohort.objects.filter(start_date__lte=today, end_date__gte=today).exists()
 
 
 class ForumThreadSerializer(serializers.ModelSerializer):
@@ -405,6 +479,104 @@ class SurveyResponseAdminSerializer(serializers.ModelSerializer):
     def get_survey_title(self, obj):
         return obj.survey.title if obj.survey else ""
 
+
+# ── Admin dashboard stats ────────────────────────────────────────────────────────
+# ORM aggregation only — no raw SQL, no pagination/filtering library (none installed).
+
+def _cohort_breakdown():
+    cohorts = Cohort.objects.annotate(
+        enrolled=Count("enrollments"),
+        active=Count("enrollments", filter=Q(enrollments__status=Enrollment.Status.ACTIVE)),
+        completed=Count("enrollments", filter=Q(enrollments__status=Enrollment.Status.COMPLETED)),
+        withdrawn=Count("enrollments", filter=Q(enrollments__status=Enrollment.Status.WITHDRAWN)),
+    ).order_by("-start_date")
+    return [
+        {
+            "cohort_id": c.id,
+            "cohort_name": str(c),
+            "enrolled": c.enrolled,
+            "active": c.active,
+            "completed": c.completed,
+            "withdrawn": c.withdrawn,
+        }
+        for c in cohorts
+    ]
+
+
+def _module_completion_stats():
+    """Completion % of published modules among ACTIVE-enrolled students. A student
+    "completes" a module when they've completed every ContentItem in it — same
+    all-items concept as _survey_is_unlocked."""
+    active_user_ids = set(
+        Enrollment.objects.filter(status=Enrollment.Status.ACTIVE).values_list("user_id", flat=True)
+    )
+    eligible_count = len(active_user_ids)
+    results = []
+    modules = Module.objects.filter(is_published=True).prefetch_related("content_items")
+    for module in modules:
+        item_ids = list(module.content_items.values_list("id", flat=True))
+        if not item_ids or eligible_count == 0:
+            completed_count = 0
+        else:
+            completed_count = (
+                ContentCompletion.objects
+                .filter(user_id__in=active_user_ids, content_item_id__in=item_ids)
+                .values("user_id")
+                .annotate(n=Count("content_item_id", distinct=True))
+                .filter(n=len(item_ids))
+                .count()
+            )
+        pct = round((completed_count / eligible_count) * 100, 1) if eligible_count else 0.0
+        results.append({
+            "id": module.id,
+            "week_number": module.week_number,
+            "title": module.title,
+            "completed_count": completed_count,
+            "eligible_count": eligible_count,
+            "completion_pct": pct,
+        })
+    return results
+
+
+def _survey_response_rates():
+    active_user_ids = set(
+        Enrollment.objects.filter(status=Enrollment.Status.ACTIVE).values_list("user_id", flat=True)
+    )
+    eligible_count = len(active_user_ids)
+    surveys = Survey.objects.annotate(response_count=Count("responses"))
+    results = []
+    for survey in surveys:
+        pct = round((survey.response_count / eligible_count) * 100, 1) if eligible_count else 0.0
+        results.append({
+            "survey_id": survey.id,
+            "code": survey.code,
+            "title": survey.title,
+            "response_count": survey.response_count,
+            "eligible_count": eligible_count,
+            "response_pct": pct,
+        })
+    return results
+
+
+def _forum_activity_stats():
+    return {
+        "thread_count": ForumThread.objects.count(),
+        "post_count": ForumPost.objects.filter(is_deleted=False).count(),
+        "active_participants": (
+            ForumPost.objects.filter(is_deleted=False).values("author").distinct().count()
+        ),
+    }
+
+
+def _enrollment_status_breakdown():
+    rows = Enrollment.objects.values("status").annotate(n=Count("id"))
+    breakdown = {choice: 0 for choice in Enrollment.Status.values}
+    for row in rows:
+        breakdown[row["status"]] = row["n"]
+    return breakdown
+
+
+# ── Profile ────────────────────────────────────────────────────────────────────
 
 class ProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:

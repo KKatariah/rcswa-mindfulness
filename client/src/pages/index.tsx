@@ -1,9 +1,10 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import Image from "next/image";
 import Navbar from "@/components/main/Navbar";
 import Footer from "@/components/main/Footer";
 import SignUpModal from "@/components/main/SignUpModal";
+import { listModuleSummaries, type ApiModuleSummary } from "@/lib/api";
 import {
 	CalendarIcon,
 	ChevronLeftIcon,
@@ -33,62 +34,30 @@ const HOW_IT_WORKS = [
 	},
 ];
 
-const PROGRAMME_WEEKS = [
-	{
-		week: "Week 1",
-		tag: "Foundations",
-		title: "Foundations of Mindfulness",
-		description: "Learn to notice your breath and settle into a daily practice.",
-	},
-	{
-		week: "Week 2",
-		tag: "Body",
-		title: "Body Awareness",
-		description: "Release tension and cultivate presence through gentle movement and rest.",
-	},
-	{
-		week: "Week 3",
-		tag: "Emotions",
-		title: "Emotional Balance",
-		description: "Learn to observe feelings without judgment and respond with kindness.",
-	},
-	{
-		week: "Week 4",
-		tag: "Resilience",
-		title: "Stress Response",
-		description: "Build tools to pause, breathe, and respond to pressure with clarity.",
-	},
-	{
-		week: "Week 5",
-		tag: "Compassion",
-		title: "Loving-Kindness",
-		description: "Cultivate compassion for yourself and others through loving-kindness practice.",
-	},
-	{
-		week: "Week 6",
-		tag: "Focus",
-		title: "Sustained Attention",
-		description: "Strengthen concentration and gently return your mind when it wanders.",
-	},
-	{
-		week: "Week 7",
-		tag: "Connection",
-		title: "Mindful Relationships",
-		description: "Bring presence and awareness into how you communicate and connect.",
-	},
-	{
-		week: "Week 8",
-		tag: "Integration",
-		title: "Living Mindfully",
-		description: "Weave your practice into daily life and build habits that last.",
-	},
-];
-
 const CARD_SCROLL_DISTANCE = 320;
 
 export default function Home() {
 	const weeksRef = useRef<HTMLDivElement>(null);
 	const [signUpOpen, setSignUpOpen] = useState(false);
+	const [programmeWeeks, setProgrammeWeeks] = useState<ApiModuleSummary[]>([]);
+	const [weeksLoading, setWeeksLoading] = useState(true);
+	const [weeksError, setWeeksError] = useState<string | null>(null);
+
+	useEffect(() => {
+		const controller = new AbortController();
+		async function loadWeeks() {
+			try {
+				const modules = await listModuleSummaries();
+				if (!controller.signal.aborted) setProgrammeWeeks(modules);
+			} catch {
+				if (!controller.signal.aborted) setWeeksError("Unable to load the programme right now.");
+			} finally {
+				if (!controller.signal.aborted) setWeeksLoading(false);
+			}
+		}
+		void loadWeeks();
+		return () => controller.abort();
+	}, []);
 
 	function scrollWeeks(direction: number) {
 		weeksRef.current?.scrollBy({ left: direction * CARD_SCROLL_DISTANCE, behavior: "smooth" });
@@ -185,26 +154,36 @@ export default function Home() {
 					</div>
 				</div>
 
-				<div
-					ref={weeksRef}
-					className="mx-auto mt-12 flex max-w-6xl snap-x snap-mandatory gap-6 overflow-x-auto scrollbar-none pb-4"
-				>
-					{PROGRAMME_WEEKS.map(({ week, tag, title, description }) => (
-						<div
-							key={week}
-							className="w-72 shrink-0 snap-start rounded-2xl bg-white p-6 sm:w-80"
-						>
-							<div className="flex items-center justify-between">
-								<span className="text-sm font-bold text-ink">{week}</span>
-								<span className="rounded-full bg-surface-muted px-2.5 py-1 text-xs font-semibold text-muted">
-									{tag}
-								</span>
-							</div>
-							<h3 className="mt-3 font-bold text-ink">{title}</h3>
-							<p className="mt-2 text-sm text-muted">{description}</p>
-						</div>
-					))}
-				</div>
+				{weeksError ? (
+					<p className="mx-auto mt-12 max-w-6xl text-center text-sm text-muted">{weeksError}</p>
+				) : (
+					<div
+						ref={weeksRef}
+						className="mx-auto mt-12 flex max-w-6xl snap-x snap-mandatory gap-6 overflow-x-auto scrollbar-none pb-4"
+					>
+						{weeksLoading
+							? Array.from({ length: 4 }).map((_, index) => (
+									<div
+										key={index}
+										className="h-44 w-72 shrink-0 animate-pulse rounded-2xl bg-white p-6 sm:w-80"
+									/>
+								))
+							: programmeWeeks.map(({ id, week_number, title, summary }) => (
+									<div
+										key={id}
+										className="flex w-72 shrink-0 flex-col snap-start rounded-2xl bg-white p-6 sm:w-80"
+									>
+										<span className="inline-flex w-fit items-center rounded-full bg-brand-blue/10 px-3 py-1 text-xs font-bold uppercase tracking-wide text-brand-blue">
+											Week {week_number}
+										</span>
+										<h3 className="mt-4 line-clamp-2 min-h-12 font-bold text-ink">{title}</h3>
+										<p className="mt-3 line-clamp-3 min-h-16 border-t border-gray-100 pt-3 text-sm text-muted">
+											{summary}
+										</p>
+									</div>
+								))}
+					</div>
+				)}
 
 				<div className="mt-2 flex justify-center gap-3 sm:hidden">
 					<button
