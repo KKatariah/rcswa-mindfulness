@@ -165,7 +165,7 @@ export default function AboutPage() {
 				className="bg-surface-muted px-6 py-20 sm:px-10 lg:px-30"
 			>
 				<div className="mx-auto max-w-5xl">
-					<div className="grid gap-10 lg:grid-cols-[1fr_256px] lg:gap-16">
+					<div className="grid gap-10 lg:grid-cols-[2fr_3fr] lg:gap-16 lg:items-center">
 						<div>
 							<h2
 								id="rcswa-heading"
@@ -188,20 +188,15 @@ export default function AboutPage() {
 							</div>
 						</div>
 
-						{/* Logo placeholder — TODO: replace with RCSWA/UWA/Curtin logos once available (~12 October) */}
-						<div className="flex items-start justify-center lg:justify-end">
-							<div
-								className="flex h-40 w-full max-w-[256px] flex-col items-center justify-center rounded-2xl border border-dashed border-gray-300 bg-white text-center"
-								role="img"
-								aria-label="RCSWA, UWA and Curtin logos — placeholder until images are available"
-							>
-								<span className="px-4 text-sm font-semibold text-muted">
-									RCSWA / UWA / Curtin
-								</span>
-								<span className="mt-1 px-4 text-xs text-muted">
-									Logo coming soon
-								</span>
-							</div>
+						{/* Source: The West Australian — RCSWA clinical training photograph */}
+						<div className="relative aspect-[16/9] overflow-hidden rounded-2xl">
+							<Image
+								src="https://images.thewest.com.au/publication/C-17753317/e013daf310282c62ca7eee98c5e1db983668743f-16x9-x41y447w3947h2220.jpg"
+								alt="A rural GP working alongside medical students in a clinical setting, representing the RCSWA's mission to train doctors for rural and remote Western Australia"
+								fill
+								className="object-cover"
+								sizes="(min-width: 1024px) 60vw, 100vw"
+							/>
 						</div>
 					</div>
 				</div>

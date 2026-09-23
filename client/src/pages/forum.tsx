@@ -789,26 +789,7 @@ export default function ForumPage() {
 									/>
 								)}
 							</div>
-
-							{selectedThread ? (
-								<ThreadDetailView
-									thread={selectedThread}
-									onBack={() => setSelectedThread(null)}
-									onReply={handleReply}
-									onEditPost={handleEditPost}
-									onDeletePost={handleDeletePost}
-									onDeleteThread={handleDeleteThread}
-									onPinThread={handlePinThread}
-								/>
-							) : (
-								<FeedView
-									threads={filteredThreads}
-									onSelect={loadThread}
-									onCreateThread={handleCreateThread}
-									user={user}
-								/>
-							)}
-						</>
+						</div>
 					)}
 				</main>
 			</AppShell>

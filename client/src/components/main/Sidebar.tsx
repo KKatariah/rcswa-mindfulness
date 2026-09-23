@@ -27,12 +27,6 @@ export default function Sidebar({ responsive = false }: { responsive?: boolean }
   const pathname = usePathname();
   const { user } = useAuth();
   const fullName = user?.full_name?.trim() || "Username";
-  const initials = fullName
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase() ?? "")
-    .join("") || "U";
 
   return (
     <>
