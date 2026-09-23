@@ -191,6 +191,8 @@ class ContentItem(models.Model):
     class ContentType(models.TextChoices):
         VIDEO = "video", "Video"
         AUDIO = "audio", "Audio"
+        TEXT = "text", "Text"
+        # TODO(backlog): file-upload content type — needs a storage backend decision.
 
     class Provider(models.TextChoices):
         YOUTUBE = "youtube", "YouTube"
@@ -204,8 +206,10 @@ class ContentItem(models.Model):
     )
     title = models.CharField(max_length=200)
     type = models.CharField(max_length=10, choices=ContentType.choices)
-    provider = models.CharField(max_length=20, choices=Provider.choices)
-    embed_url = models.URLField()
+    # provider/embed_url only apply to video/audio items; body only applies to text items.
+    provider = models.CharField(max_length=20, choices=Provider.choices, blank=True, default="")
+    embed_url = models.URLField(blank=True, default="")
+    body = models.TextField(blank=True, default="")
     display_order = models.PositiveSmallIntegerField(default=0)
     # Day within the module's week (0 = first day). Null = never scheduled.
     # Due date = cohort.start_date + timedelta((module.week_number-1)*7 + day_offset)

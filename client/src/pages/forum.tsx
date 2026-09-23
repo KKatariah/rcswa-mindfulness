@@ -11,6 +11,7 @@ import {
 	deleteForumPost,
 	deleteForumThread,
 	getForumThread,
+	getProgramStatus,
 	listForumThreads,
 	pinForumThread,
 	updateForumPost,
@@ -261,6 +262,7 @@ type ThreadDetailViewProps = {
 	onDeletePost: (id: number) => void;
 	onDeleteThread: () => void;
 	onPinThread: (id: number, is_pinned: boolean) => void;
+	isActive: boolean;
 };
 
 function ThreadDetailView({
@@ -271,6 +273,7 @@ function ThreadDetailView({
 	onDeletePost,
 	onDeleteThread,
 	onPinThread,
+	isActive,
 }: ThreadDetailViewProps) {
 	const [replyBody, setReplyBody] = useState("");
 	const [submitting, setSubmitting] = useState(false);
@@ -411,31 +414,37 @@ function ThreadDetailView({
 			)}
 
 			{/* Reply composer */}
-			<form onSubmit={handleReply} className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
-				<p className="text-sm font-bold text-ink">Reply</p>
-				<textarea
-					value={replyBody}
-					onChange={(e) => setReplyBody(e.target.value)}
-					placeholder="Write your reply…"
-					rows={3}
-					required
-					className="mt-3 w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-brand-blue"
-				/>
-				<div className="mt-3 flex items-center justify-between">
-					{remaining > 0 ? (
-						<p className="text-xs text-[#9CA3AF]">You can post again in {remaining}s</p>
-					) : (
-						<span />
-					)}
-					<button
-						type="submit"
-						disabled={submitting || !replyBody.trim() || remaining > 0}
-						className="rounded-xl bg-[#0F172A] px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
-					>
-						{submitting ? "Posting…" : remaining > 0 ? `Wait ${remaining}s` : "Reply"}
-					</button>
-				</div>
-			</form>
+			{isActive ? (
+				<form onSubmit={handleReply} className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+					<p className="text-sm font-bold text-ink">Reply</p>
+					<textarea
+						value={replyBody}
+						onChange={(e) => setReplyBody(e.target.value)}
+						placeholder="Write your reply…"
+						rows={3}
+						required
+						className="mt-3 w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-brand-blue"
+					/>
+					<div className="mt-3 flex items-center justify-between">
+						{remaining > 0 ? (
+							<p className="text-xs text-[#9CA3AF]">You can post again in {remaining}s</p>
+						) : (
+							<span />
+						)}
+						<button
+							type="submit"
+							disabled={submitting || !replyBody.trim() || remaining > 0}
+							className="rounded-xl bg-[#0F172A] px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
+						>
+							{submitting ? "Posting…" : remaining > 0 ? `Wait ${remaining}s` : "Reply"}
+						</button>
+					</div>
+				</form>
+			) : (
+				<p className="rounded-[10px] border border-gray-200 bg-white p-5 text-sm text-muted">
+					The forum is read-only — replies can&apos;t be posted right now.
+				</p>
+			)}
 		</div>
 	);
 }
@@ -446,13 +455,20 @@ type FeedViewProps = {
 	threads: ForumThread[];
 	onSelect: (id: number) => void;
 	onCreateThread: (body: string) => Promise<void>;
+	isActive: boolean;
 	user: { full_name?: string | null; email?: string | null } | null;
 };
 
-function FeedView({ threads, onSelect, onCreateThread, user }: FeedViewProps) {
+function FeedView({ threads, onSelect, onCreateThread, isActive, user }: FeedViewProps) {
 	return (
 		<>
-			<Composer onSubmit={onCreateThread} user={user} />
+			{isActive ? (
+				<Composer onSubmit={onCreateThread} user={user} />
+			) : (
+				<p className="rounded-[10px] border border-gray-200 bg-white p-5 text-sm text-muted">
+					The forum is read-only — new threads can&apos;t be started right now.
+				</p>
+			)}
 
 			<div className="mt-4 rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 				{threads.length === 0 ? (
@@ -535,6 +551,7 @@ export default function ForumPage() {
 	const [selectedThread, setSelectedThread] = useState<ForumThreadDetail | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
+	const [isActive, setIsActive] = useState(true);
 	const [query, setQuery] = useState("");
 
 	useEffect(() => {
@@ -550,8 +567,14 @@ export default function ForumPage() {
 
 			const token = localStorage.getItem("token") ?? "";
 			try {
-				const data = await listForumThreads(token);
-				if (!cancelled) setThreads(data);
+				const [data, status] = await Promise.all([
+					listForumThreads(token),
+					getProgramStatus(token),
+				]);
+				if (!cancelled) {
+					setThreads(data);
+					setIsActive(status.is_active);
+				}
 			} catch (e) {
 				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load forum");
 			} finally {
@@ -671,6 +694,11 @@ export default function ForumPage() {
 					) : (
 						<div className="flex items-start gap-6">
 							<div className="min-w-0 flex-1">
+								{!isActive && (
+									<div className="mb-4 rounded-[10px] border border-amber-200 bg-amber-50 p-4 text-center text-sm font-semibold text-amber-700">
+										The program has ended — the forum is now read-only.
+									</div>
+								)}
 								{!selectedThread && (
 									<div className="mb-4 rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 										<h1 className="text-2xl font-extrabold text-ink">Forum</h1>
@@ -689,14 +717,16 @@ export default function ForumPage() {
 										onDeletePost={handleDeletePost}
 										onDeleteThread={handleDeleteThread}
 										onPinThread={handlePinThread}
+										isActive={isActive}
 									/>
 								) : (
 									<FeedView
-											threads={filteredThreads}
-											onSelect={loadThread}
-											onCreateThread={handleCreateThread}
-											user={user}
-										/>
+										threads={filteredThreads}
+										onSelect={loadThread}
+										onCreateThread={handleCreateThread}
+										isActive={isActive}
+										user={user}
+									/>
 								)}
 							</div>
 
