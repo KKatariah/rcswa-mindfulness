@@ -19,6 +19,7 @@ export default function Navbar() {
 	const visibleLinks = [
 		...NAV_LINKS,
 		...(user ? [{ label: "Programme", href: "/modules" }] : []),
+		...(user?.role === "admin" ? [{ label: "Admin", href: "/admin" }] : []),
 	];
 	const [signUpOpen, setSignUpOpen] = useState(false);
 
