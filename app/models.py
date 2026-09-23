@@ -133,6 +133,7 @@ class Cohort(models.Model):
 
 class Enrollment(models.Model):
     class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
         ACTIVE = "active", "Active"
         COMPLETED = "completed", "Completed"
         WITHDRAWN = "withdrawn", "Withdrawn"

@@ -28,6 +28,17 @@ export type AdminModule = {
 	resources: unknown[];
 };
 
+export type AdminUser = {
+	id: number;
+	email: string;
+	full_name: string;
+	display_name: string;
+	role: "student" | "admin";
+	auth_provider: string;
+	is_staff: boolean;
+	created_at: string;
+};
+
 export type Enrollment = {
 	id: number;
 	user: number;
@@ -45,6 +56,7 @@ export type DashboardStats = {
 		cohort_id: number;
 		cohort_name: string;
 		enrolled: number;
+		pending: number;
 		active: number;
 		completed: number;
 		withdrawn: number;

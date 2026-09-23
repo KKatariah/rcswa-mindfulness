@@ -4,6 +4,7 @@ import { useRouter } from "next/router";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import AdminLayout from "@/components/admin/AdminLayout";
+import Select from "@/components/ui/Select";
 import { PencilIcon, TrashIcon } from "@/components/ui/icons";
 import {
 	getModuleAdmin,
@@ -24,6 +25,21 @@ type ContentItemFormState = {
 
 const EMPTY_ITEM_FORM: ContentItemFormState = { title: "", type: "text", provider: "", embed_url: "", body: "" };
 
+// Mirrors the backend's normalize_youtube_embed_url/normalize_soundcloud_embed_url
+// matching in app/models.py, so a link is classified the same way client-side.
+const YOUTUBE_URL_RE =
+	/youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|v\/)[A-Za-z0-9_-]{11}|youtu\.be\/[A-Za-z0-9_-]{11}/;
+const SOUNDCLOUD_URL_RE = /^https?:\/\/(?:www\.)?soundcloud\.com\/\S+$/;
+const SOUNDCLOUD_EMBED_PREFIX = "https://w.soundcloud.com/player/";
+
+function detectProvider(url: string): "youtube" | "soundcloud" | null {
+	const trimmed = url.trim();
+	if (!trimmed) return null;
+	if (YOUTUBE_URL_RE.test(trimmed)) return "youtube";
+	if (trimmed.startsWith(SOUNDCLOUD_EMBED_PREFIX) || SOUNDCLOUD_URL_RE.test(trimmed)) return "soundcloud";
+	return null;
+}
+
 function ContentItemForm({
 	initial,
 	onSubmit,
@@ -40,9 +56,20 @@ function ContentItemForm({
 	async function handleSubmit(e: FormEvent) {
 		e.preventDefault();
 		setError(null);
+
+		let toSubmit = form;
+		if (form.type !== "text") {
+			const provider = detectProvider(form.embed_url);
+			if (!provider) {
+				setError("Enter a valid YouTube or SoundCloud link.");
+				return;
+			}
+			toSubmit = { ...form, type: provider === "soundcloud" ? "audio" : "video", provider };
+		}
+
 		setSubmitting(true);
 		try {
-			await onSubmit(form);
+			await onSubmit(toSubmit);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to save content item");
 		} finally {
@@ -67,16 +94,22 @@ function ContentItemForm({
 
 			<div className="flex flex-col gap-2">
 				<label htmlFor="item-type" className="text-sm font-semibold text-ink">Type</label>
-				<select
+				<Select
 					id="item-type"
-					value={form.type}
-					onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ContentItemFormState["type"] }))}
-					className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-				>
-					<option value="text">Text</option>
-					<option value="video">Video</option>
-					<option value="audio">Audio</option>
-				</select>
+					value={form.type === "text" ? "text" : "link"}
+					onChange={(kind) => {
+						if (kind === "text") {
+							setForm((f) => ({ ...f, type: "text", provider: "" }));
+						} else {
+							setForm((f) => ({ ...f, type: "video", provider: "" }));
+						}
+					}}
+					options={[
+						{ value: "text", label: "Text" },
+						{ value: "link", label: "YouTube / SoundCloud link" },
+					]}
+					className="h-11 w-full"
+				/>
 			</div>
 
 			{form.type === "text" ? (
@@ -101,32 +134,17 @@ function ContentItemForm({
 					)}
 				</div>
 			) : (
-				<>
-					<div className="flex flex-col gap-2">
-						<label htmlFor="item-provider" className="text-sm font-semibold text-ink">Provider</label>
-						<select
-							id="item-provider"
-							value={form.provider}
-							onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value as ContentItemFormState["provider"] }))}
-							className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-						>
-							<option value="">Select a provider…</option>
-							<option value="youtube">YouTube</option>
-							<option value="soundcloud">SoundCloud</option>
-						</select>
-					</div>
-					<div className="flex flex-col gap-2">
-						<label htmlFor="item-embed-url" className="text-sm font-semibold text-ink">Embed URL</label>
-						<input
-							id="item-embed-url"
-							type="url"
-							value={form.embed_url}
-							onChange={(e) => setForm((f) => ({ ...f, embed_url: e.target.value }))}
-							placeholder="https://www.youtube.com/embed/…"
-							className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-						/>
-					</div>
-				</>
+				<div className="flex flex-col gap-2">
+					<label htmlFor="item-embed-url" className="text-sm font-semibold text-ink">Link</label>
+					<input
+						id="item-embed-url"
+						type="url"
+						value={form.embed_url}
+						onChange={(e) => setForm((f) => ({ ...f, embed_url: e.target.value }))}
+						placeholder="Paste a YouTube or SoundCloud link…"
+						className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
+					/>
+				</div>
 			)}
 
 			<div className="flex gap-3">

@@ -1,32 +1,35 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Head from "next/head";
 import AdminLayout from "@/components/admin/AdminLayout";
-import { CheckIcon, XIcon } from "@/components/ui/icons";
-import { listCohorts, listEnrollments, approveEnrollment, rejectEnrollment } from "@/lib/api";
+import Select from "@/components/ui/Select";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { listCohorts, listEnrollments, updateEnrollment, deleteUser } from "@/lib/api";
 import type { Cohort, Enrollment } from "@/types/admin";
 
 export default function AdminApprovalsPage() {
+	const [pendingEnrollments, setPendingEnrollments] = useState<Enrollment[]>([]);
 	const [cohorts, setCohorts] = useState<Cohort[]>([]);
-	const [requests, setRequests] = useState<Enrollment[]>([]);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [actioningId, setActioningId] = useState<number | null>(null);
+	const [selectedCohort, setSelectedCohort] = useState<Record<number, string>>({});
+	const [rejecting, setRejecting] = useState<Enrollment | null>(null);
 
 	useEffect(() => {
 		let cancelled = false;
 		const token = localStorage.getItem("token") ?? "";
 		(async () => {
 			try {
-				const [cohortData, pending] = await Promise.all([
-					listCohorts(token),
+				const [enrollmentData, cohortData] = await Promise.all([
 					listEnrollments({ status: "pending" }, token),
+					listCohorts(token),
 				]);
 				if (!cancelled) {
+					setPendingEnrollments(enrollmentData);
 					setCohorts(cohortData);
-					setRequests(pending);
 				}
 			} catch (e) {
-				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load pending requests");
+				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load pending signups");
 			} finally {
 				if (!cancelled) setLoading(false);
 			}
@@ -34,32 +37,32 @@ export default function AdminApprovalsPage() {
 		return () => { cancelled = true; };
 	}, []);
 
-	const cohortName = (id: number) => cohorts.find((c) => c.id === id)?.name ?? `#${id}`;
-
 	async function handleApprove(enrollment: Enrollment) {
+		const cohortId = Number(selectedCohort[enrollment.id] ?? enrollment.cohort);
 		const token = localStorage.getItem("token") ?? "";
 		setActioningId(enrollment.id);
 		try {
-			await approveEnrollment(enrollment.id, token);
-			setRequests((prev) => prev.filter((r) => r.id !== enrollment.id));
+			await updateEnrollment(enrollment.id, { cohort: cohortId, status: "active" }, token);
+			setPendingEnrollments((prev) => prev.filter((e) => e.id !== enrollment.id));
 		} catch (e) {
-			setError(e instanceof Error ? e.message : "Failed to approve request");
+			setError(e instanceof Error ? e.message : "Failed to approve signup");
 		} finally {
 			setActioningId(null);
 		}
 	}
 
-	async function handleReject(enrollment: Enrollment) {
-		if (!confirm(`Reject ${enrollment.user_full_name || enrollment.user_email}'s request to join ${cohortName(enrollment.cohort)}?`)) return;
+	async function handleReject() {
+		if (!rejecting) return;
 		const token = localStorage.getItem("token") ?? "";
-		setActioningId(enrollment.id);
+		setActioningId(rejecting.id);
 		try {
-			await rejectEnrollment(enrollment.id, token);
-			setRequests((prev) => prev.filter((r) => r.id !== enrollment.id));
+			await deleteUser(rejecting.user, token);
+			setPendingEnrollments((prev) => prev.filter((e) => e.id !== rejecting.id));
 		} catch (e) {
-			setError(e instanceof Error ? e.message : "Failed to reject request");
+			setError(e instanceof Error ? e.message : "Failed to reject signup");
 		} finally {
 			setActioningId(null);
+			setRejecting(null);
 		}
 	}
 
@@ -71,7 +74,7 @@ export default function AdminApprovalsPage() {
 
 			<div className="flex flex-wrap items-center justify-between gap-3">
 				<h1 className="text-2xl font-extrabold text-ink">Approvals</h1>
-				<span className="text-sm text-muted">{requests.length} pending</span>
+				<span className="text-sm text-muted">{pendingEnrollments.length} pending</span>
 			</div>
 
 			<div className="mt-6 overflow-x-auto rounded-2xl border border-gray-200 bg-white">
@@ -81,46 +84,47 @@ export default function AdminApprovalsPage() {
 					</div>
 				) : error ? (
 					<p className="p-6 text-sm text-red-600">{error}</p>
-				) : requests.length === 0 ? (
-					<p className="p-6 text-sm text-muted">No pending requests. New cohort join requests will show up here.</p>
+				) : pendingEnrollments.length === 0 ? (
+					<p className="p-6 text-sm text-muted">No pending signups. New signups are auto-assigned a cohort and show up here for confirmation.</p>
 				) : (
 					<table className="w-full text-left text-sm">
 						<thead>
 							<tr className="border-b border-gray-200 text-xs font-semibold uppercase tracking-wide text-muted">
 								<th className="px-5 py-3">Name</th>
 								<th className="px-5 py-3">Email</th>
-								<th className="px-5 py-3">Requested cohort</th>
-								<th className="px-5 py-3">Requested</th>
+								<th className="px-5 py-3">Cohort</th>
 								<th className="px-5 py-3" />
 							</tr>
 						</thead>
 						<tbody>
-							{requests.map((r) => (
-								<tr key={r.id} className="border-b border-gray-100 last:border-0">
-									<td className="px-5 py-3 font-semibold text-ink">{r.user_full_name || "—"}</td>
-									<td className="px-5 py-3 text-ink-soft">{r.user_email}</td>
-									<td className="px-5 py-3 text-ink-soft">{cohortName(r.cohort)}</td>
-									<td className="px-5 py-3 text-ink-soft">{new Date(r.enrolled_at).toLocaleDateString()}</td>
+							{pendingEnrollments.map((e) => (
+								<tr key={e.id} className="border-b border-gray-100 last:border-0">
+									<td className="px-5 py-3 font-semibold text-ink">{e.user_full_name || "—"}</td>
+									<td className="px-5 py-3 text-ink-soft">{e.user_email}</td>
+									<td className="px-5 py-3">
+										<Select
+											value={String(selectedCohort[e.id] ?? e.cohort)}
+											onChange={(v) => setSelectedCohort((prev) => ({ ...prev, [e.id]: v }))}
+											options={cohorts.map((c) => ({ value: String(c.id), label: c.name }))}
+											className="h-10 w-56"
+										/>
+									</td>
 									<td className="px-5 py-3">
 										<div className="flex justify-end gap-3">
 											<button
 												type="button"
-												disabled={actioningId === r.id}
-												onClick={() => handleApprove(r)}
-												aria-label="Approve request"
+												disabled={actioningId === e.id}
+												onClick={() => handleApprove(e)}
 												className="flex h-9 items-center gap-1.5 rounded-lg bg-brand-blue px-3 text-xs font-bold text-white disabled:opacity-50"
 											>
-												<CheckIcon className="size-3.5" />
 												Approve
 											</button>
 											<button
 												type="button"
-												disabled={actioningId === r.id}
-												onClick={() => handleReject(r)}
-												aria-label="Reject request"
+												disabled={actioningId === e.id}
+												onClick={() => setRejecting(e)}
 												className="flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-3 text-xs font-semibold text-ink-soft hover:border-red-300 hover:text-red-500 disabled:opacity-50"
 											>
-												<XIcon className="size-3.5" />
 												Reject
 											</button>
 										</div>
@@ -131,6 +135,17 @@ export default function AdminApprovalsPage() {
 					</table>
 				)}
 			</div>
+
+			{rejecting && (
+				<ConfirmDialog
+					title="Reject this signup?"
+					message={`This permanently deletes ${rejecting.user_email}'s account. This can't be undone.`}
+					confirmLabel="Delete account"
+					danger
+					onConfirm={handleReject}
+					onCancel={() => setRejecting(null)}
+				/>
+			)}
 		</AdminLayout>
 	);
 }

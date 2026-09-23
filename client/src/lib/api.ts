@@ -296,9 +296,34 @@ import type {
 	Cohort,
 	AdminModule,
 	AdminContentItem,
+	AdminUser,
 	Enrollment,
 	DashboardStats,
 } from "@/types/admin";
+
+export async function listUsers(token: string): Promise<AdminUser[]> {
+	const res = await fetch(`${API_BASE_URL}/users/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<AdminUser[]>(res);
+}
+
+export async function updateUser(
+	id: number,
+	data: Partial<{ email: string; full_name: string; display_name: string; role: AdminUser["role"] }>,
+	token: string,
+): Promise<AdminUser> {
+	const res = await fetch(`${API_BASE_URL}/users/${id}/`, {
+		method: "PATCH",
+		headers: authHeader(token),
+		body: JSON.stringify(data),
+	});
+	return handleResponse<AdminUser>(res);
+}
+
+export async function deleteUser(id: number, token: string): Promise<void> {
+	return deleteRequest(`${API_BASE_URL}/users/${id}/`, token);
+}
 
 export async function listCohorts(token: string): Promise<Cohort[]> {
 	const res = await fetch(`${API_BASE_URL}/cohorts/`, {
@@ -355,20 +380,33 @@ export async function listEnrollments(
 	return handleResponse<Enrollment[]>(res);
 }
 
-export async function approveEnrollment(id: number, token: string): Promise<Enrollment> {
-	const res = await fetch(`${API_BASE_URL}/enrollments/${id}/approve/`, {
+export async function createEnrollment(
+	data: { user: number; cohort: number; status?: Enrollment["status"] },
+	token: string,
+): Promise<Enrollment> {
+	const res = await fetch(`${API_BASE_URL}/enrollments/`, {
 		method: "POST",
 		headers: authHeader(token),
+		body: JSON.stringify(data),
 	});
 	return handleResponse<Enrollment>(res);
 }
 
-export async function rejectEnrollment(id: number, token: string): Promise<Enrollment> {
-	const res = await fetch(`${API_BASE_URL}/enrollments/${id}/reject/`, {
-		method: "POST",
+export async function updateEnrollment(
+	id: number,
+	data: Partial<{ cohort: number; status: Enrollment["status"]; current_week: number }>,
+	token: string,
+): Promise<Enrollment> {
+	const res = await fetch(`${API_BASE_URL}/enrollments/${id}/`, {
+		method: "PATCH",
 		headers: authHeader(token),
+		body: JSON.stringify(data),
 	});
 	return handleResponse<Enrollment>(res);
+}
+
+export async function deleteEnrollment(id: number, token: string): Promise<void> {
+	return deleteRequest(`${API_BASE_URL}/enrollments/${id}/`, token);
 }
 
 // ── Admin: Modules ─────────────────────────────────────────────────────────────

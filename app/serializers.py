@@ -243,6 +243,21 @@ def _is_program_active(today=None):
     return Cohort.objects.filter(start_date__lte=today, end_date__gte=today).exists()
 
 
+def _pick_signup_cohort(today=None):
+    """The cohort a new signup should be auto-enrolled into: the currently
+    active one, or if none is active, the soonest upcoming one. None if
+    neither exists."""
+    today = today or date.today()
+    active = (
+        Cohort.objects.filter(start_date__lte=today, end_date__gte=today)
+        .order_by("start_date")
+        .first()
+    )
+    if active:
+        return active
+    return Cohort.objects.filter(start_date__gt=today).order_by("start_date").first()
+
+
 class ForumThreadSerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
     author_email = serializers.SerializerMethodField()
@@ -328,6 +343,29 @@ class UserDisplayNameSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "display_name"]
+        read_only_fields = ["id"]
+
+
+class AdminUserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "email",
+            "full_name",
+            "display_name",
+            "role",
+            "auth_provider",
+            "is_staff",
+            "created_at",
+        ]
+        read_only_fields = fields
+
+
+class AdminUserUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ["id", "email", "full_name", "display_name", "role"]
         read_only_fields = ["id"]
 
 
@@ -478,6 +516,7 @@ class SurveyResponseAdminSerializer(serializers.ModelSerializer):
 def _cohort_breakdown():
     cohorts = Cohort.objects.annotate(
         enrolled=Count("enrollments"),
+        pending=Count("enrollments", filter=Q(enrollments__status=Enrollment.Status.PENDING)),
         active=Count("enrollments", filter=Q(enrollments__status=Enrollment.Status.ACTIVE)),
         completed=Count("enrollments", filter=Q(enrollments__status=Enrollment.Status.COMPLETED)),
         withdrawn=Count("enrollments", filter=Q(enrollments__status=Enrollment.Status.WITHDRAWN)),
@@ -487,6 +526,7 @@ def _cohort_breakdown():
             "cohort_id": c.id,
             "cohort_name": str(c),
             "enrolled": c.enrolled,
+            "pending": c.pending,
             "active": c.active,
             "completed": c.completed,
             "withdrawn": c.withdrawn,

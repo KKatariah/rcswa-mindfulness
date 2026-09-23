@@ -35,6 +35,13 @@ class ModuleListTests(APITestCase):
         self.student = User.objects.create_user(
             email="student@test.local", password="testpass"
         )
+        self.cohort = Cohort.objects.create(
+            name="Test Cohort", year=2024,
+            start_date=date(2024, 1, 1), end_date=date(2024, 12, 31),
+        )
+        Enrollment.objects.create(
+            user=self.student, cohort=self.cohort, status=Enrollment.Status.ACTIVE,
+        )
         self.published = Module.objects.create(
             week_number=1, title="Week 1 — Published", is_published=True
         )
@@ -1110,6 +1117,13 @@ class ModuleAdminTests(APITestCase):
         self.admin = User.objects.create_user(
             email="admin@test.local", password="testpass", role=User.Role.ADMIN,
         )
+        self.cohort = Cohort.objects.create(
+            name="Test Cohort", year=2024,
+            start_date=date(2024, 1, 1), end_date=date(2024, 12, 31),
+        )
+        Enrollment.objects.create(
+            user=self.student, cohort=self.cohort, status=Enrollment.Status.ACTIVE,
+        )
         self.published = Module.objects.create(week_number=1, title="Week 1", is_published=True)
         self.unpublished = Module.objects.create(week_number=2, title="Week 2", is_published=False)
 
@@ -1185,6 +1199,13 @@ class ModuleUnlockTests(APITestCase):
         )
         self.student = User.objects.create_user(
             email="student@test.local", password="testpass",
+        )
+        self.cohort = Cohort.objects.create(
+            name="Test Cohort", year=2024,
+            start_date=date(2024, 1, 1), end_date=date(2024, 12, 31),
+        )
+        Enrollment.objects.create(
+            user=self.student, cohort=self.cohort, status=Enrollment.Status.ACTIVE,
         )
         self.week1 = Module.objects.create(week_number=1, title="Week 1", is_published=True)
         self.week3 = Module.objects.create(week_number=3, title="Week 3", is_published=True)

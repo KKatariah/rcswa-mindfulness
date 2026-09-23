@@ -123,6 +123,14 @@ export function ChevronRightIcon(props: IconProps) {
   );
 }
 
+export function ChevronDownIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base} {...props}>
+      <path d="M5 7.5 10 12.5 15 7.5" />
+    </svg>
+  );
+}
+
 export function HeadphonesIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 20 20" {...base} {...props}>
