@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import BottomNavbar from "@/components/main/BottomNavbar";
 import { IconProps, BookOpenIcon, MessageCircleIcon, FolderIcon, CalendarIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { UserAvatar } from "@/components/ui/UserAvatar";
@@ -12,12 +11,17 @@ type NavItem = {
   isBold?: boolean;
 };
 
-const NAV_ITEMS: NavItem[] = [
+export const NAV_ITEMS: NavItem[] = [
   { label: "Modules", href: "/modules", icon: BookOpenIcon },
   { label: "Surveys", href: "/surveys", icon: CalendarIcon},
   { label: "Forum", href: "/forum", icon: MessageCircleIcon },
   { label: "Resources", href: "/resources", icon: FolderIcon },
 ];
+
+function isNavActive(pathname: string | null, href: string) {
+  if (href === "/") return pathname === "/";
+  return pathname === href || pathname?.startsWith(`${href}/`);
+}
 
 export default function Sidebar({ responsive = false }: { responsive?: boolean }) {
   const pathname = usePathname();
@@ -42,10 +46,7 @@ export default function Sidebar({ responsive = false }: { responsive?: boolean }
 
         <nav aria-label="Main navigation" className={responsive ? "grid grid-cols-2 gap-2 md:block md:space-y-2" : "space-y-2"}>
           {NAV_ITEMS.map(({ label, href, icon: Icon, isBold }) => {
-            const isActive =
-              href === "/"
-                ? pathname === "/"
-                : pathname === href || pathname?.startsWith(`${href}/`);
+            const isActive = isNavActive(pathname, href);
 
             return (
               <Link
@@ -90,7 +91,40 @@ export default function Sidebar({ responsive = false }: { responsive?: boolean }
         </Link>
       </aside>
 
-      <BottomNavbar className="md:hidden" />
+      <nav
+        aria-label="Bottom navigation"
+        className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 md:hidden"
+      >
+        <div className="flex w-full max-w-[390px] items-center justify-between rounded-t-[18px] border border-[#E5E7EB] border-b-0 bg-white px-3 pb-[6px] pt-3 shadow-none">
+          {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
+            const isActive = isNavActive(pathname, href);
+
+            return (
+              <Link
+                key={href}
+                href={href}
+                aria-current={isActive ? "page" : undefined}
+                className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 text-center"
+              >
+                <Icon
+                  className={[
+                    "h-[18px] w-[18px] shrink-0 transition-colors",
+                    isActive ? "text-[#5096CF]" : "text-[#374151]",
+                  ].join(" ")}
+                />
+                <span
+                  className={[
+                    "text-[11px] leading-none",
+                    isActive ? "font-bold text-[#5096CF]" : "font-medium text-[#374151]",
+                  ].join(" ")}
+                >
+                  {label}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </>
   );
 }
