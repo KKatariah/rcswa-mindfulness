@@ -184,13 +184,6 @@ export default function ResourcesPage() {
                   </li>
                 ))}
               </ul>
-              <p className="mt-2 text-xs text-muted">
-                Both films can be viewed at{" "}
-                <a href="https://www.shannonharvey.com/" target="_blank" rel="noopener noreferrer" className="font-semibold text-brand-blue-dark hover:underline">
-                  shannonharvey.com
-                </a>
-                .
-              </p>
             </section>
 
             <section id="online-programs" aria-label="Online programs" className="scroll-mt-6 rounded-[10px] border border-gray-200 bg-white p-5 sm:p-6">
