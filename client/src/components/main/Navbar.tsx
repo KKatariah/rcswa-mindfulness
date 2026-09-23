@@ -18,7 +18,7 @@ export default function Navbar() {
 	const [loginOpen, setLoginOpen] = useState(false);
 	const visibleLinks = [
 		...NAV_LINKS,
-		...(user ? [{ label: "Programme", href: "/modules" }, { label: "Forum", href: "/forum" }] : []),
+		...(user ? [{ label: "Programme", href: "/modules" }] : []),
 		...(user?.role === "admin" ? [{ label: "Admin", href: "/admin" }] : []),
 	];
 	const [signUpOpen, setSignUpOpen] = useState(false);
