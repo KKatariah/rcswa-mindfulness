@@ -88,11 +88,18 @@ export async function getModule(
 	return handleResponse<ApiModuleDetail>(res);
 }
 
+export type ApiModuleSummary = { id: number; week_number: number; title: string; summary: string };
+
+export async function listModuleSummaries(): Promise<ApiModuleSummary[]> {
+  const res = await fetch(`${API_BASE_URL}/modules/summary/`);
+  return handleResponse<ApiModuleSummary[]>(res);
+}
+
 export type ApiContentCompletion = {
-	id: number;
-	user: number;
-	content_item: number;
-	completed_at: string;
+  id: number;
+  user: number;
+  content_item: number;
+  completed_at: string;
 };
 
 export async function listProgress(

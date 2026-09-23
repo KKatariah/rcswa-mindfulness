@@ -47,6 +47,7 @@ from .serializers import (
     ForumThreadDetailSerializer,
     ForumThreadSerializer,
     ModuleSerializer,
+    ModuleSummarySerializer,
     NotificationPreferenceSerializer,
     PushSubscriptionSerializer,
     RegisterSerializer,
@@ -248,6 +249,25 @@ class ModuleViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("This module is not available yet.")
         return Response(self.get_serializer(module).data)
 
+    @action(detail=False, methods=["get"], permission_classes=[AllowAny])
+    def summary(self, request):
+        modules = Module.objects.filter(is_published=True).order_by("week_number")
+        return Response(ModuleSummarySerializer(modules, many=True).data)
+
+    serializer_class = ModuleSerializer
+    queryset = (
+        Module.objects
+        .filter(is_published=True)
+        .prefetch_related(
+            # display_order already exists on ContentItem; secondary sort by id keeps
+            # ordering stable when display_order values tie (e.g. all default to 0).
+            Prefetch(
+                "content_items",
+                queryset=ContentItem.objects.order_by("display_order", "id"),
+            ),
+            "resources",
+        )
+    )
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "destroy"):
             return [IsAuthenticated(), IsAdminOrStaff()]
