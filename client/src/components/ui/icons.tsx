@@ -184,3 +184,12 @@ export function LinkedinIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function GlobeIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base} {...props}>
+      <circle cx="10" cy="10" r="7.5" />
+      <path d="M2.5 10h15M10 2.5c1.88 2.1 2.92 4.8 2.92 7.5S11.88 15.4 10 17.5C8.12 15.4 7.08 12.7 7.08 10S8.12 4.6 10 2.5Z" />
+    </svg>
+  );
+}

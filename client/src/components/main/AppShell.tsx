@@ -1,45 +1,46 @@
-import { useSyncExternalStore, type ReactNode } from "react";
+import type { ReactNode } from "react";
+import Navbar from "@/components/main/Navbar";
 import Sidebar from "@/components/main/Sidebar";
-import { useAuth } from "@/context/AuthContext";
-
-// Returns true only once mounted on the client, false during SSR and the
-// first client render — same hydration-safety purpose as the old
-// useState+useEffect(() => setMounted(true)) pattern, but without calling
-// setState from inside an effect (avoids react-hooks/set-state-in-effect).
-function useMounted() {
-	return useSyncExternalStore(
-		() => () => {},
-		() => true,
-		() => false,
-	);
-}
 
 export default function AppShell({
 	children,
-	background,
+	rightRail,
+	mobileNav,
 }: {
 	children: ReactNode;
-	/** Optional full-page background layer (e.g. an <Image fill /> + gradient overlay).
-	 *  When provided, it renders fixed behind everything and replaces the default
-	 *  bg-surface-muted so the image shows through around the cards/sidebar. */
-	background?: ReactNode;
+	/** Optional sticky right-hand column (e.g. NextSession, a search panel). Only reserved as a grid column at the xl breakpoint. */
+	rightRail?: ReactNode;
+	/** Optional fixed bottom nav for small screens. When provided, the sidebar is hidden below md instead of collapsing into its own responsive layout, and the page gets extra bottom padding to clear the fixed bar. */
+	mobileNav?: ReactNode;
 }) {
-	const { user } = useAuth();
-	const mounted = useMounted();
-	const showSidebar = mounted && Boolean(user);
-
 	return (
-		<div className="relative flex min-h-screen">
-			{background && <div className="absolute inset-0 -z-10">{background}</div>}
+		<div
+			className="min-h-dvh bg-cover bg-center bg-fixed bg-no-repeat"
+			style={{ backgroundImage: "url(/images/module-background.jpg)" }}
+		>
+			<div className="sticky top-0 z-30 h-20 bg-black/30 backdrop-blur-md lg:h-24">
+				<Navbar />
+			</div>
 
-			<div className={`flex min-h-screen w-full ${background ? "" : "bg-surface-muted"}`}>
-				{showSidebar && (
-					<div className={`sticky top-0 h-screen shrink-0 ${background ? "p-4" : ""}`}>
-						<Sidebar />
+			<div
+				className={`mx-auto grid max-w-[1920px] items-start gap-6 p-4 md:grid-cols-[240px_minmax(0,1fr)] lg:p-6 ${
+					rightRail ? "xl:grid-cols-[280px_minmax(0,1fr)_320px]" : "xl:grid-cols-[280px_minmax(0,1fr)]"
+				} ${mobileNav ? "pb-28" : ""}`}
+			>
+				<div className={mobileNav ? "hidden md:sticky md:top-6 md:block" : ""}>
+					<Sidebar responsive />
+				</div>
+
+				<div className="min-w-0">{children}</div>
+
+				{rightRail && (
+					<div className="min-w-0 md:col-start-2 xl:sticky xl:top-24 xl:col-start-3">
+						{rightRail}
 					</div>
 				)}
-				<div className="min-w-0 flex-1">{children}</div>
 			</div>
+
+			{mobileNav}
 		</div>
 	);
 }
