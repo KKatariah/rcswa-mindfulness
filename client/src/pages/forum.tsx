@@ -23,7 +23,13 @@ import { UserAvatar } from "@/components/ui/UserAvatar";
 
 function SearchIcon({ className = "h-4 w-4" }: { className?: string }) {
 	return (
-		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={className}>
+		<svg
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth={2}
+			className={className}
+		>
 			<circle cx="11" cy="11" r="7" />
 			<path d="M21 21l-4.3-4.3" strokeLinecap="round" />
 		</svg>
@@ -32,7 +38,13 @@ function SearchIcon({ className = "h-4 w-4" }: { className?: string }) {
 
 function MessageIcon({ className = "h-4 w-4" }: { className?: string }) {
 	return (
-		<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} className={className}>
+		<svg
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth={2}
+			className={className}
+		>
 			<path
 				d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"
 				strokeLinecap="round"
@@ -52,7 +64,10 @@ function formatRelativeTime(iso: string) {
 	const days = Math.floor(diff / 86400);
 	if (days === 1) return "Yesterday";
 	if (days < 7) return `${days}d ago`;
-	return new Date(iso).toLocaleDateString("en-AU", { day: "numeric", month: "short" });
+	return new Date(iso).toLocaleDateString("en-AU", {
+		day: "numeric",
+		month: "short",
+	});
 }
 
 function Avatar({ name, email }: { name: string; email?: string | null }) {
@@ -84,7 +99,9 @@ function useForumPostCooldown() {
 		function tick() {
 			const last = Number(localStorage.getItem(LAST_POST_KEY) ?? 0);
 			const elapsedSeconds = (Date.now() - last) / 1000;
-			setRemaining(Math.max(0, Math.ceil(POST_COOLDOWN_SECONDS - elapsedSeconds)));
+			setRemaining(
+				Math.max(0, Math.ceil(POST_COOLDOWN_SECONDS - elapsedSeconds)),
+			);
 		}
 		tick();
 		const id = setInterval(tick, 1000);
@@ -134,7 +151,7 @@ function Composer({
 			<form onSubmit={handleSubmit}>
 				<div className="flex items-center gap-3">
 					<Avatar name={user?.full_name || "User"} email={user?.email} />
-					<p className="text-sm font-bold text-ink">What&apos;s your mind?</p>
+					<p className="text-sm font-bold text-ink">What's on your mind?</p>
 				</div>
 				<textarea
 					value={body}
@@ -146,7 +163,9 @@ function Composer({
 				{error && <p className="mt-2 text-xs text-red-600">{error}</p>}
 				<div className="mt-3 flex items-center justify-between">
 					{remaining > 0 ? (
-						<p className="text-xs text-[#9CA3AF]">You can post again in {remaining}s</p>
+						<p className="text-xs text-[#9CA3AF]">
+							You can post again in {remaining}s
+						</p>
 					) : (
 						<span />
 					)}
@@ -155,7 +174,11 @@ function Composer({
 						disabled={submitting || !body.trim() || remaining > 0}
 						className="rounded-xl bg-[#0F172A] px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
 					>
-						{submitting ? "Posting…" : remaining > 0 ? `Wait ${remaining}s` : "Post"}
+						{submitting
+							? "Posting…"
+							: remaining > 0
+								? `Wait ${remaining}s`
+								: "Post"}
 					</button>
 				</div>
 			</form>
@@ -193,14 +216,21 @@ function PostCard({ post, onEdit, onDelete }: PostCardProps) {
 			<div className="min-w-0 flex-1 rounded-[10px] border border-gray-200 bg-white p-4">
 				<div className="flex items-center justify-between gap-2">
 					<div className="flex items-baseline gap-2">
-						<span className="text-sm font-semibold text-ink">{post.author_name}</span>
-						<span className="text-xs text-[#9CA3AF]">{formatRelativeTime(post.created_at)}</span>
+						<span className="text-sm font-semibold text-ink">
+							{post.author_name}
+						</span>
+						<span className="text-xs text-[#9CA3AF]">
+							{formatRelativeTime(post.created_at)}
+						</span>
 					</div>
 					{post.can_edit && !editing && (
 						<div className="flex shrink-0 items-center gap-3">
 							<button
 								type="button"
-								onClick={() => { setDraft(post.body); setEditing(true); }}
+								onClick={() => {
+									setDraft(post.body);
+									setEditing(true);
+								}}
 								className="text-xs font-semibold text-brand-blue hover:underline"
 							>
 								Edit
@@ -243,7 +273,9 @@ function PostCard({ post, onEdit, onDelete }: PostCardProps) {
 						</div>
 					</div>
 				) : (
-					<p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">{post.body}</p>
+					<p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
+						{post.body}
+					</p>
 				)}
 			</div>
 		</div>
@@ -274,7 +306,9 @@ function ThreadDetailView({
 	const [replyBody, setReplyBody] = useState("");
 	const [submitting, setSubmitting] = useState(false);
 	const [editingOpening, setEditingOpening] = useState(false);
-	const [draftOpening, setDraftOpening] = useState(thread.opening_post?.body ?? thread.body);
+	const [draftOpening, setDraftOpening] = useState(
+		thread.opening_post?.body ?? thread.body,
+	);
 	const [savingOpening, setSavingOpening] = useState(false);
 	const { remaining, markPosted } = useForumPostCooldown();
 
@@ -313,7 +347,9 @@ function ThreadDetailView({
 			</button>
 
 			{/* Opening post */}
-			<div className={`rounded-[10px] border bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${thread.is_pinned ? "border-amber-200" : "border-gray-200"}`}>
+			<div
+				className={`rounded-[10px] border bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${thread.is_pinned ? "border-amber-200" : "border-gray-200"}`}
+			>
 				{thread.is_pinned && (
 					<p className="mb-3 text-xs font-semibold uppercase tracking-wide text-amber-600">
 						Pinned
@@ -325,8 +361,12 @@ function ThreadDetailView({
 					<div className="min-w-0 flex-1">
 						<div className="flex items-start justify-between gap-2">
 							<div className="flex items-baseline gap-2">
-								<span className="text-sm font-semibold text-ink">{thread.author_name}</span>
-								<span className="text-xs text-[#9CA3AF]">{formatRelativeTime(thread.created_at)}</span>
+								<span className="text-sm font-semibold text-ink">
+									{thread.author_name}
+								</span>
+								<span className="text-xs text-[#9CA3AF]">
+									{formatRelativeTime(thread.created_at)}
+								</span>
 							</div>
 							<div className="flex shrink-0 items-center gap-3">
 								{thread.can_pin && !editingOpening && (
@@ -341,7 +381,10 @@ function ThreadDetailView({
 								{thread.opening_post?.can_edit && !editingOpening && (
 									<button
 										type="button"
-										onClick={() => { setDraftOpening(thread.opening_post!.body); setEditingOpening(true); }}
+										onClick={() => {
+											setDraftOpening(thread.opening_post!.body);
+											setEditingOpening(true);
+										}}
 										className="text-xs font-semibold text-brand-blue hover:underline"
 									>
 										Edit
@@ -386,7 +429,9 @@ function ThreadDetailView({
 								</div>
 							</div>
 						) : (
-							<p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">{thread.body}</p>
+							<p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
+								{thread.body}
+							</p>
 						)}
 					</div>
 				</div>
@@ -396,7 +441,8 @@ function ThreadDetailView({
 			{thread.replies.length > 0 && (
 				<div className="space-y-3">
 					<p className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">
-						{thread.replies.length} {thread.replies.length === 1 ? "Reply" : "Replies"}
+						{thread.replies.length}{" "}
+						{thread.replies.length === 1 ? "Reply" : "Replies"}
 					</p>
 					{thread.replies.map((post) => (
 						<PostCard
@@ -410,7 +456,10 @@ function ThreadDetailView({
 			)}
 
 			{/* Reply composer */}
-			<form onSubmit={handleReply} className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+			<form
+				onSubmit={handleReply}
+				className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]"
+			>
 				<p className="text-sm font-bold text-ink">Reply</p>
 				<textarea
 					value={replyBody}
@@ -422,7 +471,9 @@ function ThreadDetailView({
 				/>
 				<div className="mt-3 flex items-center justify-between">
 					{remaining > 0 ? (
-						<p className="text-xs text-[#9CA3AF]">You can post again in {remaining}s</p>
+						<p className="text-xs text-[#9CA3AF]">
+							You can post again in {remaining}s
+						</p>
 					) : (
 						<span />
 					)}
@@ -431,7 +482,11 @@ function ThreadDetailView({
 						disabled={submitting || !replyBody.trim() || remaining > 0}
 						className="rounded-xl bg-[#0F172A] px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
 					>
-						{submitting ? "Posting…" : remaining > 0 ? `Wait ${remaining}s` : "Reply"}
+						{submitting
+							? "Posting…"
+							: remaining > 0
+								? `Wait ${remaining}s`
+								: "Reply"}
 					</button>
 				</div>
 			</form>
@@ -478,14 +533,21 @@ function FeedView({ threads, onSelect, onCreateThread, user }: FeedViewProps) {
 								<Avatar name={t.author_name} email={t.author_email} />
 								<div className="min-w-0 flex-1">
 									<div className="flex items-baseline gap-2">
-										<span className="text-sm font-semibold text-ink">{t.author_name}</span>
-										<span className="text-xs text-[#9CA3AF]">{formatRelativeTime(t.updated_at)}</span>
+										<span className="text-sm font-semibold text-ink">
+											{t.author_name}
+										</span>
+										<span className="text-xs text-[#9CA3AF]">
+											{formatRelativeTime(t.updated_at)}
+										</span>
 									</div>
-									<p className="mt-1 line-clamp-2 text-sm text-[#4B5563]">{t.body}</p>
+									<p className="mt-1 line-clamp-2 text-sm text-[#4B5563]">
+										{t.body}
+									</p>
 									<div className="mt-3 flex items-center gap-1 text-[#9CA3AF]">
 										<MessageIcon className="h-3.5 w-3.5" />
 										<span className="text-xs font-medium">
-											{t.reply_count} {t.reply_count === 1 ? "reply" : "replies"}
+											{t.reply_count}{" "}
+											{t.reply_count === 1 ? "reply" : "replies"}
 										</span>
 									</div>
 								</div>
@@ -500,7 +562,13 @@ function FeedView({ threads, onSelect, onCreateThread, user }: FeedViewProps) {
 
 // ── Right column ─────────────────────────────────────────────────────────────
 
-function ForumSidebar({ query, onQueryChange }: { query: string; onQueryChange: (v: string) => void }) {
+function ForumSidebar({
+	query,
+	onQueryChange,
+}: {
+	query: string;
+	onQueryChange: (v: string) => void;
+}) {
 	return (
 		<div className="hidden min-w-0 space-y-4 xl:block">
 			<div className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
@@ -531,7 +599,8 @@ export default function ForumPage() {
 			router.replace("/");
 		}
 	}, [authLoading, user, router]);
-	const [selectedThread, setSelectedThread] = useState<ForumThreadDetail | null>(null);
+	const [selectedThread, setSelectedThread] =
+		useState<ForumThreadDetail | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [query, setQuery] = useState("");
@@ -552,20 +621,25 @@ export default function ForumPage() {
 				const data = await listForumThreads(token);
 				if (!cancelled) setThreads(data);
 			} catch (e) {
-				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load forum");
+				if (!cancelled)
+					setError(e instanceof Error ? e.message : "Failed to load forum");
 			} finally {
 				if (!cancelled) setLoading(false);
 			}
 		})();
 
-		return () => { cancelled = true; };
+		return () => {
+			cancelled = true;
+		};
 	}, [user, authLoading]);
 
 	const filteredThreads = useMemo(() => {
 		const q = query.trim().toLowerCase();
 		if (!q) return threads;
 		return threads.filter(
-			(t) => t.body.toLowerCase().includes(q) || t.author_name.toLowerCase().includes(q)
+			(t) =>
+				t.body.toLowerCase().includes(q) ||
+				t.author_name.toLowerCase().includes(q),
 		);
 	}, [threads, query]);
 
@@ -608,7 +682,9 @@ export default function ForumPage() {
 	async function handlePinThread(id: number, is_pinned: boolean) {
 		const token = localStorage.getItem("token") ?? "";
 		await pinForumThread(id, is_pinned, token);
-		setSelectedThread((prev) => prev && prev.id === id ? { ...prev, is_pinned } : prev);
+		setSelectedThread((prev) =>
+			prev && prev.id === id ? { ...prev, is_pinned } : prev,
+		);
 		const updated = await listForumThreads(token);
 		setThreads(updated);
 	}
@@ -628,7 +704,13 @@ export default function ForumPage() {
 				<title>Forum — Wellbeing Course</title>
 			</Head>
 
-			<AppShell rightRail={!selectedThread ? <ForumSidebar query={query} onQueryChange={setQuery} /> : undefined}>
+			<AppShell
+				rightRail={
+					!selectedThread ? (
+						<ForumSidebar query={query} onQueryChange={setQuery} />
+					) : undefined
+				}
+			>
 				<main aria-label="Forum" className="flex min-w-0 flex-col gap-4">
 					{authLoading || loading ? (
 						<div className="flex justify-center py-20">
@@ -636,7 +718,9 @@ export default function ForumPage() {
 						</div>
 					) : !user ? (
 						<div className="mx-auto max-w-md rounded-[10px] border border-gray-200 bg-white p-8 text-center shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
-							<p className="font-semibold text-ink">Please log in to access the forum.</p>
+							<p className="font-semibold text-ink">
+								Please log in to access the forum.
+							</p>
 							<p className="mt-2 text-sm text-[#9CA3AF]">
 								Log in from the home page to continue.
 							</p>
@@ -659,7 +743,8 @@ export default function ForumPage() {
 								<div className="rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 									<h1 className="text-2xl font-extrabold text-ink">Forum</h1>
 									<p className="mt-1 text-sm text-[#9CA3AF]">
-										Connect, share, and support each other on your wellness journeys.
+										Connect, share, and support each other on your wellness
+										journeys.
 									</p>
 								</div>
 							)}
