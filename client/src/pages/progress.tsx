@@ -4,18 +4,7 @@ import Head from "next/head";
 import Link from "next/link";
 import AppShell from "@/components/main/AppShell";
 import NextSession from "@/components/modules/NextSession";
-import {
-  HomeIcon, BookOpenIcon, BarChart2Icon, MessageCircleIcon,
-  FolderIcon, CheckIcon, PlayIcon, LockIcon,
-} from "@/components/ui/icons";
-
-const navigation = [
-  { label: "Home", href: "/", icon: HomeIcon },
-  { label: "Modules", href: "/modules", icon: BookOpenIcon },
-  { label: "Progress", href: "/progress", icon: BarChart2Icon },
-  { label: "Forum", href: "/forum", icon: MessageCircleIcon },
-  { label: "Resources", href: "/resources", icon: FolderIcon },
-];
+import { CheckIcon, PlayIcon, LockIcon } from "@/components/ui/icons";
 
 export default function ProgressPage() {
   const { user, loading, error, modules, completions, reload } = useProgramme();
@@ -45,16 +34,6 @@ export default function ProgressPage() {
         <meta name="description" content="Track your progress through the eight-week mindfulness programme." />
       </Head>
       <AppShell
-        mobileNav={
-          <nav aria-label="Mobile navigation" className="fixed inset-x-4 bottom-0 z-20 grid grid-cols-5 rounded-t-2xl border border-gray-200 bg-white px-1 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-lg md:hidden">
-            {navigation.map(({ label, href, icon: Icon }) => (
-              <Link key={href} href={href} aria-current={href === "/progress" ? "page" : undefined} className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-semibold focus-visible:outline-2 focus-visible:outline-brand-blue-dark ${href === "/progress" ? "text-brand-blue-dark" : "text-ink"}`}>
-                <Icon className="size-4" aria-hidden="true" />
-                {label}
-              </Link>
-            ))}
-          </nav>
-        }
         rightRail={
           next ? (
             <Link href={`/modules/${next.id}`} className="block rounded-[10px] focus-visible:outline-2 focus-visible:outline-brand-blue-dark">

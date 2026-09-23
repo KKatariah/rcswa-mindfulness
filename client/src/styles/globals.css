@@ -12,6 +12,11 @@
   --color-surface-muted: #f5f5f7;
 }
 
+:root {
+  --mobile-bottom-nav-height: 76px;
+  --mobile-bottom-nav-safe: max(env(safe-area-inset-bottom), 6px);
+}
+
 body {
   font-family: var(--font-sans);
   color: var(--color-ink);
