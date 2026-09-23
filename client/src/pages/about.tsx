@@ -15,7 +15,10 @@ const PAGE_CONTENT = {
 		role: "Rural GP Obstetrician & Senior Lecturer, RCSWA",
 		bio: "Dr Sarah Moore is a rural GP obstetrician and senior lecturer with the Rural Clinical School of Western Australia (RCSWA), where she teaches and mentors medical students. Sarah is also the RCSWA Sub-Dean for Student Matters and Chair of the RCSWA Wellbeing Working Party. Sarah is passionate about whole person care and has undertaken training in mindfulness, integrative medicine and whole person care. Sarah has recently completed her PhD at UWA, evaluating the effects of a tailored, online mindfulness training program on the wellbeing of medical students and junior doctors. Sarah is committed to making mindfulness training accessible and relevant to medical students and junior doctors so that they can integrate mindfulness practices into their daily lives and become more present, compassionate and connected with their community.",
 		linkedin: "https://www.linkedin.com/in/dr-sarah-moore-84a0902a/",
+		linkedinLabel: "Sarah's LinkedIn",
 		research: "https://research-repository.uwa.edu.au/en/persons/sarah-moore/",
+		researchLinkText: "Read Sarah's research on UWA Research Repository",
+		phdIntro: "This programme has been developed and evaluated through Sarah's PhD research at UWA.",
 	},
 	rcswa: {
 		name: "The Rural Clinical School of Western Australia",
@@ -107,15 +110,14 @@ export default function AboutPage() {
 								{PAGE_CONTENT.sarah.bio}
 							</p>
 							<p className="mt-4 text-[15px] leading-relaxed text-muted">
-								This programme has been developed and evaluated through Sarah's PhD
-								research at UWA.{" "}
+								{PAGE_CONTENT.sarah.phdIntro}{" "}
 								<a
 									href={PAGE_CONTENT.sarah.research}
 									target="_blank"
 									rel="noopener noreferrer"
 									className="font-semibold text-brand-blue-dark underline underline-offset-2"
 								>
-									Read Sarah's research on UWA Research Repository
+									{PAGE_CONTENT.sarah.researchLinkText}
 								</a>
 								.
 							</p>
@@ -128,7 +130,7 @@ export default function AboutPage() {
 									className="inline-flex h-10 items-center gap-2 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-ink hover:bg-surface-muted"
 								>
 									<LinkedinIcon className="size-4 shrink-0 text-muted" aria-hidden="true" />
-									Sarah's LinkedIn
+									{PAGE_CONTENT.sarah.linkedinLabel}
 								</a>
 								<a
 									href={PAGE_CONTENT.sarah.research}
