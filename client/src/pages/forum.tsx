@@ -151,7 +151,7 @@ function Composer({
 			<form onSubmit={handleSubmit}>
 				<div className="flex items-center gap-3">
 					<Avatar name={user?.full_name || "User"} email={user?.email} />
-					<p className="text-sm font-bold text-ink">What's on your mind?</p>
+					<p className="text-sm font-bold text-ink">What&apos;s on your mind?</p>
 				</div>
 				<textarea
 					value={body}
