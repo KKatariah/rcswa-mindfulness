@@ -41,6 +41,7 @@ from .serializers import (
     ForumThreadDetailSerializer,
     ForumThreadSerializer,
     ModuleSerializer,
+    ModuleSummarySerializer,
     NotificationPreferenceSerializer,
     PushSubscriptionSerializer,
     RegisterSerializer,
@@ -223,6 +224,11 @@ class ModuleViewSet(viewsets.ReadOnlyModelViewSet):
         if module.unlock_at and module.unlock_at > timezone.now():
             raise PermissionDenied("This module is not available yet.")
         return Response(self.get_serializer(module).data)
+
+    @action(detail=False, methods=["get"], permission_classes=[AllowAny])
+    def summary(self, request):
+        modules = Module.objects.filter(is_published=True).order_by("week_number")
+        return Response(ModuleSummarySerializer(modules, many=True).data)
 
     serializer_class = ModuleSerializer
     queryset = (

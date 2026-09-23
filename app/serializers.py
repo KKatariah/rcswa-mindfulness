@@ -76,6 +76,14 @@ class ModuleSerializer(serializers.ModelSerializer):
         ]
 
 
+class ModuleSummarySerializer(serializers.ModelSerializer):
+    """Public-safe module summary (short blurb only, no full content) for marketing pages."""
+
+    class Meta:
+        model = Module
+        fields = ["id", "week_number", "title", "summary"]
+
+
 class ContentCompletionSerializer(serializers.ModelSerializer):
     def validate_content_item(self, item):
         module = item.module

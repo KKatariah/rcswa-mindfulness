@@ -35,6 +35,7 @@ class Command(BaseCommand):
                 module, _ = Module.objects.get_or_create(week_number=row["week_number"])
                 module.title = row["title"]
                 module.description = row["description"]
+                module.summary = row["summary"]
                 if options["publish"]:
                     module.is_published = True
                 module.full_clean()

@@ -132,6 +132,7 @@ class Module(models.Model):
     week_number = models.PositiveSmallIntegerField(unique=True, db_index=True)
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+    summary = models.CharField(max_length=300, blank=True)
     is_published = models.BooleanField(default=False)
     unlock_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
