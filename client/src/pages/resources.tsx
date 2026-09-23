@@ -1,21 +1,9 @@
 import Head from "next/head";
 import Image from "next/image";
 import Link from "next/link";
-import Sidebar from "@/components/main/Sidebar";
+import AppShell from "@/components/main/AppShell";
 import NextSession from "@/components/modules/NextSession";
-import { useAuth } from "@/context/AuthContext";
-import {
-  HomeIcon, BookOpenIcon, BarChart2Icon, MessageCircleIcon,
-  FolderIcon, VideoIcon, GlobeIcon, ExternalLinkIcon,
-} from "@/components/ui/icons";
-
-const navigation = [
-  { label: "Home", href: "/", icon: HomeIcon },
-  { label: "Modules", href: "/modules", icon: BookOpenIcon },
-  { label: "Progress", href: "/progress", icon: BarChart2Icon },
-  { label: "Forum", href: "/forum", icon: MessageCircleIcon },
-  { label: "Resources", href: "/resources", icon: FolderIcon },
-];
+import { BookOpenIcon, VideoIcon, GlobeIcon, ExternalLinkIcon } from "@/components/ui/icons";
 
 type Resource = {
   title: string;
@@ -117,32 +105,21 @@ function LogoThumb({ resource, iconBg, Icon }: { resource: Resource; iconBg: str
 }
 
 export default function ResourcesPage() {
-  const { user } = useAuth();
-  const fullName = user?.full_name?.trim() || user?.email || "Username";
-
   return (
     <>
       <Head>
         <title>Resources | Wellbeing Course</title>
         <meta name="description" content="Books, documentaries, and online programmes to support your mindfulness journey." />
       </Head>
-      <div
-        className="min-h-dvh bg-cover bg-center bg-fixed px-4 pb-28 pt-4 md:p-6"
-        style={{ backgroundImage: "url(/images/module-background.jpg)" }}
+      <AppShell
+        rightRail={
+          <NextSession moduleTitle="Module Week 3" startsAt="2028-10-24T10:00:00+08:00" dateLabel="Tue, Oct 24" timeLabel="10:00 AM" />
+        }
       >
-        <div className="mx-auto grid max-w-[1920px] items-start gap-4 md:grid-cols-[240px_minmax(0,1fr)] md:gap-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
-          <div className="hidden md:sticky md:top-6 md:block">
-            <Sidebar responsive />
-          </div>
-
-          <div className="min-w-0 space-y-4">
-            <header className="px-1 pb-2 text-white md:rounded-[10px] md:border md:border-gray-200 md:bg-white md:p-6 md:text-ink">
-              <div className="mb-6 flex items-center gap-2 text-xs md:hidden">
-                <span className="flex size-7 items-center justify-center rounded-full bg-white text-muted" aria-hidden="true">U</span>
-                <span>{fullName}</span>
-              </div>
-              <h1 className="text-2xl font-extrabold sm:text-3xl">Resources</h1>
-              <p className="mt-2 text-sm md:text-muted">There are helpful materials to support your meditation journey</p>
+        <div className="min-w-0 space-y-4">
+            <header className="rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_4px_4px_-6px_rgba(0,0,0,0.05)]">
+              <h1 className="text-2xl font-extrabold text-ink sm:text-3xl">Resources</h1>
+              <p className="mt-2 text-sm text-muted sm:text-base">Helpful materials to support your meditation journey</p>
             </header>
 
             <section aria-label="Featured resources" className="rounded-[10px] border border-gray-200 bg-white p-5 sm:p-6">
@@ -243,22 +220,8 @@ export default function ResourcesPage() {
                 ))}
               </ul>
             </section>
-          </div>
-
-          <div className="min-w-0 md:col-start-2 xl:sticky xl:top-6 xl:col-start-3">
-            <NextSession moduleTitle="Module Week 3" startsAt="2028-10-24T10:00:00+08:00" dateLabel="Tue, Oct 24" timeLabel="10:00 AM" />
-          </div>
         </div>
-      </div>
-
-      <nav aria-label="Mobile navigation" className="fixed inset-x-4 bottom-0 z-20 grid grid-cols-5 rounded-t-2xl border border-gray-200 bg-white px-1 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] shadow-lg md:hidden">
-        {navigation.map(({ label, href, icon: Icon }) => (
-          <Link key={href} href={href} aria-current={href === "/resources" ? "page" : undefined} className={`flex min-h-12 flex-col items-center justify-center gap-1 rounded-lg text-[10px] font-semibold focus-visible:outline-2 focus-visible:outline-brand-blue-dark ${href === "/resources" ? "text-brand-blue-dark" : "text-ink"}`}>
-            <Icon className="size-4" aria-hidden="true" />
-            {label}
-          </Link>
-        ))}
-      </nav>
+      </AppShell>
     </>
   );
 }
