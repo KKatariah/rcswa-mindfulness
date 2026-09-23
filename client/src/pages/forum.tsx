@@ -1,7 +1,6 @@
 import { type FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/router";
 import Head from "next/head";
-import Image from "next/image";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
 import { useAuth } from "@/context/AuthContext";
@@ -454,7 +453,7 @@ function FeedView({ threads, onSelect, onCreateThread, user }: FeedViewProps) {
 		<>
 			<Composer onSubmit={onCreateThread} user={user} />
 
-			<div className="mt-4 rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+			<div className="rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 				{threads.length === 0 ? (
 					<p className="py-12 text-center text-sm text-[#9CA3AF]">
 						No threads yet. Be the first to start a conversation!
@@ -503,7 +502,7 @@ function FeedView({ threads, onSelect, onCreateThread, user }: FeedViewProps) {
 
 function ForumSidebar({ query, onQueryChange }: { query: string; onQueryChange: (v: string) => void }) {
 	return (
-		<div className="hidden w-[280px] shrink-0 space-y-4 lg:block">
+		<div className="hidden min-w-0 space-y-4 xl:block">
 			<div className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 				<p className="text-sm font-bold text-ink">Search</p>
 				<div className="mt-3 flex items-center gap-2 rounded-xl border border-gray-200 bg-surface-muted px-3 py-2">
@@ -629,22 +628,8 @@ export default function ForumPage() {
 				<title>Forum — Wellbeing Course</title>
 			</Head>
 
-			<AppShell
-				background={
-					<>
-						<Image
-							src="/pexels-michael-metschl-718198730-18284929.jpg"
-							alt=""
-							fill
-							priority
-							sizes="100vw"
-							className="object-cover"
-						/>
-						<div className="absolute inset-0 bg-gradient-to-b from-indigo-950/40 via-purple-900/35 to-indigo-950/60" />
-					</>
-				}
-			>
-				<main className="px-6 py-8 sm:px-10 lg:px-10">
+			<AppShell rightRail={!selectedThread ? <ForumSidebar query={query} onQueryChange={setQuery} /> : undefined}>
+				<main aria-label="Forum" className="flex min-w-0 flex-col gap-4">
 					{authLoading || loading ? (
 						<div className="flex justify-center py-20">
 							<span className="text-sm text-[#9CA3AF]">Loading…</span>
@@ -669,44 +654,40 @@ export default function ForumPage() {
 							</button>
 						</div>
 					) : (
-						<div className="flex items-start gap-6">
-							<div className="min-w-0 flex-1">
-								{!selectedThread && (
-									<div className="mb-4 rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
-										<h1 className="text-2xl font-extrabold text-ink">Forum</h1>
-										<p className="mt-1 text-sm text-[#9CA3AF]">
-											Connect, share, and support each other on your wellness journeys.
-										</p>
-									</div>
-								)}
+						<>
+							{!selectedThread && (
+								<div className="rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+									<h1 className="text-2xl font-extrabold text-ink">Forum</h1>
+									<p className="mt-1 text-sm text-[#9CA3AF]">
+										Connect, share, and support each other on your wellness journeys.
+									</p>
+								</div>
+							)}
 
-								{selectedThread ? (
-									<ThreadDetailView
-										thread={selectedThread}
-										onBack={() => setSelectedThread(null)}
-										onReply={handleReply}
-										onEditPost={handleEditPost}
-										onDeletePost={handleDeletePost}
-										onDeleteThread={handleDeleteThread}
-										onPinThread={handlePinThread}
-									/>
-								) : (
-									<FeedView
-											threads={filteredThreads}
-											onSelect={loadThread}
-											onCreateThread={handleCreateThread}
-											user={user}
-										/>
-								)}
-							</div>
-
-							{!selectedThread && <ForumSidebar query={query} onQueryChange={setQuery} />}
-						</div>
+							{selectedThread ? (
+								<ThreadDetailView
+									thread={selectedThread}
+									onBack={() => setSelectedThread(null)}
+									onReply={handleReply}
+									onEditPost={handleEditPost}
+									onDeletePost={handleDeletePost}
+									onDeleteThread={handleDeleteThread}
+									onPinThread={handlePinThread}
+								/>
+							) : (
+								<FeedView
+									threads={filteredThreads}
+									onSelect={loadThread}
+									onCreateThread={handleCreateThread}
+									user={user}
+								/>
+							)}
+						</>
 					)}
 				</main>
-
-				<Footer />
 			</AppShell>
+
+			<Footer />
 		</>
 	);
 }
