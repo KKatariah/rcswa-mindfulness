@@ -28,6 +28,7 @@
       "week_number": 1,
       "title": "Introduction to Mindfulness",
       "description": "An overview of mindfulness practice and its evidence base.",
+      "summary": "An overview of mindfulness practice and its evidence base.",
       "is_published": true,
       "created_at": "2026-01-01T00:00:00Z",
       "updated_at": "2026-01-01T00:00:00Z"
@@ -40,6 +41,7 @@
       "week_number": 2,
       "title": "Body Scan Meditation",
       "description": "Guided body scan practice to develop present-moment awareness.",
+      "summary": "Guided body scan practice to develop present-moment awareness.",
       "is_published": false,
       "created_at": "2026-01-01T00:00:00Z",
       "updated_at": "2026-01-01T00:00:00Z"
