@@ -15,9 +15,9 @@ type SurveyLinksProps = {
 };
 
 const DEFAULT_SURVEYS: SurveyLinkItem[] = [
-	{ id: 1, label: "Week 1", status: "completed", href: "/surveys/1" },
-	{ id: 2, label: "Week 2", status: "completed", href: "/surveys/2" },
-	{ id: 3, label: "Week 3", status: "current", href: "/surveys/3" },
+	{ id: 1, label: "Week 1", status: "locked" },
+	{ id: 2, label: "Week 2", status: "locked" },
+	{ id: 3, label: "Week 3", status: "locked" },
 	{ id: 4, label: "Week 4", status: "locked" },
 	{ id: 5, label: "Week 5", status: "locked" },
 	{ id: 6, label: "Week 6", status: "locked" },

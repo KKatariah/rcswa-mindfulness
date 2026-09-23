@@ -11,6 +11,8 @@ directly, the recommended pattern for pluggable user models.
 """
 
 import datetime
+import re
+from urllib.parse import quote
 
 from django.conf import settings
 from django.contrib.auth.base_user import BaseUserManager
@@ -18,6 +20,47 @@ from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
+
+# Matches the video ID out of any common YouTube share/watch link shape:
+# watch?v=, youtu.be/, /embed/, /shorts/, with or without extra query params
+# (e.g. &t=30s, ?list=...) and with or without www./m./-nocookie.
+_YOUTUBE_ID_RE = re.compile(
+    r"youtube(?:-nocookie)?\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|v/)"
+    r"(?P<id>[A-Za-z0-9_-]{11})"
+    r"|youtu\.be/(?P<id2>[A-Za-z0-9_-]{11})"
+)
+
+
+def normalize_youtube_embed_url(url: str) -> str:
+    """Rewrite a YouTube watch/share link to its canonical embeddable form
+    (https://www.youtube.com/embed/{id}). Lets a non-technical admin paste
+    whatever link they copied from YouTube — watch, youtu.be, shorts — and
+    have it just work. An already-correct embed URL is left equivalent
+    (idempotent); anything else that isn't a recognisable YouTube link
+    (SoundCloud links included) is returned unchanged."""
+    match = _YOUTUBE_ID_RE.search(url)
+    if not match:
+        return url
+    video_id = match.group("id") or match.group("id2")
+    return f"https://www.youtube.com/embed/{video_id}"
+
+
+# A plain share link for a track or set, e.g. https://soundcloud.com/artist/track-name.
+_SOUNDCLOUD_SHARE_RE = re.compile(r"^https?://(?:www\.)?soundcloud\.com/\S+$")
+_SOUNDCLOUD_EMBED_PREFIX = "https://w.soundcloud.com/player/"
+
+
+def normalize_soundcloud_embed_url(url: str) -> str:
+    """Rewrite a plain SoundCloud share link (track or set) to the canonical
+    embeddable player URL, which wraps the URL-encoded share link rather than
+    needing SoundCloud's internal numeric track ID. An already-correct player
+    embed URL is left unchanged; anything that isn't a recognisable SoundCloud
+    share link (YouTube links included) is returned unchanged too."""
+    if url.startswith(_SOUNDCLOUD_EMBED_PREFIX):
+        return url
+    if not _SOUNDCLOUD_SHARE_RE.match(url):
+        return url
+    return f"{_SOUNDCLOUD_EMBED_PREFIX}?url={quote(url, safe='')}"
 
 
 # Users & Access
@@ -176,6 +219,14 @@ class ContentItem(models.Model):
 
     class Meta:
         ordering = ["module", "display_order"]
+
+    def save(self, *args, **kwargs):
+        if self.embed_url:
+            if self.provider == self.Provider.YOUTUBE:
+                self.embed_url = normalize_youtube_embed_url(self.embed_url)
+            elif self.provider == self.Provider.SOUNDCLOUD:
+                self.embed_url = normalize_soundcloud_embed_url(self.embed_url)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.title
