@@ -6,7 +6,7 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
-from django.contrib.auth import authenticate, get_user_model
+from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from .serializers import ProfileUpdateSerializer, ChangePasswordSerializer
 
@@ -65,8 +65,6 @@ from .serializers import (
     _forum_activity_stats,
     _enrollment_status_breakdown,
 )
-
-User = get_user_model()
 
 # Create your views here.
 
@@ -161,6 +159,7 @@ def login_view(request):
         status=status.HTTP_200_OK,
     )
 
+
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def current_user_view(request):
@@ -176,6 +175,7 @@ def current_user_view(request):
         },
         status=status.HTTP_200_OK,
     )
+
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
