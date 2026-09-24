@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from .serializers import ProfileUpdateSerializer, ChangePasswordSerializer
+from .utils import gravatar_url
 
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 
@@ -101,6 +102,7 @@ def _user_payload(user):
         "full_name": user.full_name,
         "role": user.role,
         "display_name": user.display_name,
+        "avatar_url": gravatar_url(user.email),
         "auth_provider": user.auth_provider,
         "cohort_start_date": _active_cohort_start_date(user),
     }
