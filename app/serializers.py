@@ -628,8 +628,10 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
         read_only_fields = ["id"]
 
 # –– User profiles –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
 class UserSerializer(serializers.ModelSerializer):
     avatar_url = serializers.SerializerMethodField()
+
 
     class Meta:
         model = User
@@ -645,3 +647,4 @@ class UserSerializer(serializers.ModelSerializer):
 
     def get_avatar_url(self, obj):
         return gravatar_url(obj.email)
+    
