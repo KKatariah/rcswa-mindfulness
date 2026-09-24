@@ -11,6 +11,8 @@ directly, the recommended pattern for pluggable user models.
 """
 
 import datetime
+import re
+from urllib.parse import quote
 
 from django.conf import settings
 from django.contrib.auth.base_user import BaseUserManager
@@ -18,6 +20,47 @@ from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
+
+# Matches the video ID out of any common YouTube share/watch link shape:
+# watch?v=, youtu.be/, /embed/, /shorts/, with or without extra query params
+# (e.g. &t=30s, ?list=...) and with or without www./m./-nocookie.
+_YOUTUBE_ID_RE = re.compile(
+    r"youtube(?:-nocookie)?\.com/(?:watch\?(?:.*&)?v=|embed/|shorts/|v/)"
+    r"(?P<id>[A-Za-z0-9_-]{11})"
+    r"|youtu\.be/(?P<id2>[A-Za-z0-9_-]{11})"
+)
+
+
+def normalize_youtube_embed_url(url: str) -> str:
+    """Rewrite a YouTube watch/share link to its canonical embeddable form
+    (https://www.youtube.com/embed/{id}). Lets a non-technical admin paste
+    whatever link they copied from YouTube — watch, youtu.be, shorts — and
+    have it just work. An already-correct embed URL is left equivalent
+    (idempotent); anything else that isn't a recognisable YouTube link
+    (SoundCloud links included) is returned unchanged."""
+    match = _YOUTUBE_ID_RE.search(url)
+    if not match:
+        return url
+    video_id = match.group("id") or match.group("id2")
+    return f"https://www.youtube.com/embed/{video_id}"
+
+
+# A plain share link for a track or set, e.g. https://soundcloud.com/artist/track-name.
+_SOUNDCLOUD_SHARE_RE = re.compile(r"^https?://(?:www\.)?soundcloud\.com/\S+$")
+_SOUNDCLOUD_EMBED_PREFIX = "https://w.soundcloud.com/player/"
+
+
+def normalize_soundcloud_embed_url(url: str) -> str:
+    """Rewrite a plain SoundCloud share link (track or set) to the canonical
+    embeddable player URL, which wraps the URL-encoded share link rather than
+    needing SoundCloud's internal numeric track ID. An already-correct player
+    embed URL is left unchanged; anything that isn't a recognisable SoundCloud
+    share link (YouTube links included) is returned unchanged too."""
+    if url.startswith(_SOUNDCLOUD_EMBED_PREFIX):
+        return url
+    if not _SOUNDCLOUD_SHARE_RE.match(url):
+        return url
+    return f"{_SOUNDCLOUD_EMBED_PREFIX}?url={quote(url, safe='')}"
 
 
 # Users & Access
@@ -68,6 +111,7 @@ class User(AbstractUser):
 
     email = models.EmailField(unique=True)
     full_name = models.CharField(max_length=200, blank=True)
+    display_name = models.CharField(max_length=100, blank=True)
     auth_provider = models.CharField(max_length=50, default="local")
     provider_uid = models.CharField(max_length=255, blank=True, null=True)  # noqa: DJ01 (so flake8 linting ignores null=True)
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.STUDENT)
@@ -131,7 +175,9 @@ class Module(models.Model):
     week_number = models.PositiveSmallIntegerField(unique=True, db_index=True)
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
+    summary = models.CharField(max_length=300, blank=True)
     is_published = models.BooleanField(default=False)
+    unlock_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -146,6 +192,8 @@ class ContentItem(models.Model):
     class ContentType(models.TextChoices):
         VIDEO = "video", "Video"
         AUDIO = "audio", "Audio"
+        TEXT = "text", "Text"
+        # TODO(backlog): file-upload content type — needs a storage backend decision.
 
     class Provider(models.TextChoices):
         YOUTUBE = "youtube", "YouTube"
@@ -159,8 +207,10 @@ class ContentItem(models.Model):
     )
     title = models.CharField(max_length=200)
     type = models.CharField(max_length=10, choices=ContentType.choices)
-    provider = models.CharField(max_length=20, choices=Provider.choices)
-    embed_url = models.URLField()
+    # provider/embed_url only apply to video/audio items; body only applies to text items.
+    provider = models.CharField(max_length=20, choices=Provider.choices, blank=True, default="")
+    embed_url = models.URLField(blank=True, default="")
+    body = models.TextField(blank=True, default="")
     display_order = models.PositiveSmallIntegerField(default=0)
     # Day within the module's week (0 = first day). Null = never scheduled.
     # Due date = cohort.start_date + timedelta((module.week_number-1)*7 + day_offset)
@@ -170,6 +220,14 @@ class ContentItem(models.Model):
 
     class Meta:
         ordering = ["module", "display_order"]
+
+    def save(self, *args, **kwargs):
+        if self.embed_url:
+            if self.provider == self.Provider.YOUTUBE:
+                self.embed_url = normalize_youtube_embed_url(self.embed_url)
+            elif self.provider == self.Provider.SOUNDCLOUD:
+                self.embed_url = normalize_soundcloud_embed_url(self.embed_url)
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.title
@@ -223,6 +281,35 @@ class ContentCompletion(models.Model):
 
     def __str__(self):
         return f"{self.user} completed {self.content_item}"
+
+
+class ContentView(models.Model):
+    """Auto-recorded the moment a user opens a module; distinct from ContentCompletion, which is manual."""
+
+    # CASCADE: view records belong to the user.
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="module_views",
+    )
+    # CASCADE: a view record is meaningless when its module is deleted.
+    module = models.ForeignKey(
+        Module,
+        on_delete=models.CASCADE,
+        related_name="views",
+    )
+    viewed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "module"],
+                name="unique_view_user_module",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.user} viewed {self.module}"
 
 
 # Notifications
@@ -415,17 +502,16 @@ class ForumThread(models.Model):
         null=True,
     )
     title = models.CharField(max_length=200)
+    is_pinned = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         constraints = [
+            # Both null (general thread) is valid; only rejected when BOTH are set.
             models.CheckConstraint(
-                condition=(
-                    Q(module__isnull=False, content_item__isnull=True)
-                    | Q(module__isnull=True, content_item__isnull=False)
-                ),
-                name="forum_thread_exactly_one_context",
+                condition=~Q(module__isnull=False, content_item__isnull=False),
+                name="forum_thread_at_most_one_context",
             ),
         ]
 
