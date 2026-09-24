@@ -5,7 +5,7 @@ from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
-from django.contrib.auth import authenticate
+from django.contrib.auth import authenticate, get_user_model
 from rest_framework.authtoken.models import Token
 from rest_framework.permissions import AllowAny, IsAuthenticated
 
@@ -28,6 +28,8 @@ from .serializers import (
     SurveySerializer,
     _survey_is_unlocked,
 )
+
+User = get_user_model()
 
 # Create your views here.
 
@@ -107,6 +109,21 @@ def login_view(request):
         status=status.HTTP_200_OK,
     )
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def current_user_view(request):
+    user = request.user
+
+    return Response(
+        {
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+            }
+        },
+        status=status.HTTP_200_OK,
+    )
 
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
