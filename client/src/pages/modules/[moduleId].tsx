@@ -2,9 +2,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import Head from "next/head";
-import Navbar from "@/components/main/Navbar";
+import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
-import Sidebar from "@/components/main/Sidebar";
 import NextSession from "@/components/modules/NextSession";
 import ModuleHeader from "@/components/modules/ModuleHeader";
 import ModuleContent from "@/components/modules/ModuleContent";
@@ -164,34 +163,25 @@ export default function ModulePage() {
 			<Head>
 				<title>{module.title}</title>
 			</Head>
-			<div
-				className="bg-cover bg-center bg-fixed bg-no-repeat"
-				style={{ backgroundImage: "url(/images/module-background.jpg)" }}
+			<AppShell
+				rightRail={
+					// Sample schedule until session data is connected.
+					<NextSession moduleTitle="Module Week 3" startsAt="2028-10-24T10:00:00+08:00" dateLabel="Tue, Oct 24" timeLabel="10:00 AM" />
+				}
 			>
-				<div className="sticky top-0 z-30 h-20 bg-black/30 backdrop-blur-md lg:h-24">
-					<Navbar />
-				</div>
+				<div className="flex min-w-0 flex-col rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+					<ModuleHeader
+						embedded
+						title={module.title}
+						durationMinutes={module.content_items.length * 10}
+						description={`Week ${module.week_number}`}
+						viewed={moduleViewed}
+					/>
 
-				<div className="mx-auto grid max-w-[1920px] items-start gap-6 p-4 md:grid-cols-[240px_minmax(0,1fr)] lg:p-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
-					<Sidebar responsive />
-					<div className="flex min-w-0 flex-col rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
-						<ModuleHeader
-							embedded
-							title={module.title}
-							durationMinutes={module.content_items.length * 10}
-							description={`Week ${module.week_number}`}
-							viewed={moduleViewed}
-						/>
-
-						<hr className="mx-6 mt-6 border-0 border-t border-gray-200 sm:mx-10 lg:mx-12" />
-						<ModuleContent blocks={toBlocks(module, completions)} embedded onToggleComplete={handleToggleComplete} />
-					</div>
-					<div className="min-w-0 md:col-start-2 xl:col-start-3 md:sticky md:top-20 lg:top-24">
-						{/* Sample schedule until session data is connected. */}
-						<NextSession moduleTitle="Module Week 3" startsAt="2028-10-24T10:00:00+08:00" dateLabel="Tue, Oct 24" timeLabel="10:00 AM" />
-					</div>
+					<hr className="mx-6 mt-6 border-0 border-t border-gray-200 sm:mx-10 lg:mx-12" />
+					<ModuleContent blocks={toBlocks(module, completions)} embedded onToggleComplete={handleToggleComplete} />
 				</div>
-			</div>
+			</AppShell>
 
 			<Footer />
 		</>

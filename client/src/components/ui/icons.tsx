@@ -192,10 +192,11 @@ export function SettingsIcon(props: IconProps) {
   );
 }
 
-export function LinkedinIcon(props: IconProps) {
+export function VideoIcon(props: IconProps) {
   return (
-    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
-      <path d="M7.12 20.45H3.55V9h3.57ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.47V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46Z" />
+    <svg viewBox="0 0 20 20" {...base} {...props}>
+      <rect x="2.5" y="5" width="10" height="10" rx="2" />
+      <path d="M12.5 8.33 17.5 5.83v8.34L12.5 11.67" />
     </svg>
   );
 }
@@ -204,7 +205,24 @@ export function GlobeIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 20 20" {...base} {...props}>
       <circle cx="10" cy="10" r="7.5" />
-      <path d="M2.5 10h15M10 2.5c1.88 2.1 2.92 4.8 2.92 7.5S11.88 15.4 10 17.5C8.12 15.4 7.08 12.7 7.08 10S8.12 4.6 10 2.5Z" />
+      <path d="M2.5 10h15M10 2.5c1.94 2.1 3.03 4.83 3.05 7.5-.02 2.67-1.11 5.4-3.05 7.5-1.94-2.1-3.03-4.83-3.05-7.5.02-2.67 1.11-5.4 3.05-7.5Z" />
     </svg>
   );
 }
+
+export function ExternalLinkIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base} {...props}>
+      <path d="M8.33 5H5a1.67 1.67 0 0 0-1.67 1.67v8.33A1.67 1.67 0 0 0 5 16.67h8.33A1.67 1.67 0 0 0 15 15v-3.33M11.67 3.33H16.67V8.33M8.33 11.67 16.67 3.33" />
+    </svg>
+  );
+}
+
+export function LinkedinIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" {...props}>
+      <path d="M7.12 20.45H3.55V9h3.57ZM5.34 7.43a2.06 2.06 0 1 1 0-4.13 2.06 2.06 0 0 1 0 4.13ZM20.45 20.45h-3.55v-5.57c0-1.33-.03-3.04-1.85-3.04-1.85 0-2.14 1.45-2.14 2.94v5.67H9.47V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.46Z" />
+    </svg>
+  );
+}
+
