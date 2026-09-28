@@ -25,6 +25,7 @@ type AuthContextValue = {
 	) => Promise<void>;
 	logout: () => Promise<void>;
 	loginWithGoogle: (credential: string) => Promise<void>;
+	updateUser: (updates: Partial<AuthUser>) => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -91,9 +92,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		localStorage.setItem("user", JSON.stringify(data.user));
 	}
 
+	// Merges partial changes (e.g. a newly saved display name) into the
+	// cached user, and persists the result to localStorage. This is what
+	// keeps a profile edit visible after leaving and returning to a page —
+	// without it, edits only ever lived in whichever component's local state
+	// made the save, and the context's stale `user` would win on remount.
+	function updateUser(updates: Partial<AuthUser>) {
+		setUser((prev) => {
+			if (!prev) return prev;
+			const next = { ...prev, ...updates };
+			localStorage.setItem("user", JSON.stringify(next));
+			return next;
+		});
+	}
+
 	return (
 		<AuthContext.Provider
-			value={{ user, isLoading, login, register, logout, loginWithGoogle }}
+			value={{
+				user,
+				isLoading,
+				login,
+				register,
+				logout,
+				loginWithGoogle,
+				updateUser,
+			}}
 		>
 			{children}
 		</AuthContext.Provider>

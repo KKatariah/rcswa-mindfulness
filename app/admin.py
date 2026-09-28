@@ -27,6 +27,24 @@ class CustomUserAdmin(UserAdmin):
     search_fields = ("email", "full_name")
     ordering = ("email",)
 
+    fieldsets = (
+        (None, {"fields": ("email", "password")}),
+        ("Personal info", {"fields": ("full_name", "display_name", "role", "auth_provider", "provider_uid")}),
+        ("Permissions", {
+            "fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions"),
+        }),
+        ("Important dates", {"fields": ("last_login", "created_at")}),
+    )
+
+    add_fieldsets = (
+        (None, {
+            "classes": ("wide",),
+            "fields": ("email", "full_name", "password1", "password2", "role"),
+        }),
+    )
+
+    readonly_fields = ("created_at",)
+
 
 class ContentItemInline(admin.TabularInline):
     model = ContentItem

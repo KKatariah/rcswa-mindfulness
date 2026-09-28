@@ -9,6 +9,18 @@ type SignUpModalProps = {
 	onClose: () => void;
 };
 
+// Cleans up a full name: collapses extra whitespace and title-cases each
+function formatFullName(value: string) {
+	return value
+		.trim()
+		.replace(/\s+/g, " ")
+		.split(" ")
+		.map((word) =>
+			word.length === 0 ? word : word[0].toUpperCase() + word.slice(1).toLowerCase(),
+		)
+		.join(" ");
+}
+
 export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 	const router = useRouter();
 	const { register, loginWithGoogle } = useAuth();
@@ -19,6 +31,10 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 	const [error, setError] = useState<string | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
+	function handleFullNameBlur() {
+		setFullName((prev) => formatFullName(prev));
+	}
+
 	async function handleSubmit(event: FormEvent) {
 		event.preventDefault();
 		setError(null);
@@ -28,9 +44,12 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 			return;
 		}
 
+		const cleanedFullName = formatFullName(fullName);
+		setFullName(cleanedFullName);
+
 		setIsSubmitting(true);
 		try {
-			await register(email, fullName, password);
+			await register(email, cleanedFullName, password);
 			onClose();
 			await router.push("/modules");
 		} catch (err) {
@@ -86,6 +105,7 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 						required
 						value={fullName}
 						onChange={(event) => setFullName(event.target.value)}
+						onBlur={handleFullNameBlur}
 						placeholder="Enter your full name"
 						className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
 					/>
