@@ -162,6 +162,23 @@ def login_view(request):
     )
 
 
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def current_user_view(request):
+    user = request.user
+
+    return Response(
+        {
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+            }
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
