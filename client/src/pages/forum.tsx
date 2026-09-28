@@ -102,14 +102,6 @@ function Avatar({
   );
 }
 
-// ── Post cooldown ──────────────────────────────────────────────────────────────
-// Client-side mirror of the backend's ForumPostRateThrottle: 3 posts within a
-// 30s window trigger a 30s timeout (rather than a flat per-post cooldown).
-// This is purely UX — it stops people from firing a request that's guaranteed to
-// get a 429 back, and shows a countdown instead. The real enforcement lives on
-// the server; this can't be relied on for security since it's just localStorage.
-// Shared across the new-thread composer and the reply form via localStorage,
-// since both actions share the same throttle scope on the backend.
 
 const POST_WINDOW_MS = 30_000;
 const POST_LIMIT = 3;
@@ -127,12 +119,7 @@ function getStoredTimestamps(): number[] {
   }
 }
 
-// Given the timestamps of recent posts, returns how many seconds are left in
-// the timeout, or 0 if posting is currently allowed. Only posts inside the
-// last POST_WINDOW_MS count toward the limit; once POST_LIMIT of them land in
-// that window, posting is locked until TIMEOUT_SECONDS after the most recent
-// one — at which point all three will have aged out of the window anyway, so
-// the lock clears on its own.
+
 function computeRemainingSeconds(timestamps: number[], now: number) {
   const recent = timestamps.filter((t) => now - t < POST_WINDOW_MS);
   if (recent.length < POST_LIMIT) return 0;
@@ -140,10 +127,7 @@ function computeRemainingSeconds(timestamps: number[], now: number) {
   return Math.max(0, Math.ceil((lockoutEnd - now) / 1000));
 }
 
-// Minimal shape of the fields we need off `user` for the admin bypass and the
-// composer's avatar. Kept local (rather than importing the real User type)
-// since either is_staff or role === "admin" should exempt someone from the
-// cooldown.
+
 type ForumUser = {
   full_name?: string | null;
   avatar_url?: string | null;
@@ -155,8 +139,7 @@ function isAdminUser(user: ForumUser | null) {
   return Boolean(user?.is_staff) || user?.role === "admin";
 }
 
-// `bypass` (true for admins) skips the timeout entirely: remaining stays at 0
-// and posts aren't even recorded, since there's nothing to throttle against.
+
 function useForumPostCooldown(bypass: boolean) {
   const [remaining, setRemaining] = useState(0);
 

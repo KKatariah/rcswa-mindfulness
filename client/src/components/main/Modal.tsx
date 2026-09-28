@@ -9,11 +9,6 @@ type ModalProps = {
 };
 
 export default function Modal({ isOpen, onClose, title, children }: ModalProps) {
-	// Tracks whether the mousedown that started this click also began on the
-	// backdrop itself. Without this, a click-and-drag text selection that
-	// starts inside an input and is released (mouseup) over the backdrop
-	// fires a "click" on the backdrop, closing the modal and discarding
-	// whatever was being typed.
 	const mouseDownOnBackdrop = useRef(false);
 
 	useEffect(() => {

@@ -92,11 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		localStorage.setItem("user", JSON.stringify(data.user));
 	}
 
-	// Merges partial changes (e.g. a newly saved display name) into the
-	// cached user, and persists the result to localStorage. This is what
-	// keeps a profile edit visible after leaving and returning to a page —
-	// without it, edits only ever lived in whichever component's local state
-	// made the save, and the context's stale `user` would win on remount.
+
 	function updateUser(updates: Partial<AuthUser>) {
 		setUser((prev) => {
 			if (!prev) return prev;

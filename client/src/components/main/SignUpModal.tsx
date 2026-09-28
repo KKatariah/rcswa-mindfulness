@@ -9,7 +9,7 @@ type SignUpModalProps = {
 	onClose: () => void;
 };
 
-// Cleans up a full name: collapses extra whitespace and title-cases each
+// Cleans up a full name 
 function formatFullName(value: string) {
 	return value
 		.trim()
