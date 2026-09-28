@@ -154,9 +154,7 @@ export default function ProfilePage() {
     dailySurveyCompletionReminder: false,
   });
 
-  // Baseline snapshot of the last-saved values, used to detect unsaved changes
-  // so the Save button can be disabled until something actually changes.
-  const [savedDisplayName, setSavedDisplayName] = useState<string>("");
+  const savedDisplayName = user?.display_name ?? "";
   const [savedNotifications, setSavedNotifications] = useState<NotificationPreferences>(notifications);
 
   const [status, setStatus] = useState<SaveStatus>("idle");
@@ -167,14 +165,6 @@ export default function ProfilePage() {
       router.replace("/");
     }
   }, [authLoading, user, router]);
-
-  // Keep the "saved" baseline in sync with the user's actual saved display name
-  // once it becomes available (or changes) from auth context.
-  useEffect(() => {
-    if (user) {
-      setSavedDisplayName(user.display_name ?? "");
-    }
-  }, [user]);
 
   const signedInName = user?.full_name?.trim() || "User";
   const isGoogleUser = user?.auth_provider === "google";
@@ -200,7 +190,6 @@ export default function ProfilePage() {
       await updateProfile({ display_name: displayName }, token);
       setStatus("success");
       updateUser({ display_name: displayName });
-      setSavedDisplayName(displayName);
       setSavedNotifications(notifications);
       setEditedDisplayName(null);
     } catch {

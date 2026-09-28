@@ -144,10 +144,9 @@ function useForumPostCooldown(bypass: boolean) {
   const [remaining, setRemaining] = useState(0);
 
   useEffect(() => {
-    if (bypass) {
-      setRemaining(0);
-      return;
-    }
+      if (bypass) {
+        return;
+      }
     function tick() {
       setRemaining(computeRemainingSeconds(getStoredTimestamps(), Date.now()));
     }
