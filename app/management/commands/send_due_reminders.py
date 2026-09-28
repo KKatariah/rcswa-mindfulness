@@ -187,7 +187,12 @@ class Command(BaseCommand):
                     skipped += 1
                     continue
 
-                pref = getattr(user, "notification_preference", None)
+                    pref = getattr(user, "notification_preference", None)
+
+                # Respect the user's daily content reminder preference.
+                if pref and not pref.daily_content_reminder:
+                    skipped += 1
+                    continue
 
                 # push_denied=True means the user explicitly refused — no push, no email.
                 if pref and pref.push_denied:

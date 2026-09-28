@@ -7,7 +7,12 @@ import NextSession from "@/components/modules/NextSession";
 import { LockIcon } from "@/components/ui/icons";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAuth } from "@/context/AuthContext";
-import { updateProfile, changePassword } from "@/lib/api";
+import {
+  updateProfile,
+  changePassword,
+  getNotificationPreferences,
+  updateNotificationPreferences,
+} from "@/lib/api";
 
 type NotificationPreferences = {
   dailyContentReminder: boolean;
@@ -150,10 +155,34 @@ export default function ProfilePage() {
   const [showPasswordForm, setShowPasswordForm] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.replace("/");
+  if (!authLoading && !user) {
+    router.replace("/");
+  }
+}, [authLoading, user, router]);
+
+useEffect(() => {
+  if (authLoading || !user) return;
+
+  const token = localStorage.getItem("token");
+  if (!token) return;
+
+  const loadNotificationPreferences = async () => {
+    try {
+      const prefs = await getNotificationPreferences(token);
+
+      setNotifications({
+        dailyContentReminder: prefs.daily_content_reminder,
+        surveyUnlockedReminder: prefs.survey_unlocked_reminder,
+        dailySurveyCompletionReminder: prefs.daily_survey_reminder,
+      });
+    } catch (error) {
+      console.error("Failed to load notification preferences:", error);
     }
-  }, [authLoading, user, router]);
+  };
+
+  loadNotificationPreferences();
+}, [authLoading, user]);
+
 
   const signedInName = user?.full_name?.trim() || "User";
   const isGoogleUser = user?.auth_provider === "google";
@@ -166,16 +195,24 @@ export default function ProfilePage() {
   };
 
   const handleSave = async () => {
-    setStatus("saving");
-    const token = localStorage.getItem("token") ?? "";
+  setStatus("saving");
+  const token = localStorage.getItem("token") ?? "";
 
-    try {
-      await updateProfile({ display_name: displayName }, token);
-      setStatus("success");
-    } catch {
-      setStatus("error");
-    }
-  };
+  try {
+    await updateProfile({ display_name: displayName }, token);
+
+    await updateNotificationPreferences(token, {
+      daily_content_reminder: notifications.dailyContentReminder,
+      survey_unlocked_reminder: notifications.surveyUnlockedReminder,
+      daily_survey_reminder: notifications.dailySurveyCompletionReminder,
+    });
+
+    setStatus("success");
+  } catch (error) {
+    console.error("Failed to save profile:", error);
+    setStatus("error");
+  }
+};
 
   return (
     <>

@@ -624,6 +624,9 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             "inapp_enabled",
             "reminder_time",
             "push_denied",
+            "daily_content_reminder",
+            "survey_unlocked_reminder",
+            "daily_survey_reminder",
         ]
         read_only_fields = ["id"]
 
