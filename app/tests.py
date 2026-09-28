@@ -26,6 +26,7 @@ from .models import (
 )
 
 from .serializers import ForumPostSerializer
+from .utils import gravatar_url
 
 User = get_user_model()
 
@@ -156,6 +157,35 @@ class EmbedUrlNormalizationTests(TestCase):
         embed = "https://w.soundcloud.com/player/?url=https%3A%2F%2Fsoundcloud.com%2Fartist%2Ftrack"
         item = self._make(embed, provider=ContentItem.Provider.SOUNDCLOUD)
         self.assertEqual(item.embed_url, embed)
+
+
+class UserAvatarTests(APITestCase):
+    def test_user_avatar_url_is_server_generated_from_email(self):
+        user = User.objects.create_user(
+            email="student@test.local",
+            password="testpass",
+        )
+
+        self.client.force_login(user)
+
+        resp = self.client.get("/api/user/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["user"]["avatar_url"], gravatar_url(user.email))
+        self.assertNotIn("gravatar_url", resp.data["user"])
+
+    def test_deleted_user_avatar_defaults_to_gravatar_mystery_person(self):
+        thread = ForumThread.objects.create(
+            title="Test thread",
+            created_by=None,
+        )
+        post = ForumPost.objects.create(
+            thread=thread,
+            author=None,
+            body="deleted author",
+        )
+
+        serializer = ForumPostSerializer(instance=post)
+        self.assertEqual(serializer.data["author_avatar_url"], gravatar_url(""))
 
 
 class ContentCompletionTests(APITestCase):
