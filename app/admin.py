@@ -8,6 +8,7 @@ from .models import (
     Module,
     ContentItem,
     Resource,
+    AdditionalResource,
     ContentCompletion,
     ContentView,
     NotificationPreference,
@@ -115,6 +116,7 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
 admin.site.register(Cohort)
 admin.site.register(Enrollment)
 admin.site.register(Resource)
+admin.site.register(AdditionalResource)
 admin.site.register(ContentCompletion)
 admin.site.register(ContentView)
 admin.site.register(NotificationLog)

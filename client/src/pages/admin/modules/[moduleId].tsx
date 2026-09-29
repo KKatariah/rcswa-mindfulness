@@ -4,10 +4,13 @@ import { useRouter } from "next/router";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import AdminLayout from "@/components/admin/AdminLayout";
+import Select from "@/components/ui/Select";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { PencilIcon, TrashIcon } from "@/components/ui/icons";
 import {
 	getModuleAdmin,
 	updateModule,
+	deleteModule,
 	createContentItem,
 	updateContentItem,
 	deleteContentItem,
@@ -23,6 +26,21 @@ type ContentItemFormState = {
 };
 
 const EMPTY_ITEM_FORM: ContentItemFormState = { title: "", type: "text", provider: "", embed_url: "", body: "" };
+
+// Mirrors the backend's normalize_youtube_embed_url/normalize_soundcloud_embed_url
+// matching in app/models.py, so a link is classified the same way client-side.
+const YOUTUBE_URL_RE =
+	/youtube(?:-nocookie)?\.com\/(?:watch\?(?:.*&)?v=|embed\/|shorts\/|v\/)[A-Za-z0-9_-]{11}|youtu\.be\/[A-Za-z0-9_-]{11}/;
+const SOUNDCLOUD_URL_RE = /^https?:\/\/(?:www\.)?soundcloud\.com\/\S+$/;
+const SOUNDCLOUD_EMBED_PREFIX = "https://w.soundcloud.com/player/";
+
+function detectProvider(url: string): "youtube" | "soundcloud" | null {
+	const trimmed = url.trim();
+	if (!trimmed) return null;
+	if (YOUTUBE_URL_RE.test(trimmed)) return "youtube";
+	if (trimmed.startsWith(SOUNDCLOUD_EMBED_PREFIX) || SOUNDCLOUD_URL_RE.test(trimmed)) return "soundcloud";
+	return null;
+}
 
 function ContentItemForm({
 	initial,
@@ -40,9 +58,20 @@ function ContentItemForm({
 	async function handleSubmit(e: FormEvent) {
 		e.preventDefault();
 		setError(null);
+
+		let toSubmit = form;
+		if (form.type !== "text") {
+			const provider = detectProvider(form.embed_url);
+			if (!provider) {
+				setError("Enter a valid YouTube or SoundCloud link.");
+				return;
+			}
+			toSubmit = { ...form, type: provider === "soundcloud" ? "audio" : "video", provider };
+		}
+
 		setSubmitting(true);
 		try {
-			await onSubmit(form);
+			await onSubmit(toSubmit);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Failed to save content item");
 		} finally {
@@ -67,16 +96,22 @@ function ContentItemForm({
 
 			<div className="flex flex-col gap-2">
 				<label htmlFor="item-type" className="text-sm font-semibold text-ink">Type</label>
-				<select
+				<Select
 					id="item-type"
-					value={form.type}
-					onChange={(e) => setForm((f) => ({ ...f, type: e.target.value as ContentItemFormState["type"] }))}
-					className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-				>
-					<option value="text">Text</option>
-					<option value="video">Video</option>
-					<option value="audio">Audio</option>
-				</select>
+					value={form.type === "text" ? "text" : "link"}
+					onChange={(kind) => {
+						if (kind === "text") {
+							setForm((f) => ({ ...f, type: "text", provider: "" }));
+						} else {
+							setForm((f) => ({ ...f, type: "video", provider: "" }));
+						}
+					}}
+					options={[
+						{ value: "text", label: "Text" },
+						{ value: "link", label: "YouTube / SoundCloud link" },
+					]}
+					className="h-11 w-full"
+				/>
 			</div>
 
 			{form.type === "text" ? (
@@ -101,32 +136,17 @@ function ContentItemForm({
 					)}
 				</div>
 			) : (
-				<>
-					<div className="flex flex-col gap-2">
-						<label htmlFor="item-provider" className="text-sm font-semibold text-ink">Provider</label>
-						<select
-							id="item-provider"
-							value={form.provider}
-							onChange={(e) => setForm((f) => ({ ...f, provider: e.target.value as ContentItemFormState["provider"] }))}
-							className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-						>
-							<option value="">Select a provider…</option>
-							<option value="youtube">YouTube</option>
-							<option value="soundcloud">SoundCloud</option>
-						</select>
-					</div>
-					<div className="flex flex-col gap-2">
-						<label htmlFor="item-embed-url" className="text-sm font-semibold text-ink">Embed URL</label>
-						<input
-							id="item-embed-url"
-							type="url"
-							value={form.embed_url}
-							onChange={(e) => setForm((f) => ({ ...f, embed_url: e.target.value }))}
-							placeholder="https://www.youtube.com/embed/…"
-							className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-						/>
-					</div>
-				</>
+				<div className="flex flex-col gap-2">
+					<label htmlFor="item-embed-url" className="text-sm font-semibold text-ink">Link</label>
+					<input
+						id="item-embed-url"
+						type="url"
+						value={form.embed_url}
+						onChange={(e) => setForm((f) => ({ ...f, embed_url: e.target.value }))}
+						placeholder="Paste a YouTube or SoundCloud link…"
+						className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
+					/>
+				</div>
 			)}
 
 			<div className="flex gap-3">
@@ -159,6 +179,10 @@ export default function AdminModuleEditorPage() {
 	const [addingItem, setAddingItem] = useState(false);
 	const [editingItem, setEditingItem] = useState<AdminContentItem | null>(null);
 	const [metaSaving, setMetaSaving] = useState(false);
+	const [metaError, setMetaError] = useState<string | null>(null);
+	const [deleteError, setDeleteError] = useState<string | null>(null);
+	const [confirmingModuleDelete, setConfirmingModuleDelete] = useState(false);
+	const [moduleDeleting, setModuleDeleting] = useState(false);
 
 	useEffect(() => {
 		if (!moduleId || Array.isArray(moduleId)) return;
@@ -188,6 +212,7 @@ export default function AdminModuleEditorPage() {
 		e.preventDefault();
 		if (!module) return;
 		setMetaSaving(true);
+		setMetaError(null);
 		try {
 			const token = localStorage.getItem("token") ?? "";
 			const updated = await updateModule(
@@ -196,6 +221,8 @@ export default function AdminModuleEditorPage() {
 				token,
 			);
 			setModule((prev) => (prev ? { ...prev, ...updated } : prev));
+		} catch (err) {
+			setMetaError(err instanceof Error ? err.message : "Failed to save module");
 		} finally {
 			setMetaSaving(false);
 		}
@@ -219,9 +246,29 @@ export default function AdminModuleEditorPage() {
 
 	async function handleDeleteItem(item: AdminContentItem) {
 		if (!confirm(`Delete content item "${item.title}"?`)) return;
+		setDeleteError(null);
 		const token = localStorage.getItem("token") ?? "";
-		await deleteContentItem(item.id, token);
-		await refresh();
+		try {
+			await deleteContentItem(item.id, token);
+			await refresh();
+		} catch (err) {
+			setDeleteError(err instanceof Error ? err.message : "Failed to delete content item");
+		}
+	}
+
+	async function handleDeleteModule() {
+		if (!module) return;
+		setConfirmingModuleDelete(false);
+		setDeleteError(null);
+		setModuleDeleting(true);
+		try {
+			const token = localStorage.getItem("token") ?? "";
+			await deleteModule(module.id, token);
+			router.push("/admin/modules");
+		} catch (err) {
+			setDeleteError(err instanceof Error ? err.message : "Failed to delete module");
+			setModuleDeleting(false);
+		}
 	}
 
 	if (loading) {
@@ -249,6 +296,11 @@ export default function AdminModuleEditorPage() {
 			</Head>
 
 			<form onSubmit={handleMetaSave} className="rounded-2xl border border-gray-200 bg-white p-5">
+				{metaError && (
+					<p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
+						{metaError}
+					</p>
+				)}
 				<div className="grid gap-4 sm:grid-cols-2">
 					<div className="flex flex-col gap-2">
 						<label htmlFor="meta-week" className="text-sm font-semibold text-ink">Week number</label>
@@ -296,6 +348,29 @@ export default function AdminModuleEditorPage() {
 					{metaSaving ? "Saving…" : "Save module"}
 				</button>
 			</form>
+
+			<div className="mt-4 flex items-center justify-between rounded-2xl border border-red-200 bg-red-50 p-4">
+				<div>
+					<p className="text-sm font-semibold text-red-700">Danger zone</p>
+					<p className="text-xs text-red-600">
+						Permanently delete this module, its content items, and all student completion history for them.
+					</p>
+				</div>
+				<button
+					type="button"
+					onClick={() => setConfirmingModuleDelete(true)}
+					disabled={moduleDeleting}
+					className="h-10 shrink-0 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-600 hover:bg-red-100 disabled:opacity-50"
+				>
+					{moduleDeleting ? "Deleting…" : "Delete module"}
+				</button>
+			</div>
+
+			{deleteError && (
+				<p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
+					{deleteError}
+				</p>
+			)}
 
 			<div className="mt-6 flex items-center justify-between">
 				<h2 className="text-lg font-extrabold text-ink">Content items</h2>
@@ -353,6 +428,21 @@ export default function AdminModuleEditorPage() {
 					)
 				)}
 			</div>
+
+			{confirmingModuleDelete && (
+				<ConfirmDialog
+					title={`Delete "${module.title}"?`}
+					message={
+						module.content_items.length === 0
+							? "This module has no content items yet. This can't be undone."
+							: `This will permanently delete ${module.content_items.length} content item${module.content_items.length === 1 ? "" : "s"} and all student completion history for ${module.content_items.length === 1 ? "it" : "them"}. This can't be undone.`
+					}
+					confirmLabel="Delete module"
+					danger
+					onConfirm={handleDeleteModule}
+					onCancel={() => setConfirmingModuleDelete(false)}
+				/>
+			)}
 		</AdminLayout>
 	);
 }

@@ -36,17 +36,17 @@ needs to exist on the server at runtime. This survives ephemeral filesystem rede
 
 ### 2. Set environment variables
 
-| Variable | Value |
-|---|---|
-| `VAPID_PRIVATE_KEY` | Raw base64url private key — the string printed by the extraction command above |
-| `VAPID_PUBLIC_KEY` | The `Application Server Key` printed by `vapid --gen` |
-| `VAPID_ADMIN_EMAIL` | Your admin email (included in the VAPID `sub` claim) |
-| `EMAIL_BACKEND` | `django.core.mail.backends.smtp.EmailBackend` in production |
-| `EMAIL_HOST` | SMTP host |
-| `EMAIL_PORT` | `587` |
-| `EMAIL_HOST_USER` | SMTP username |
-| `EMAIL_HOST_PASSWORD` | SMTP password |
-| `DEFAULT_FROM_EMAIL` | Sender address shown to students |
+| Variable              | Value                                                                          |
+| --------------------- | ------------------------------------------------------------------------------ |
+| `VAPID_PRIVATE_KEY`   | Raw base64url private key — the string printed by the extraction command above |
+| `VAPID_PUBLIC_KEY`    | The `Application Server Key` printed by `vapid --gen`                          |
+| `VAPID_ADMIN_EMAIL`   | Your admin email (included in the VAPID `sub` claim)                           |
+| `EMAIL_BACKEND`       | `django.core.mail.backends.smtp.EmailBackend` in production                    |
+| `EMAIL_HOST`          | SMTP host                                                                      |
+| `EMAIL_PORT`          | `587`                                                                          |
+| `EMAIL_HOST_USER`     | SMTP username                                                                  |
+| `EMAIL_HOST_PASSWORD` | SMTP password                                                                  |
+| `DEFAULT_FROM_EMAIL`  | Sender address shown to students                                               |
 
 In development `EMAIL_BACKEND` defaults to the console backend (emails are printed to
 stdout, no SMTP needed) and `VAPID_*` default to empty strings (push is skipped with
@@ -64,6 +64,8 @@ pip freeze | Out-File -Encoding utf8 requirements.txt
 ```bash
 python manage.py migrate
 ```
+
+This also seeds the public Resources page (books/documentaries/online programs) with its default content via a data migration.
 
 ### 4. Add the cron job
 
