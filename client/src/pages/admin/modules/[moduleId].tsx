@@ -4,7 +4,6 @@ import { useRouter } from "next/router";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import AdminLayout from "@/components/admin/AdminLayout";
-import Select from "@/components/ui/Select";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { PencilIcon, TrashIcon } from "@/components/ui/icons";
 import {
@@ -19,13 +18,12 @@ import type { AdminModule, AdminContentItem } from "@/types/admin";
 
 type ContentItemFormState = {
 	title: string;
-	type: "video" | "audio" | "text";
+	type: "video" | "audio";
 	provider: "youtube" | "soundcloud" | "";
 	embed_url: string;
-	body: string;
 };
 
-const EMPTY_ITEM_FORM: ContentItemFormState = { title: "", type: "text", provider: "", embed_url: "", body: "" };
+const EMPTY_ITEM_FORM: ContentItemFormState = { title: "", type: "video", provider: "", embed_url: "" };
 
 // Mirrors the backend's normalize_youtube_embed_url/normalize_soundcloud_embed_url
 // matching in app/models.py, so a link is classified the same way client-side.
@@ -59,15 +57,12 @@ function ContentItemForm({
 		e.preventDefault();
 		setError(null);
 
-		let toSubmit = form;
-		if (form.type !== "text") {
-			const provider = detectProvider(form.embed_url);
-			if (!provider) {
-				setError("Enter a valid YouTube or SoundCloud link.");
-				return;
-			}
-			toSubmit = { ...form, type: provider === "soundcloud" ? "audio" : "video", provider };
+		const provider = detectProvider(form.embed_url);
+		if (!provider) {
+			setError("Enter a valid YouTube or SoundCloud link.");
+			return;
 		}
+		const toSubmit: ContentItemFormState = { ...form, type: provider === "soundcloud" ? "audio" : "video", provider };
 
 		setSubmitting(true);
 		try {
@@ -95,59 +90,16 @@ function ContentItemForm({
 			</div>
 
 			<div className="flex flex-col gap-2">
-				<label htmlFor="item-type" className="text-sm font-semibold text-ink">Type</label>
-				<Select
-					id="item-type"
-					value={form.type === "text" ? "text" : "link"}
-					onChange={(kind) => {
-						if (kind === "text") {
-							setForm((f) => ({ ...f, type: "text", provider: "" }));
-						} else {
-							setForm((f) => ({ ...f, type: "video", provider: "" }));
-						}
-					}}
-					options={[
-						{ value: "text", label: "Text" },
-						{ value: "link", label: "YouTube / SoundCloud link" },
-					]}
-					className="h-11 w-full"
+				<label htmlFor="item-embed-url" className="text-sm font-semibold text-ink">Link</label>
+				<input
+					id="item-embed-url"
+					type="url"
+					value={form.embed_url}
+					onChange={(e) => setForm((f) => ({ ...f, embed_url: e.target.value }))}
+					placeholder="Paste a YouTube or SoundCloud link…"
+					className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
 				/>
 			</div>
-
-			{form.type === "text" ? (
-				<div className="flex flex-col gap-2">
-					<label htmlFor="item-body" className="text-sm font-semibold text-ink">
-						Content (Markdown)
-					</label>
-					<textarea
-						id="item-body"
-						rows={6}
-						value={form.body}
-						onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-						className="resize-none rounded-xl border border-gray-200 p-3 font-mono text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-					/>
-					{form.body.trim() && (
-						<div className="rounded-xl border border-gray-100 bg-surface-muted p-3">
-							<p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Preview</p>
-							<div className="prose prose-neutral prose-sm max-w-none break-words">
-								<ReactMarkdown remarkPlugins={[remarkGfm]}>{form.body}</ReactMarkdown>
-							</div>
-						</div>
-					)}
-				</div>
-			) : (
-				<div className="flex flex-col gap-2">
-					<label htmlFor="item-embed-url" className="text-sm font-semibold text-ink">Link</label>
-					<input
-						id="item-embed-url"
-						type="url"
-						value={form.embed_url}
-						onChange={(e) => setForm((f) => ({ ...f, embed_url: e.target.value }))}
-						placeholder="Paste a YouTube or SoundCloud link…"
-						className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-					/>
-				</div>
-			)}
 
 			<div className="flex gap-3">
 				<button
@@ -323,14 +275,24 @@ export default function AdminModuleEditorPage() {
 					</div>
 				</div>
 				<div className="mt-4 flex flex-col gap-2">
-					<label htmlFor="meta-description" className="text-sm font-semibold text-ink">Description</label>
+					<label htmlFor="meta-description" className="text-sm font-semibold text-ink">
+						Description (Markdown)
+					</label>
 					<textarea
 						id="meta-description"
-						rows={3}
+						rows={8}
 						value={module.description}
 						onChange={(e) => setModule((m) => m && { ...m, description: e.target.value })}
-						className="resize-none rounded-xl border border-gray-200 p-3 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
+						className="resize-y rounded-xl border border-gray-200 p-3 font-mono text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
 					/>
+					{module.description.trim() && (
+						<div className="rounded-xl border border-gray-100 bg-surface-muted p-3">
+							<p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Preview</p>
+							<div className="prose prose-neutral prose-sm max-w-none break-words">
+								<ReactMarkdown remarkPlugins={[remarkGfm]}>{module.description}</ReactMarkdown>
+							</div>
+						</div>
+					)}
 				</div>
 				<label className="mt-4 flex items-center gap-2 text-sm font-semibold text-ink">
 					<input
@@ -404,7 +366,7 @@ export default function AdminModuleEditorPage() {
 					editingItem?.id === item.id ? (
 						<ContentItemForm
 							key={item.id}
-							initial={{ title: item.title, type: item.type, provider: item.provider, embed_url: item.embed_url, body: item.body }}
+							initial={{ title: item.title, type: item.type, provider: item.provider, embed_url: item.embed_url }}
 							onSubmit={handleEditItem}
 							onCancel={() => setEditingItem(null)}
 						/>

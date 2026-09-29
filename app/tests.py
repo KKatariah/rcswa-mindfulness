@@ -31,6 +31,17 @@ from .utils import gravatar_url
 User = get_user_model()
 
 
+def _enroll(*users):
+    """Put users in an active cohort that started a year ago, so every module week is unlocked."""
+    today = date.today()
+    cohort = Cohort.objects.create(
+        name="Enrolled Cohort", year=today.year,
+        start_date=today - timedelta(days=365), end_date=today + timedelta(days=365),
+    )
+    for user in users:
+        Enrollment.objects.create(user=user, cohort=cohort, status=Enrollment.Status.ACTIVE)
+
+
 class ModuleListTests(APITestCase):
     def setUp(self):
         self.student = User.objects.create_user(
@@ -203,6 +214,7 @@ class ContentCompletionTests(APITestCase):
         self.student2 = User.objects.create_user(
             email="s2@test.local", password="testpass"
         )
+        _enroll(self.student1, self.student2)
         module = Module.objects.create(
             week_number=1, title="Week 1", is_published=True
         )
@@ -679,6 +691,7 @@ class SurveyTests(APITestCase):
             email="admin@test.local", password="testpass",
             full_name="Admin User", role=User.Role.ADMIN,
         )
+        _enroll(self.student, self.other)
         self.module = Module.objects.create(
             week_number=1, title="Week 1", is_published=True
         )
@@ -1000,6 +1013,7 @@ class SurveyFixtureFlowTests(APITestCase):
             password="testpass",
             full_name="Fixture Student",
         )
+        _enroll(self.student)
 
     def test_week1_survey_locked_unlocked_and_submittable(self):
         """
@@ -1204,7 +1218,8 @@ class ModuleAdminTests(APITestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_admin_can_create_text_content_item(self):
+    def test_text_content_items_are_rejected(self):
+        # Module text lives in Module.description; content items are video/audio only.
         self.client.force_login(self.admin)
         resp = self.client.post(
             "/api/content-items/",
@@ -1216,65 +1231,79 @@ class ModuleAdminTests(APITestCase):
             },
             content_type="application/json",
         )
-        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(ContentItem.objects.get(title="Notes").type, "text")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(ContentItem.objects.filter(title="Notes").exists())
 
 
 # ── Admin portal: module unlock computation ──────────────────────────────────────
 
 class ModuleUnlockTests(APITestCase):
+    """Week N unlocks (N-1) weeks after the student's cohort start date."""
+
     def setUp(self):
+        from django.utils import timezone
+        self.today = timezone.localdate()
         self.admin = User.objects.create_user(
             email="admin@test.local", password="testpass", role=User.Role.ADMIN,
         )
         self.student = User.objects.create_user(
             email="student@test.local", password="testpass",
         )
+        # Started a week ago: weeks 1-2 are open, week 3 opens in 7 days.
         self.cohort = Cohort.objects.create(
-            name="Test Cohort", year=2024,
-            start_date=date(2024, 1, 1), end_date=date(2024, 12, 31),
+            name="Test Cohort", year=self.today.year,
+            start_date=self.today - timedelta(days=7), end_date=self.today + timedelta(days=60),
         )
         Enrollment.objects.create(
             user=self.student, cohort=self.cohort, status=Enrollment.Status.ACTIVE,
         )
         self.week1 = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+        self.week2 = Module.objects.create(week_number=2, title="Week 2", is_published=True)
         self.week3 = Module.objects.create(week_number=3, title="Week 3", is_published=True)
+        self.week3_item = ContentItem.objects.create(
+            module=self.week3, title="Video", type=ContentItem.ContentType.VIDEO,
+            provider="youtube", embed_url="https://www.youtube.com/embed/ZToicYcHIOU",
+        )
 
-    def _unlocked_map(self):
+    def _modules_by_week(self):
         resp = self.client.get("/api/modules/")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        return {m["week_number"]: m["is_unlocked"] for m in resp.data}
+        return {m["week_number"]: m for m in resp.data}
 
-    def test_module_with_no_unlock_at_is_unlocked(self):
+    def test_weeks_unlock_from_cohort_start(self):
         self.client.force_login(self.student)
-        unlocked = self._unlocked_map()
-        self.assertTrue(unlocked[1])
-        self.assertTrue(unlocked[3])
+        modules = self._modules_by_week()
+        self.assertTrue(modules[1]["is_unlocked"])
+        self.assertTrue(modules[2]["is_unlocked"])
+        self.assertFalse(modules[3]["is_unlocked"])
+        self.assertEqual(modules[3]["unlock_at"], (self.today + timedelta(days=7)).isoformat())
+        self.assertEqual(modules[3]["content_items"], [])
 
-    def test_module_locked_before_future_unlock_at(self):
-        from django.utils import timezone
-        self.week3.unlock_at = timezone.now() + timedelta(days=7)
-        self.week3.save()
+    def test_week_unlocks_on_its_start_day(self):
+        self.cohort.start_date = self.today - timedelta(days=14)
+        self.cohort.save()
         self.client.force_login(self.student)
-        unlocked = self._unlocked_map()
-        self.assertTrue(unlocked[1])
-        self.assertFalse(unlocked[3])
-
-    def test_module_unlocked_once_unlock_at_has_passed(self):
-        from django.utils import timezone
-        self.week3.unlock_at = timezone.now() - timedelta(minutes=1)
-        self.week3.save()
-        self.client.force_login(self.student)
-        unlocked = self._unlocked_map()
-        self.assertTrue(unlocked[3])
+        self.assertTrue(self._modules_by_week()[3]["is_unlocked"])
 
     def test_locked_module_detail_returns_403(self):
-        from django.utils import timezone
-        self.week3.unlock_at = timezone.now() + timedelta(days=7)
-        self.week3.save()
         self.client.force_login(self.student)
         resp = self.client.get(f"/api/modules/{self.week3.pk}/")
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_cannot_complete_item_in_locked_module(self):
+        self.client.force_login(self.student)
+        resp = self.client.post(
+            "/api/progress/", {"content_item": self.week3_item.pk}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(ContentCompletion.objects.filter(user=self.student).exists())
+
+    def test_admin_can_open_locked_module_with_content(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get(f"/api/modules/{self.week3.pk}/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp.data["content_items"]), 1)
+        self.assertEqual(len(self._modules_by_week()[3]["content_items"]), 1)
 
 
 # ── Admin portal: forum archive gating ───────────────────────────────────────────

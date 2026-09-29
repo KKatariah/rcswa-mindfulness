@@ -66,6 +66,9 @@ export type ApiModule = {
 	id: number;
 	week_number: number;
 	title: string;
+	// ISO date the student's cohort reaches this week; null when not in an active cohort.
+	unlock_at: string | null;
+	is_unlocked: boolean;
 	content_items: ApiContentItem[];
 };
 

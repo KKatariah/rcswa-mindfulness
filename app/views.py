@@ -1,6 +1,5 @@
 from django.conf import settings as django_settings
 from django.shortcuts import render
-from django.utils import timezone
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -64,6 +63,7 @@ from .serializers import (
     UserDisplayNameSerializer,
     _is_program_active,
     _pick_signup_cohort,
+    module_is_unlocked,
     _survey_is_unlocked,
     _cohort_breakdown,
     _module_completion_stats,
@@ -281,7 +281,7 @@ class ModuleViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         module = self.get_object()
-        if module.unlock_at and module.unlock_at > timezone.now():
+        if not module_is_unlocked(module, request.user):
             raise PermissionDenied("This module is not available yet.")
         return Response(self.get_serializer(module).data)
 
@@ -289,21 +289,6 @@ class ModuleViewSet(viewsets.ModelViewSet):
     def summary(self, request):
         modules = Module.objects.filter(is_published=True).order_by("week_number")
         return Response(ModuleSummarySerializer(modules, many=True).data)
-
-    serializer_class = ModuleSerializer
-    queryset = (
-        Module.objects
-        .filter(is_published=True)
-        .prefetch_related(
-            # display_order already exists on ContentItem; secondary sort by id keeps
-            # ordering stable when display_order values tie (e.g. all default to 0).
-            Prefetch(
-                "content_items",
-                queryset=ContentItem.objects.order_by("display_order", "id"),
-            ),
-            "resources",
-        )
-    )
 
     def get_permissions(self):
         if self.action in ("create", "update", "partial_update", "destroy"):

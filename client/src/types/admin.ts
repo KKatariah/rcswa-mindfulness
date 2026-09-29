@@ -10,10 +10,9 @@ export type AdminContentItem = {
 	id: number;
 	module: number;
 	title: string;
-	type: "video" | "audio" | "text";
+	type: "video" | "audio";
 	provider: "youtube" | "soundcloud" | "";
 	embed_url: string;
-	body: string;
 	display_order: number;
 };
 

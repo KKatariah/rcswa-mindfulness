@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 
 from django.db.models import Count, Q
 from django.utils import timezone
@@ -99,33 +99,67 @@ class AdditionalResourceSerializer(serializers.ModelSerializer):
 class ContentItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContentItem
-        fields = ["id", "module", "title", "type", "provider", "embed_url", "body", "display_order"]
+        fields = ["id", "module", "title", "type", "provider", "embed_url", "display_order"]
 
     def validate(self, attrs):
-        type_ = attrs.get("type", getattr(self.instance, "type", None))
-        if type_ == ContentItem.ContentType.TEXT:
-            body = attrs.get("body", getattr(self.instance, "body", ""))
-            if not body or not body.strip():
-                raise serializers.ValidationError({"body": "Text content items require a non-empty body."})
-        else:
-            provider = attrs.get("provider", getattr(self.instance, "provider", ""))
-            embed_url = attrs.get("embed_url", getattr(self.instance, "embed_url", ""))
-            if not provider:
-                raise serializers.ValidationError({"provider": "Video/audio content items require a provider."})
-            if not embed_url:
-                raise serializers.ValidationError({"embed_url": "Video/audio content items require an embed_url."})
+        provider = attrs.get("provider", getattr(self.instance, "provider", ""))
+        embed_url = attrs.get("embed_url", getattr(self.instance, "embed_url", ""))
+        if not provider:
+            raise serializers.ValidationError({"provider": "Content items require a provider."})
+        if not embed_url:
+            raise serializers.ValidationError({"embed_url": "Content items require an embed_url."})
         return attrs
 
 
+def _cohort_start_date(user):
+    """Start date of the user's most recent active cohort, or None. Cached on the user for the request."""
+    if not hasattr(user, "_cohort_start_date"):
+        enrollment = (
+            Enrollment.objects
+            .filter(user=user, status=Enrollment.Status.ACTIVE)
+            .select_related("cohort")
+            .order_by("-enrolled_at")
+            .first()
+        )
+        user._cohort_start_date = enrollment.cohort.start_date if enrollment else None
+    return user._cohort_start_date
+
+
+def module_unlock_date(module, user):
+    """Week N opens (N-1) weeks after the user's cohort starts. None when the user has no active cohort."""
+    start = _cohort_start_date(user)
+    return start + timedelta(weeks=module.week_number - 1) if start else None
+
+
+def module_is_unlocked(module, user):
+    if getattr(user, "role", None) == "admin" or user.is_staff:
+        return True  # admins can open any module early to prepare content
+    if not module.is_published:
+        return False
+    unlock_date = module_unlock_date(module, user)
+    return unlock_date is not None and unlock_date <= timezone.localdate()
+
+
 class ModuleSerializer(serializers.ModelSerializer):
+    unlock_at = serializers.SerializerMethodField()
     is_unlocked = serializers.SerializerMethodField()
 
+    def _user(self):
+        request = self.context.get("request")
+        return request.user if request else None
+
+    def get_unlock_at(self, obj):
+        user = self._user()
+        unlock_date = module_unlock_date(obj, user) if user else None
+        return unlock_date.isoformat() if unlock_date else None
+
     def get_is_unlocked(self, obj):
-        return obj.unlock_at is None or obj.unlock_at <= timezone.now()
+        user = self._user()
+        return bool(user) and module_is_unlocked(obj, user)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        if not self.get_is_unlocked(instance):
+        if not data["is_unlocked"]:
             data["content_items"] = []
             data["resources"] = []
         return data
@@ -159,8 +193,7 @@ class ModuleSummarySerializer(serializers.ModelSerializer):
 
 class ContentCompletionSerializer(serializers.ModelSerializer):
     def validate_content_item(self, item):
-        module = item.module
-        if not module.is_published or (module.unlock_at and module.unlock_at > timezone.now()):
+        if not module_is_unlocked(item.module, self.context["request"].user):
             raise serializers.ValidationError("This module is not available yet.")
         return item
 
@@ -420,7 +453,7 @@ def _survey_is_unlocked(survey, user):
         if survey.type == Survey.SurveyType.WEEKLY:
             return False
         return True
-    if not survey.module.is_published or (survey.module.unlock_at and survey.module.unlock_at > timezone.now()):
+    if not module_is_unlocked(survey.module, user):
         return False
     required_ids = set(
         ContentItem.objects.filter(module_id=survey.module_id).values_list("id", flat=True)
@@ -496,7 +529,7 @@ class SurveySerializer(serializers.ModelSerializer):
                 if obj.type == Survey.SurveyType.WEEKLY:
                     return False
                 return True
-            if not obj.module.is_published or (obj.module.unlock_at and obj.module.unlock_at > timezone.now()):
+            if not module_is_unlocked(obj.module, request.user):
                 return False
             required_ids = {ci.id for ci in obj.module.content_items.all()}
             return not required_ids or required_ids <= completed_ids
