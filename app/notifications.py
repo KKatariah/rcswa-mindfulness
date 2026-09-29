@@ -230,6 +230,7 @@ def notify_content_update(module=None, content_item=None):
 
     logger.info("S21 content-update: module=%s sent=%d", module, sent)
 
+
 def notify_survey_unlocked(user, module):
     """
     Notify a user when completing all content in a module

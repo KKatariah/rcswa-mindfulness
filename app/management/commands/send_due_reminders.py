@@ -359,7 +359,7 @@ class Command(BaseCommand):
                 sent += 1
             else:
                 errors += 1
-        
+
         self.stdout.write(
             f"[send_due_reminders] done: sent={sent} skipped={skipped} errors={errors}"
         )
@@ -439,7 +439,7 @@ class Command(BaseCommand):
                 )
 
         return None
-    
+
     def _send(self, user, item, push_subs, pref):
         """Attempt push, fall back to email if push_denied is False. Returns channel or None."""
         if push_subs:
