@@ -229,3 +229,114 @@ def notify_content_update(module=None, content_item=None):
             sent += 1
 
     logger.info("S21 content-update: module=%s sent=%d", module, sent)
+
+def notify_survey_unlocked(user, module):
+    """
+    Notify a user when completing all content in a module
+    unlocks its weekly survey.
+    """
+    from .models import (
+        ContentCompletion,
+        ContentItem,
+        NotificationLog,
+        Survey,
+        SurveyResponse,
+    )
+
+    pref = _get_pref(user)
+
+    # User disabled the "survey unlocked" notification.
+    if pref is None or not pref.survey_unlocked_reminder:
+        return False
+
+    # Module itself must already be available.
+    if not module.is_published:
+        return False
+
+    if module.unlock_at and module.unlock_at > timezone.now():
+        return False
+
+    # The survey unlock rule must match serializers.py:
+    # every ContentItem in this module must be completed.
+    required_ids = set(
+        ContentItem.objects.filter(
+            module=module
+        ).values_list("id", flat=True)
+    )
+
+    if not required_ids:
+        return False
+
+    completed_ids = set(
+        ContentCompletion.objects.filter(
+            user=user,
+            content_item_id__in=required_ids,
+        ).values_list("content_item_id", flat=True)
+    )
+
+    if required_ids != completed_ids:
+        return False
+
+    surveys = Survey.objects.filter(
+        module=module,
+        type=Survey.SurveyType.WEEKLY,
+    )
+
+    sent_any = False
+
+    for survey in surveys:
+        # No need to notify if the user already submitted it.
+        if SurveyResponse.objects.filter(
+            user=user,
+            survey=survey,
+        ).exists():
+            continue
+
+        # Prevent duplicate unlock notifications.
+        already_notified = NotificationLog.objects.filter(
+            user=user,
+            module=module,
+            type=NotificationLog.NotificationType.SURVEY_PROMPT,
+            status=NotificationLog.Status.SENT,
+        ).exists()
+
+        if already_notified:
+            continue
+
+        payload = {
+            "title": "Your survey is now available",
+            "body": survey.title,
+            "url": "/surveys",
+        }
+
+        now = timezone.now()
+
+        channel, success = deliver(
+            user=user,
+            payload_dict=payload,
+            subject=f"Survey available: {survey.title}",
+            email_template="app/content_update_email.txt",
+            email_context={
+                "user": user,
+                "module": module,
+            },
+        )
+
+        NotificationLog.objects.create(
+            user=user,
+            type=NotificationLog.NotificationType.SURVEY_PROMPT,
+            module=module,
+            channel=channel or NotificationLog.Channel.PUSH,
+            scheduled_for=now,
+            sent_at=now if success else None,
+            status=(
+                NotificationLog.Status.SENT
+                if success
+                else NotificationLog.Status.FAILED
+            ),
+        )
+
+        if success:
+            sent_any = True
+
+    return sent_any

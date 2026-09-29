@@ -30,7 +30,7 @@ from .models import (
 )
 
 from .permissions import IsAdminOrStaff
-
+from .notifications import notify_survey_unlocked
 
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -342,11 +342,23 @@ class ContentCompletionViewSet(
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        content_item = serializer.validated_data["content_item"]
+
         obj, created = ContentCompletion.objects.get_or_create(
             user=request.user,
-            content_item=serializer.validated_data["content_item"],
+            content_item=content_item,
         )
+
+        # Check whether this new completion unlocks the module survey.
+        if created:
+            notify_survey_unlocked(
+                user=request.user,
+                module=content_item.module,
+            )
+
         out = self.get_serializer(obj)
+
         return Response(
             out.data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
