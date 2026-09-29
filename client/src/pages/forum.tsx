@@ -37,6 +37,20 @@ function SearchIcon({ className = "h-4 w-4" }: { className?: string }) {
   );
 }
 
+function BackIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      className={className}
+    >
+      <path d="M15 18l-6-6 6-6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function MessageIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
     <svg
@@ -88,39 +102,71 @@ function Avatar({
   );
 }
 
-// ── Post cooldown ──────────────────────────────────────────────────────────────
-// Client-side mirror of the backend's ForumPostRateThrottle (1 post/minute/user).
-// This is purely UX — it stops people from firing a request that's guaranteed to
-// get a 429 back, and shows a countdown instead. The real enforcement lives on
-// the server; this can't be relied on for security since it's just localStorage.
-// Shared across the new-thread composer and the reply form via localStorage,
-// since both actions share the same throttle scope on the backend.
 
-const POST_COOLDOWN_SECONDS = 30;
-const LAST_POST_KEY = "forum:lastPostAt";
+const POST_WINDOW_MS = 30_000;
+const POST_LIMIT = 3;
+const TIMEOUT_SECONDS = 30;
+const POST_TIMESTAMPS_KEY = "forum:postTimestamps";
 
-function useForumPostCooldown() {
+function getStoredTimestamps(): number[] {
+  try {
+    const raw = localStorage.getItem(POST_TIMESTAMPS_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed.filter((n) => typeof n === "number") : [];
+  } catch {
+    return [];
+  }
+}
+
+
+function computeRemainingSeconds(timestamps: number[], now: number) {
+  const recent = timestamps.filter((t) => now - t < POST_WINDOW_MS);
+  if (recent.length < POST_LIMIT) return 0;
+  const lockoutEnd = Math.max(...recent) + TIMEOUT_SECONDS * 1000;
+  return Math.max(0, Math.ceil((lockoutEnd - now) / 1000));
+}
+
+
+type ForumUser = {
+  full_name?: string | null;
+  avatar_url?: string | null;
+  is_staff?: boolean;
+  role?: string;
+};
+
+function isAdminUser(user: ForumUser | null) {
+  return Boolean(user?.is_staff) || user?.role === "admin";
+}
+
+
+function useForumPostCooldown(bypass: boolean) {
   const [remaining, setRemaining] = useState(0);
 
   useEffect(() => {
+      if (bypass) {
+        return;
+      }
     function tick() {
-      const last = Number(localStorage.getItem(LAST_POST_KEY) ?? 0);
-      const elapsedSeconds = (Date.now() - last) / 1000;
-      setRemaining(
-        Math.max(0, Math.ceil(POST_COOLDOWN_SECONDS - elapsedSeconds)),
-      );
+      setRemaining(computeRemainingSeconds(getStoredTimestamps(), Date.now()));
     }
     tick();
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [bypass]);
 
   function markPosted() {
-    localStorage.setItem(LAST_POST_KEY, String(Date.now()));
-    setRemaining(POST_COOLDOWN_SECONDS);
+    if (bypass) return;
+    const now = Date.now();
+    const updated = [
+      ...getStoredTimestamps().filter((t) => now - t < POST_WINDOW_MS),
+      now,
+    ];
+    localStorage.setItem(POST_TIMESTAMPS_KEY, JSON.stringify(updated));
+    setRemaining(computeRemainingSeconds(updated, now));
   }
 
-  return { remaining, markPosted };
+  return { remaining: bypass ? 0 : remaining, markPosted };
 }
 
 // ── Composer ───────────────────────────────────────────────────────────────────
@@ -130,12 +176,12 @@ function Composer({
   user,
 }: {
   onSubmit: (body: string) => Promise<void>;
-  user: { full_name?: string | null; avatar_url?: string | null } | null;
+  user: ForumUser | null;
 }) {
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { remaining, markPosted } = useForumPostCooldown();
+  const { remaining, markPosted } = useForumPostCooldown(isAdminUser(user));
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -157,13 +203,8 @@ function Composer({
     <div className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
       <form onSubmit={handleSubmit}>
         <div className="flex items-center gap-3">
-          <Avatar
-            name={user?.full_name || "User"}
-            avatarUrl={user?.avatar_url}
-          />
-          <p className="text-sm font-bold text-ink">
-            What&apos;s on your mind?
-          </p>
+          <Avatar name={user?.full_name || "User"} avatarUrl={user?.avatar_url} />
+          <p className="text-sm font-bold text-ink">What&apos;s on your mind?</p>
         </div>
         <textarea
           value={body}
@@ -305,6 +346,7 @@ type ThreadDetailViewProps = {
   onDeleteThread: () => void;
   onPinThread: (id: number, is_pinned: boolean) => void;
   isActive: boolean;
+  user: ForumUser | null;
 };
 
 function ThreadDetailView({
@@ -316,6 +358,7 @@ function ThreadDetailView({
   onDeleteThread,
   onPinThread,
   isActive,
+  user,
 }: ThreadDetailViewProps) {
   const [replyBody, setReplyBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -324,7 +367,7 @@ function ThreadDetailView({
     thread.opening_post?.body ?? thread.body,
   );
   const [savingOpening, setSavingOpening] = useState(false);
-  const { remaining, markPosted } = useForumPostCooldown();
+  const { remaining, markPosted } = useForumPostCooldown(isAdminUser(user));
 
   async function handleReply(e: FormEvent) {
     e.preventDefault();
@@ -355,9 +398,10 @@ function ThreadDetailView({
       <button
         type="button"
         onClick={onBack}
-        className="text-sm font-semibold text-brand-blue hover:underline"
+        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-[0_6px_9px_rgba(0,0,0,0.05)] transition-colors hover:bg-surface-muted"
       >
-        ← Back to forum
+        <BackIcon className="h-4 w-4" />
+        Back to forum
       </button>
 
       {/* Opening post */}
@@ -371,10 +415,7 @@ function ThreadDetailView({
         )}
 
         <div className="flex items-start gap-3">
-          <Avatar
-            name={thread.author_name}
-            avatarUrl={thread.author_avatar_url}
-          />
+          <Avatar name={thread.author_name} avatarUrl={thread.author_avatar_url} />
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-baseline gap-2">
@@ -517,23 +558,173 @@ function ThreadDetailView({
   );
 }
 
+// ── Thread row (feed) ────────────────────────────────────────────────────────
+// Split out from FeedView because each row needs its own edit/save state, and
+// hooks can't be called per-item inside a .map() on the parent.
+
+type ThreadRowProps = {
+  thread: ForumThread;
+  isFirst: boolean;
+  isAdmin: boolean;
+  onSelect: (id: number) => void;
+  onEdit: (id: number, body: string) => Promise<void>;
+  onDelete: (id: number) => void;
+};
+
+function ThreadRow({ thread, isFirst, isAdmin, onSelect, onEdit, onDelete }: ThreadRowProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(thread.body);
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (!draft.trim()) return;
+    setSaving(true);
+    try {
+      await onEdit(thread.id, draft);
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      role={editing ? undefined : "button"}
+      tabIndex={editing ? undefined : 0}
+      onClick={editing ? undefined : () => onSelect(thread.id)}
+      onKeyDown={
+        editing
+          ? undefined
+          : (e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                onSelect(thread.id);
+              }
+            }
+      }
+      className={[
+        "w-full p-5 text-left transition-colors",
+        editing ? "" : "cursor-pointer hover:bg-surface-muted",
+        isFirst ? "" : "border-t border-gray-200",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      {thread.is_pinned && (
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-600">
+          Pinned
+        </p>
+      )}
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-start gap-3">
+          <Avatar name={thread.author_name} avatarUrl={thread.author_avatar_url} />
+          <div className="min-w-0 flex-1">
+            <div className="flex items-baseline gap-2">
+              <span className="text-sm font-semibold text-ink">
+                {thread.author_name}
+              </span>
+              <span className="text-xs text-[#9CA3AF]">
+                {formatRelativeTime(thread.updated_at)}
+              </span>
+            </div>
+
+            {editing ? (
+              <div className="mt-2 space-y-2" onClick={(e) => e.stopPropagation()}>
+                <textarea
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  rows={3}
+                  className="w-full resize-none rounded-xl border border-gray-200 p-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+                />
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleSave}
+                    disabled={saving}
+                    className="rounded-lg bg-[#0F172A] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                  >
+                    {saving ? "Saving…" : "Save"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraft(thread.body);
+                      setEditing(false);
+                    }}
+                    className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs font-semibold text-ink"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-1 line-clamp-2 text-sm text-[#4B5563]">
+                {thread.body}
+              </p>
+            )}
+
+            <div className="mt-3 flex items-center gap-1 text-[#9CA3AF]">
+              <MessageIcon className="h-3.5 w-3.5" />
+              <span className="text-xs font-medium">
+                {thread.reply_count}{" "}
+                {thread.reply_count === 1 ? "reply" : "replies"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {isAdmin && !editing && (
+          <div
+            className="flex shrink-0 items-center gap-3"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setDraft(thread.body);
+                setEditing(true);
+              }}
+              className="text-xs font-semibold text-brand-blue hover:underline"
+            >
+              Edit
+            </button>
+            <button
+              type="button"
+              onClick={() => onDelete(thread.id)}
+              className="text-xs font-semibold text-red-500 hover:underline"
+            >
+              Delete
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Feed view ──────────────────────────────────────────────────────────────────
 
 type FeedViewProps = {
   threads: ForumThread[];
   onSelect: (id: number) => void;
   onCreateThread: (body: string) => Promise<void>;
+  onEditThread: (id: number, body: string) => Promise<void>;
+  onDeleteThread: (id: number) => void;
   isActive: boolean;
-  user: { full_name?: string | null; avatar_url?: string | null } | null;
+  user: ForumUser | null;
 };
 
 function FeedView({
   threads,
   onSelect,
   onCreateThread,
+  onEditThread,
+  onDeleteThread,
   isActive,
   user,
 }: FeedViewProps) {
+  const isAdmin = isAdminUser(user);
+
   return (
     <div className="flex flex-col gap-4">
       {isActive ? (
@@ -551,44 +742,15 @@ function FeedView({
           </p>
         ) : (
           threads.map((t, i) => (
-            <button
+            <ThreadRow
               key={t.id}
-              type="button"
-              onClick={() => onSelect(t.id)}
-              className={[
-                "w-full p-5 text-left transition-colors hover:bg-surface-muted",
-                i !== 0 ? "border-t border-gray-200" : "",
-              ].join(" ")}
-            >
-              {t.is_pinned && (
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-600">
-                  Pinned
-                </p>
-              )}
-              <div className="flex items-start gap-3">
-                <Avatar name={t.author_name} avatarUrl={t.author_avatar_url} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-sm font-semibold text-ink">
-                      {t.author_name}
-                    </span>
-                    <span className="text-xs text-[#9CA3AF]">
-                      {formatRelativeTime(t.updated_at)}
-                    </span>
-                  </div>
-                  <p className="mt-1 line-clamp-2 text-sm text-[#4B5563]">
-                    {t.body}
-                  </p>
-                  <div className="mt-3 flex items-center gap-1 text-[#9CA3AF]">
-                    <MessageIcon className="h-3.5 w-3.5" />
-                    <span className="text-xs font-medium">
-                      {t.reply_count}{" "}
-                      {t.reply_count === 1 ? "reply" : "replies"}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </button>
+              thread={t}
+              isFirst={i === 0}
+              isAdmin={isAdmin}
+              onSelect={onSelect}
+              onEdit={onEditThread}
+              onDelete={onDeleteThread}
+            />
           ))
         )}
       </div>
@@ -698,8 +860,12 @@ export default function ForumPage() {
 
   async function handleCreateThread(body: string) {
     const token = localStorage.getItem("token") ?? "";
-    const thread = await createForumThread({ body }, token);
-    setThreads((prev) => [thread, ...prev]);
+    await createForumThread({ body }, token);
+    // Re-fetch rather than prepending the new thread locally: the server
+    // sorts threads (pinned ones first), and a naive prepend would push
+    // the new thread above a pinned one until the next full reload.
+    const updated = await listForumThreads(token);
+    setThreads(updated);
   }
 
   async function handleReply(body: string) {
@@ -707,6 +873,11 @@ export default function ForumPage() {
     const token = localStorage.getItem("token") ?? "";
     await createForumPost({ thread: selectedThread.id, body }, token);
     await loadThread(selectedThread.id);
+    // The thread detail view has its own copy of the thread, but the feed's
+    // `threads` list (with each thread's reply_count) is separate state and
+    // won't reflect the new reply until re-fetched.
+    const updated = await listForumThreads(token);
+    setThreads(updated);
   }
 
   async function handleEditPost(id: number, body: string) {
@@ -720,6 +891,10 @@ export default function ForumPage() {
     const token = localStorage.getItem("token") ?? "";
     await deleteForumPost(id, token);
     if (selectedThread) await loadThread(selectedThread.id);
+    // Same reasoning as handleReply: deleting a reply changes reply_count,
+    // which only lives in the separate `threads` feed state.
+    const updated = await listForumThreads(token);
+    setThreads(updated);
   }
 
   async function handlePinThread(id: number, is_pinned: boolean) {
@@ -739,6 +914,26 @@ export default function ForumPage() {
     await deleteForumThread(selectedThread.id, token);
     setThreads((prev) => prev.filter((t) => t.id !== selectedThread.id));
     setSelectedThread(null);
+  }
+
+  // Admin-only edit/delete directly from the feed row, without opening the
+  // thread. Editing a thread's body actually means editing its opening
+  // post, whose id isn't part of the lightweight feed ForumThread — so this
+  // quietly fetches the thread detail first just to get that id.
+  async function handleEditThreadFromFeed(id: number, body: string) {
+    const token = localStorage.getItem("token") ?? "";
+    const detail = await getForumThread(id, token);
+    if (!detail.opening_post) return;
+    await updateForumPost(detail.opening_post.id, { body }, token);
+    const updated = await listForumThreads(token);
+    setThreads(updated);
+  }
+
+  async function handleDeleteThreadFromFeed(id: number) {
+    if (!confirm("Delete this thread and all its replies?")) return;
+    const token = localStorage.getItem("token") ?? "";
+    await deleteForumThread(id, token);
+    setThreads((prev) => prev.filter((t) => t.id !== id));
   }
 
   return (
@@ -808,12 +1003,15 @@ export default function ForumPage() {
                     onDeleteThread={handleDeleteThread}
                     onPinThread={handlePinThread}
                     isActive={isActive}
+                    user={user}
                   />
                 ) : (
                   <FeedView
                     threads={filteredThreads}
                     onSelect={loadThread}
                     onCreateThread={handleCreateThread}
+                    onEditThread={handleEditThreadFromFeed}
+                    onDeleteThread={handleDeleteThreadFromFeed}
                     isActive={isActive}
                     user={user}
                   />

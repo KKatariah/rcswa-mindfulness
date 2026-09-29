@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { XIcon } from "@/components/ui/icons";
 
 type ModalProps = {
@@ -9,6 +9,8 @@ type ModalProps = {
 };
 
 export default function Modal({ isOpen, onClose, title, children }: ModalProps) {
+	const mouseDownOnBackdrop = useRef(false);
+
 	useEffect(() => {
 		if (!isOpen) return;
 
@@ -25,7 +27,15 @@ export default function Modal({ isOpen, onClose, title, children }: ModalProps) 
 	return (
 		<div
 			className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 p-4"
-			onClick={onClose}
+			onMouseDown={(event) => {
+				mouseDownOnBackdrop.current = event.target === event.currentTarget;
+			}}
+			onClick={(event) => {
+				if (event.target === event.currentTarget && mouseDownOnBackdrop.current) {
+					onClose();
+				}
+				mouseDownOnBackdrop.current = false;
+			}}
 		>
 			<div
 				role="dialog"
