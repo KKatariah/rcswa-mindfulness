@@ -9,6 +9,7 @@ djangorestframework==3.18.1
 git-filter-repo==2.47.0
 google-auth==2.58.0
 idna==3.19
+Pillow==12.3.0
 pyasn1==0.6.4
 pyasn1_modules==0.4.2
 python-dotenv==1.2.3

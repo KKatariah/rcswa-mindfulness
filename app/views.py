@@ -13,6 +13,7 @@ from .serializers import ProfileUpdateSerializer, ChangePasswordSerializer
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 
 from .models import (
+    AdditionalResource,
     Cohort,
     ContentCompletion,
     ContentItem,
@@ -36,6 +37,7 @@ from google.auth.transport import requests as google_requests
 from django.conf import settings
 
 from .serializers import (
+    AdditionalResourceSerializer,
     CohortSerializer,
     ContentCompletionSerializer,
     ContentItemSerializer,
@@ -308,6 +310,25 @@ class CohortViewSet(viewsets.ModelViewSet):
     serializer_class = CohortSerializer
     permission_classes = [IsAuthenticated, IsAdminOrStaff]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+
+class AdditionalResourceViewSet(viewsets.ModelViewSet):
+    queryset = AdditionalResource.objects.all()
+    serializer_class = AdditionalResourceSerializer
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_permissions(self):
+        # Any authenticated user can read; only admins/staff can write.
+        if self.action in ("list", "retrieve"):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsAdminOrStaff()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        category = self.request.query_params.get("category")
+        if category:
+            qs = qs.filter(category=category)
+        return qs
 
 
 class EnrollmentViewSet(viewsets.ModelViewSet):

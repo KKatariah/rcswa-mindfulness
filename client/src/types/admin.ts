@@ -50,6 +50,20 @@ export type Enrollment = {
 	enrolled_at: string;
 };
 
+export type AdditionalResourceCategory = "book" | "documentary" | "online_program";
+
+export type AdminAdditionalResource = {
+	id: number;
+	category: AdditionalResourceCategory;
+	title: string;
+	author: string;
+	url: string;
+	cover_image: string | null;
+	display_order: number;
+	created_at: string;
+	updated_at: string;
+};
+
 export type DashboardStats = {
 	total_enrolled: number;
 	by_cohort: {

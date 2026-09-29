@@ -6,6 +6,7 @@ from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
 
 from .models import (
+    AdditionalResource,
     Cohort,
     ContentCompletion,
     ContentItem,
@@ -73,6 +74,25 @@ class ResourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = Resource
         fields = ["id", "title", "url", "resource_type", "display_order"]
+
+
+# ── Additional Resources (public Resources page: books/documentaries/programs) ──
+
+class AdditionalResourceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AdditionalResource
+        fields = [
+            "id",
+            "category",
+            "title",
+            "author",
+            "url",
+            "cover_image",
+            "display_order",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
 
 
 class ContentItemSerializer(serializers.ModelSerializer):
