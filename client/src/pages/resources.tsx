@@ -1,9 +1,11 @@
 import Head from "next/head";
-import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import AppShell from "@/components/main/AppShell";
 import NextSession from "@/components/modules/NextSession";
 import { BookOpenIcon, VideoIcon, GlobeIcon, ExternalLinkIcon } from "@/components/ui/icons";
+import { listAdditionalResources } from "@/lib/api";
+import type { AdminAdditionalResource } from "@/types/admin";
 
 type Resource = {
   title: string;
@@ -13,24 +15,14 @@ type Resource = {
   cover?: string;
 };
 
-const BOOKS: Resource[] = [
-  { title: "Full Catastrophe Living", author: "Jon Kabat-Zinn", cover: "/images/covers/full-catastrophe-living-j-kabatzinn.jpg" },
-  { title: "Know Thyself: The Stress Release Programme", author: "Dr Craig Hassed", cover: "/images/covers/know-thyself-c-hassed.jpg" },
-  { title: "Mindfulness for Life", author: "Dr Craig Hassed & Stephen McKenzie", cover: "/images/covers/mindfulness-for-life-c-hassad-s-mckenzie.jpg" },
-  { title: "Hurry Up and Meditate", author: "David Michie", cover: "/images/covers/hurry-up-and-meditate-d-michie.jpg" },
-  { title: "The Resilience Project: Finding Happiness Through Gratitude, Empathy and Mindfulness", author: "Hugh Van Cuylenburg", cover: "/images/covers/the-resilience-project-h-v-cuylenburg.jpg" },
-  { title: "My Year of Living Mindfully", author: "Shannon Harvey", cover: "/images/covers/my-year-of-living-mindfully-s-harvey.jpg" },
-];
-
-const DOCUMENTARIES: Resource[] = [
-  { title: "The Connection: Mind Your Body", author: "Shannon Harvey", href: "https://www.shannonharvey.com/pages/the-connection-documentary", cover: "/images/covers/the-connection-doc-banner.webp" },
-  { title: "My Year of Living Mindfully", author: "Shannon Harvey", href: "https://www.shannonharvey.com/collections/my-year-of-living-mindfully", cover: "/images/covers/my-year-of-living-minfully-doc-banner.jpg" },
-];
-
-const ONLINE_PROGRAMS: Resource[] = [
-  { title: "Online Mindfulness Based Stress Reduction Program", href: "https://www.openground.com.au/", cover: "/images/covers/openground-logo.jpg" },
-  { title: "Mindful in May", href: "https://www.mindfulinmay.org/", cover: "/images/covers/mindful-in-may-logo.png" },
-];
+function toResource(r: AdminAdditionalResource): Resource {
+  return {
+    title: r.title,
+    author: r.author || undefined,
+    href: r.url || undefined,
+    cover: r.cover_image ?? undefined,
+  };
+}
 
 const FEATURED = [
   {
@@ -63,7 +55,8 @@ function BookCover({ resource }: { resource: Resource }) {
   if (resource.cover) {
     return (
       <div className="relative aspect-2/3 w-full overflow-hidden rounded-lg bg-surface-muted">
-        <Image src={resource.cover} alt="" fill className="object-cover" />
+        {/* eslint-disable-next-line @next/next/no-img-element -- covers may be served from the API's media origin, which next/image can't optimize without remotePatterns config */}
+        <img src={resource.cover} alt="" className="absolute inset-0 size-full object-cover" />
       </div>
     );
   }
@@ -78,7 +71,8 @@ function PosterPlaceholder({ resource, iconBg, Icon }: { resource: Resource; ico
   if (resource.cover) {
     return (
       <div className="relative aspect-video w-28 shrink-0 overflow-hidden rounded-lg bg-surface-muted sm:w-36">
-        <Image src={resource.cover} alt="" fill className="object-cover" />
+        {/* eslint-disable-next-line @next/next/no-img-element -- covers may be served from the API's media origin, which next/image can't optimize without remotePatterns config */}
+        <img src={resource.cover} alt="" className="absolute inset-0 size-full object-cover" />
       </div>
     );
   }
@@ -93,7 +87,8 @@ function LogoThumb({ resource, iconBg, Icon }: { resource: Resource; iconBg: str
   if (resource.cover) {
     return (
       <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-white ring-1 ring-gray-100 sm:size-20">
-        <Image src={resource.cover} alt="" fill className="object-contain p-2" />
+        {/* eslint-disable-next-line @next/next/no-img-element -- covers may be served from the API's media origin, which next/image can't optimize without remotePatterns config */}
+        <img src={resource.cover} alt="" className="absolute inset-0 size-full object-contain p-2" />
       </div>
     );
   }
@@ -105,6 +100,19 @@ function LogoThumb({ resource, iconBg, Icon }: { resource: Resource; iconBg: str
 }
 
 export default function ResourcesPage() {
+  const [resources, setResources] = useState<AdminAdditionalResource[]>([]);
+
+  useEffect(() => {
+    const token = localStorage.getItem("token") ?? "";
+    listAdditionalResources(token)
+      .then(setResources)
+      .catch(() => setResources([]));
+  }, []);
+
+  const BOOKS = resources.filter((r) => r.category === "book").map(toResource);
+  const DOCUMENTARIES = resources.filter((r) => r.category === "documentary").map(toResource);
+  const ONLINE_PROGRAMS = resources.filter((r) => r.category === "online_program").map(toResource);
+
   return (
     <>
       <Head>

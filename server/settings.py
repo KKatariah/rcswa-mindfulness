@@ -138,6 +138,12 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
+# Media files (user uploads, e.g. additional-resource cover images)
+# Served via server/urls.py only when DEBUG=True; production needs real
+# media storage (S3/persistent volume) — not configured yet.
+MEDIA_URL = 'media/'
+MEDIA_ROOT = BASE_DIR / 'media'
+
 # ── Email ──────────────────────────────────────────────────────────────────────
 # In development, emails are printed to the console (no SMTP needed).
 # Override all EMAIL_* vars and EMAIL_BACKEND in production.
