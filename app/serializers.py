@@ -4,6 +4,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
+from .utils import gravatar_url
 
 from .models import (
     AdditionalResource,
@@ -224,13 +225,14 @@ class ForumPostCreateSerializer(serializers.ModelSerializer):
 class ForumPostSerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
     author_email = serializers.SerializerMethodField()
+    author_avatar_url = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
 
     class Meta:
         model = ForumPost
         fields = [
             "id", "thread", "parent_post",
-            "author_name", "author_email",
+            "author_name", "author_email", "author_avatar_url",
             "body", "created_at", "updated_at", "can_edit",
         ]
         read_only_fields = ["thread", "parent_post", "created_at", "updated_at"]
@@ -240,6 +242,11 @@ class ForumPostSerializer(serializers.ModelSerializer):
 
     def get_author_email(self, obj):
         return getattr(obj.author, "email", None)
+
+    def get_author_avatar_url(self, obj):
+        if obj.author is None:
+            return gravatar_url("")
+        return gravatar_url(obj.author.email)
 
     def get_can_edit(self, obj):
         return _can_edit(obj, self.context.get("request"))
@@ -289,6 +296,7 @@ def _pick_signup_cohort(today=None):
 class ForumThreadSerializer(serializers.ModelSerializer):
     author_name = serializers.SerializerMethodField()
     author_email = serializers.SerializerMethodField()
+    author_avatar_url = serializers.SerializerMethodField()
     body = serializers.SerializerMethodField()
     reply_count = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
@@ -298,7 +306,8 @@ class ForumThreadSerializer(serializers.ModelSerializer):
         model = ForumThread
         fields = [
             "id", "title", "module", "content_item",
-            "author_name", "author_email", "created_at", "updated_at",
+            "author_name", "author_email", "author_avatar_url",
+            "created_at", "updated_at",
             "body", "reply_count", "can_edit", "is_pinned", "can_pin",
         ]
         read_only_fields = ["module", "content_item", "created_at", "updated_at"]
@@ -308,6 +317,11 @@ class ForumThreadSerializer(serializers.ModelSerializer):
 
     def get_author_email(self, obj):
         return getattr(obj.created_by, "email", None)
+
+    def get_author_avatar_url(self, obj):
+        if obj.created_by is None:
+            return gravatar_url("")
+        return gravatar_url(obj.created_by.email)
 
     def get_body(self, obj):
         posts = sorted(obj.posts.all(), key=lambda p: (p.created_at, p.pk))
@@ -672,3 +686,24 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             "push_denied",
         ]
         read_only_fields = ["id"]
+
+
+# –– User profiles –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
+
+class UserSerializer(serializers.ModelSerializer):
+    avatar_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = User
+        fields = [
+            "id",
+            "email",
+            "full_name",
+            "display_name",
+            "avatar_url",
+            "auth_provider",
+            "role",
+        ]
+
+    def get_avatar_url(self, obj):
+        return gravatar_url(obj.email)

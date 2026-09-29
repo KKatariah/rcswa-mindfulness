@@ -79,14 +79,16 @@ function ChangePasswordForm() {
     try {
       const data = await changePassword(
         { current_password: currentPassword, new_password: newPassword },
-        token
+        token,
       );
       localStorage.setItem("token", data.token);
       setSuccess(true);
       setCurrentPassword("");
       setNewPassword("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to change password");
+      setError(
+        err instanceof Error ? err.message : "Failed to change password",
+      );
     } finally {
       setIsSubmitting(false);
     }
@@ -95,7 +97,9 @@ function ChangePasswordForm() {
   return (
     <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-3">
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {success && <p className="text-sm text-green-600">Password changed successfully.</p>}
+      {success && (
+        <p className="text-sm text-green-600">Password changed successfully.</p>
+      )}
 
       <input
         type="password"
@@ -132,7 +136,9 @@ export default function ProfilePage() {
 
   // null means "the user hasn't edited the field yet", so we show the saved name.
   // Once they type (even to clear the field), their edit takes over.
-  const [editedDisplayName, setEditedDisplayName] = useState<string | null>(null);
+  const [editedDisplayName, setEditedDisplayName] = useState<string | null>(
+    null,
+  );
   const displayName = editedDisplayName ?? user?.display_name ?? "";
 
   const [notifications, setNotifications] = useState<NotificationPreferences>({
@@ -152,7 +158,10 @@ export default function ProfilePage() {
   const signedInName = user?.full_name?.trim() || "User";
   const isGoogleUser = user?.auth_provider === "google";
 
-  const updateNotification = (key: keyof NotificationPreferences, value: boolean) => {
+  const updateNotification = (
+    key: keyof NotificationPreferences,
+    value: boolean,
+  ) => {
     setNotifications((prev) => ({ ...prev, [key]: value }));
   };
 
@@ -189,15 +198,19 @@ export default function ProfilePage() {
             <div className="overflow-hidden rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
               <div className="flex items-center gap-4 border-b border-gray-100 p-6">
                 <UserAvatar
-                  email={user?.email ?? ""}
+                  avatarUrl={user?.avatar_url}
                   fullName={signedInName}
                   size={64}
                   className="border border-gray-200 bg-white"
                 />
 
                 <div>
-                  <h1 className="text-lg font-semibold text-gray-900">{signedInName}</h1>
-                  <p className="mt-0.5 text-sm text-gray-500">Profile photo powered by Gravatar</p>
+                  <h1 className="text-lg font-semibold text-gray-900">
+                    {signedInName}
+                  </h1>
+                  <p className="mt-0.5 text-sm text-gray-500">
+                    Profile photo powered by Gravatar
+                  </p>
                   <a
                     href="https://gravatar.com"
                     target="_blank"
@@ -210,7 +223,10 @@ export default function ProfilePage() {
               </div>
 
               <div className="border-b border-gray-100 p-6">
-                <label htmlFor="displayName" className="mb-1 block text-sm font-medium text-gray-900">
+                <label
+                  htmlFor="displayName"
+                  className="mb-1 block text-sm font-medium text-gray-900"
+                >
                   Display Name
                 </label>
                 <input
@@ -222,14 +238,19 @@ export default function ProfilePage() {
                   className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <p className="mt-1.5 text-sm text-gray-500">
-                  This name will be shown in forums. Admins will still see your registered name.
+                  This name will be shown in forums. Admins will still see your
+                  registered name.
                 </p>
               </div>
 
               <div className="border-b border-gray-100 p-6">
-                <span className="mb-1 block text-sm font-medium text-gray-900">Email</span>
+                <span className="mb-1 block text-sm font-medium text-gray-900">
+                  Email
+                </span>
                 <div className="flex items-center justify-between rounded-lg bg-gray-50 px-3 py-2">
-                  <span className="text-sm text-gray-500">{user?.email ?? ""}</span>
+                  <span className="text-sm text-gray-500">
+                    {user?.email ?? ""}
+                  </span>
                   <span className="flex items-center gap-1 rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
                     <LockIcon className="h-3.5 w-3.5" />
                     Locked
@@ -238,37 +259,48 @@ export default function ProfilePage() {
               </div>
 
               <div className="border-b border-gray-100 p-6">
-                <h2 className="mb-2 text-sm font-medium text-gray-900">Notification Preferences</h2>
+                <h2 className="mb-2 text-sm font-medium text-gray-900">
+                  Notification Preferences
+                </h2>
                 <div className="space-y-3">
                   <ToggleSwitch
                     id="dailyContentReminder"
                     label="Daily content reminder"
                     description="Notify me daily around 5pm to complete any unviewed module content"
                     checked={notifications.dailyContentReminder}
-                    onChange={(value) => updateNotification("dailyContentReminder", value)}
+                    onChange={(value) =>
+                      updateNotification("dailyContentReminder", value)
+                    }
                   />
                   <ToggleSwitch
                     id="surveyUnlockedReminder"
                     label="New survey unlocked reminder"
                     description="Notify me when a module's survey is unlocked"
                     checked={notifications.surveyUnlockedReminder}
-                    onChange={(value) => updateNotification("surveyUnlockedReminder", value)}
+                    onChange={(value) =>
+                      updateNotification("surveyUnlockedReminder", value)
+                    }
                   />
                   <ToggleSwitch
                     id="dailySurveyCompletionReminder"
                     label="Daily survey completion reminder"
                     description="Notify me daily around 5pm to submit any uncompleted surveys."
                     checked={notifications.dailySurveyCompletionReminder}
-                    onChange={(value) => updateNotification("dailySurveyCompletionReminder", value)}
+                    onChange={(value) =>
+                      updateNotification("dailySurveyCompletionReminder", value)
+                    }
                   />
                 </div>
               </div>
 
               <div className="border-b border-gray-100 p-6">
-                <h2 className="mb-2 text-sm font-medium text-gray-900">Password</h2>
+                <h2 className="mb-2 text-sm font-medium text-gray-900">
+                  Password
+                </h2>
                 {isGoogleUser ? (
                   <div className="rounded-lg bg-gray-50 px-4 py-3 text-sm text-gray-600">
-                    You&apos;re signed in with Google. To change your password, visit your{" "}
+                    You&apos;re signed in with Google. To change your password,
+                    visit your{" "}
                     <a
                       href="https://myaccount.google.com/security"
                       target="_blank"
@@ -302,10 +334,13 @@ export default function ProfilePage() {
                 >
                   {status === "saving" ? "Saving..." : "Save Changes"}
                 </button>
-                {status === "success" && <p className="mt-2 text-sm text-green-600">Changes saved.</p>}
+                {status === "success" && (
+                  <p className="mt-2 text-sm text-green-600">Changes saved.</p>
+                )}
                 {status === "error" && (
                   <p className="mt-2 text-sm text-red-600">
-                    Couldn&apos;t save your changes. Check your connection and try again.
+                    Couldn&apos;t save your changes. Check your connection and
+                    try again.
                   </p>
                 )}
               </div>
