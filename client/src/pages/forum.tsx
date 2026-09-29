@@ -71,6 +71,23 @@ function formatRelativeTime(iso: string) {
   });
 }
 
+function TimestampWithEdit({
+  createdAt,
+  editedAt,
+  className = "text-xs text-[#9CA3AF]",
+}: {
+  createdAt: string;
+  editedAt?: string | null;
+  className?: string;
+}) {
+  return (
+    <span className={className}>
+      {formatRelativeTime(createdAt)}
+      {editedAt && <span className={className}> (edited)</span>}
+    </span>
+  );
+}
+
 function Avatar({
   name,
   avatarUrl,
@@ -168,7 +185,7 @@ function Composer({
         <textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Share your thoughts, ask a question, or offer support…"
+          placeholder="Share your thoughts, ask a question, or start a discussion..."
           rows={3}
           className="mt-3 w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-brand-blue"
         />
@@ -223,72 +240,77 @@ function PostCard({ post, onEdit, onDelete }: PostCardProps) {
   }
 
   return (
-    <div className="flex gap-3">
-      <Avatar name={post.author_name} avatarUrl={post.author_avatar_url} />
-      <div className="min-w-0 flex-1 rounded-[10px] border border-gray-200 bg-white p-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-baseline gap-2">
-            <span className="text-sm font-semibold text-ink">
-              {post.author_name}
-            </span>
-            <span className="text-xs text-[#9CA3AF]">
-              {formatRelativeTime(post.created_at)}
-            </span>
-          </div>
-          {post.can_edit && !editing && (
-            <div className="flex shrink-0 items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft(post.body);
-                  setEditing(true);
-                }}
-                className="text-xs font-semibold text-brand-blue hover:underline"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => onDelete(post.id)}
-                className="text-xs font-semibold text-red-500 hover:underline"
-              >
-                Delete
-              </button>
+    <div className="rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+      <div className="flex items-start gap-3">
+        <Avatar name={post.author_name} avatarUrl={post.author_avatar_url} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-baseline gap-2">
+              <span className="text-sm font-semibold text-ink">
+                {post.author_name}
+              </span>
+              <TimestampWithEdit
+                createdAt={post.created_at}
+                editedAt={post.edited_at}
+              />
             </div>
+            {post.can_edit && !editing && (
+              <div className="flex shrink-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraft(post.body);
+                    setEditing(true);
+                  }}
+                  className="text-xs font-semibold text-brand-blue hover:underline"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(post.id)}
+                  className="text-xs font-semibold text-red-500 hover:underline"
+                >
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
+
+          {editing ? (
+            <div className="mt-3 space-y-2">
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={3}
+                className="w-full resize-none rounded-xl border border-gray-200 p-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="rounded-lg bg-[#0F172A] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs font-semibold text-ink"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
+                {post.body}
+              </p>
+            </>
           )}
         </div>
-
-        {editing ? (
-          <div className="mt-3 space-y-2">
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={3}
-              className="w-full resize-none rounded-xl border border-gray-200 p-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="rounded-lg bg-[#0F172A] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditing(false)}
-                className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs font-semibold text-ink"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
-            {post.body}
-          </p>
-        )}
       </div>
     </div>
   );
@@ -324,7 +346,23 @@ function ThreadDetailView({
     thread.opening_post?.body ?? thread.body,
   );
   const [savingOpening, setSavingOpening] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
   const { remaining, markPosted } = useForumPostCooldown();
+
+  useEffect(() => {
+    setPinError(null);
+  }, [thread.id]);
+
+  async function handlePinToggle() {
+    setPinError(null);
+    try {
+      await onPinThread(thread.id, !thread.is_pinned);
+    } catch (error) {
+      setPinError(
+        error instanceof Error ? error.message : "Failed to update pin",
+      );
+    }
+  }
 
   async function handleReply(e: FormEvent) {
     e.preventDefault();
@@ -355,7 +393,7 @@ function ThreadDetailView({
       <button
         type="button"
         onClick={onBack}
-        className="text-sm font-semibold text-brand-blue hover:underline"
+        className="text-sm font-semibold text-white hover:underline"
       >
         ← Back to forum
       </button>
@@ -381,15 +419,18 @@ function ThreadDetailView({
                 <span className="text-sm font-semibold text-ink">
                   {thread.author_name}
                 </span>
-                <span className="text-xs text-[#9CA3AF]">
-                  {formatRelativeTime(thread.created_at)}
-                </span>
+                <TimestampWithEdit
+                  createdAt={thread.created_at}
+                  editedAt={
+                    thread.edited_at ?? thread.opening_post?.edited_at ?? null
+                  }
+                />
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 {thread.can_pin && !editingOpening && (
                   <button
                     type="button"
-                    onClick={() => onPinThread(thread.id, !thread.is_pinned)}
+                    onClick={handlePinToggle}
                     className="text-xs font-semibold text-amber-600 hover:underline"
                   >
                     {thread.is_pinned ? "Unpin" : "Pin"}
@@ -446,9 +487,16 @@ function ThreadDetailView({
                 </div>
               </div>
             ) : (
-              <p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
-                {thread.body}
-              </p>
+              <>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
+                  {thread.body}
+                </p>
+                {pinError && (
+                  <p className="mt-2 text-sm font-medium text-red-600">
+                    {pinError}
+                  </p>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -456,8 +504,8 @@ function ThreadDetailView({
 
       {/* Replies */}
       {thread.replies.length > 0 && (
-        <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">
+        <div className="mt-4 space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-white">
             {thread.replies.length}{" "}
             {thread.replies.length === 1 ? "Reply" : "Replies"}
           </p>
@@ -535,7 +583,7 @@ function FeedView({
   user,
 }: FeedViewProps) {
   return (
-    <>
+    <div className="space-y-4">
       {isActive ? (
         <Composer onSubmit={onCreateThread} user={user} />
       ) : (
@@ -550,49 +598,62 @@ function FeedView({
             No threads yet. Be the first to start a conversation!
           </p>
         ) : (
-          threads.map((t, i) => (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => onSelect(t.id)}
-              className={[
-                "w-full p-5 text-left transition-colors hover:bg-surface-muted",
-                i !== 0 ? "border-t border-gray-200" : "",
-              ].join(" ")}
-            >
-              {t.is_pinned && (
-                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-600">
-                  Pinned
-                </p>
-              )}
-              <div className="flex items-start gap-3">
-                <Avatar name={t.author_name} avatarUrl={t.author_avatar_url} />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-sm font-semibold text-ink">
-                      {t.author_name}
-                    </span>
-                    <span className="text-xs text-[#9CA3AF]">
-                      {formatRelativeTime(t.updated_at)}
-                    </span>
-                  </div>
-                  <p className="mt-1 line-clamp-2 text-sm text-[#4B5563]">
-                    {t.body}
+          threads.map((t, i) => {
+            const isFirst = i === 0;
+            const isLast = i === threads.length - 1;
+            const isOnly = threads.length === 1;
+
+            return (
+              <button
+                key={t.id}
+                type="button"
+                onClick={() => onSelect(t.id)}
+                className={[
+                  "w-full p-5 text-left transition-colors hover:bg-surface-muted",
+                  i !== 0 ? "border-t border-gray-200" : "",
+                  isOnly ? "rounded-[10px]" : "",
+                  !isOnly && isFirst ? "rounded-t-[10px]" : "",
+                  !isOnly && isLast ? "rounded-b-[10px]" : "",
+                ].join(" ")}
+              >
+                {t.is_pinned && (
+                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-600">
+                    Pinned
                   </p>
-                  <div className="mt-3 flex items-center gap-1 text-[#9CA3AF]">
-                    <MessageIcon className="h-3.5 w-3.5" />
-                    <span className="text-xs font-medium">
-                      {t.reply_count}{" "}
-                      {t.reply_count === 1 ? "reply" : "replies"}
-                    </span>
+                )}
+                <div className="flex items-start gap-3">
+                  <Avatar
+                    name={t.author_name}
+                    avatarUrl={t.author_avatar_url}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-sm font-semibold text-ink">
+                        {t.author_name}
+                      </span>
+                      <TimestampWithEdit
+                        createdAt={t.created_at}
+                        editedAt={t.edited_at}
+                      />
+                    </div>
+                    <p className="mt-1 line-clamp-2 text-sm text-[#4B5563]">
+                      {t.body}
+                    </p>
+                    <div className="mt-3 flex items-center gap-1 text-[#9CA3AF]">
+                      <MessageIcon className="h-3.5 w-3.5" />
+                      <span className="text-xs font-medium">
+                        {t.reply_count}{" "}
+                        {t.reply_count === 1 ? "reply" : "replies"}
+                      </span>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </button>
-          ))
+              </button>
+            );
+          })
         )}
       </div>
-    </>
+    </div>
   );
 }
 
@@ -643,6 +704,15 @@ export default function ForumPage() {
   const [query, setQuery] = useState("");
 
   useEffect(() => {
+    const handleForumReset = () => {
+      setSelectedThread(null);
+    };
+
+    window.addEventListener("forum:reset", handleForumReset);
+    return () => window.removeEventListener("forum:reset", handleForumReset);
+  }, []);
+
+  useEffect(() => {
     if (authLoading) return;
 
     let cancelled = false;
@@ -686,6 +756,13 @@ export default function ForumPage() {
     );
   }, [threads, query]);
 
+  async function refreshThreads() {
+    const token = localStorage.getItem("token") ?? "";
+    const updated = await listForumThreads(token);
+    setThreads(updated);
+    return updated;
+  }
+
   async function loadThread(id: number) {
     const token = localStorage.getItem("token") ?? "";
     try {
@@ -698,8 +775,8 @@ export default function ForumPage() {
 
   async function handleCreateThread(body: string) {
     const token = localStorage.getItem("token") ?? "";
-    const thread = await createForumThread({ body }, token);
-    setThreads((prev) => [thread, ...prev]);
+    await createForumThread({ body }, token);
+    await refreshThreads();
   }
 
   async function handleReply(body: string) {
@@ -707,6 +784,7 @@ export default function ForumPage() {
     const token = localStorage.getItem("token") ?? "";
     await createForumPost({ thread: selectedThread.id, body }, token);
     await loadThread(selectedThread.id);
+    await refreshThreads();
   }
 
   async function handleEditPost(id: number, body: string) {
@@ -720,16 +798,18 @@ export default function ForumPage() {
     const token = localStorage.getItem("token") ?? "";
     await deleteForumPost(id, token);
     if (selectedThread) await loadThread(selectedThread.id);
+    await refreshThreads();
   }
 
   async function handlePinThread(id: number, is_pinned: boolean) {
     const token = localStorage.getItem("token") ?? "";
     await pinForumThread(id, is_pinned, token);
-    setSelectedThread((prev) =>
-      prev && prev.id === id ? { ...prev, is_pinned } : prev,
-    );
     const updated = await listForumThreads(token);
     setThreads(updated);
+    if (selectedThread && selectedThread.id === id) {
+      const refreshedThread = await getForumThread(id, token);
+      setSelectedThread(refreshedThread);
+    }
   }
 
   async function handleDeleteThread() {
@@ -801,7 +881,10 @@ export default function ForumPage() {
                 {selectedThread ? (
                   <ThreadDetailView
                     thread={selectedThread}
-                    onBack={() => setSelectedThread(null)}
+                    onBack={async () => {
+                      setSelectedThread(null);
+                      await refreshThreads();
+                    }}
                     onReply={handleReply}
                     onEditPost={handleEditPost}
                     onDeletePost={handleDeletePost}

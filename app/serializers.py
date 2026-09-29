@@ -1,5 +1,6 @@
 from datetime import date
 
+from django.conf import settings
 from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import serializers
@@ -213,9 +214,9 @@ class ForumPostSerializer(serializers.ModelSerializer):
         fields = [
             "id", "thread", "parent_post",
             "author_name", "author_email", "author_avatar_url",
-            "body", "created_at", "updated_at", "can_edit",
+            "body", "created_at", "updated_at", "edited_at", "can_edit",
         ]
-        read_only_fields = ["thread", "parent_post", "created_at", "updated_at"]
+        read_only_fields = ["thread", "parent_post", "created_at", "updated_at", "edited_at"]
 
     def get_author_name(self, obj):
         return _forum_author_name(obj.author, self.context.get("request"))
@@ -233,6 +234,7 @@ class ForumPostSerializer(serializers.ModelSerializer):
 
     def update(self, instance, validated_data):
         instance.body = validated_data.get("body", instance.body)
+        instance.edited_at = timezone.now()
         instance.save()
         return instance
 
@@ -264,6 +266,7 @@ class ForumThreadSerializer(serializers.ModelSerializer):
     author_avatar_url = serializers.SerializerMethodField()
     body = serializers.SerializerMethodField()
     reply_count = serializers.SerializerMethodField()
+    edited_at = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
     can_pin = serializers.SerializerMethodField()
 
@@ -272,10 +275,10 @@ class ForumThreadSerializer(serializers.ModelSerializer):
         fields = [
             "id", "title", "module", "content_item",
             "author_name", "author_email", "author_avatar_url",
-            "created_at", "updated_at",
-            "body", "reply_count", "can_edit", "is_pinned", "can_pin",
+            "created_at", "updated_at", "edited_at",
+            "body", "reply_count", "can_edit", "is_pinned", "pin_order", "can_pin",
         ]
-        read_only_fields = ["module", "content_item", "created_at", "updated_at"]
+        read_only_fields = ["module", "content_item", "created_at", "updated_at", "edited_at", "pin_order"]
 
     def get_author_name(self, obj):
         return _forum_author_name(obj.created_by, self.context.get("request"))
@@ -296,6 +299,12 @@ class ForumThreadSerializer(serializers.ModelSerializer):
         active = [p for p in obj.posts.all() if not p.is_deleted]
         return max(0, len(active) - 1)
 
+    def get_edited_at(self, obj):
+        posts = sorted(obj.posts.all(), key=lambda p: (p.created_at, p.pk))
+        if not posts:
+            return None
+        return posts[0].edited_at
+
     def get_can_edit(self, obj):
         return _can_edit(obj, self.context.get("request"))
 
@@ -303,8 +312,20 @@ class ForumThreadSerializer(serializers.ModelSerializer):
         return _is_admin(self.context.get("request"))
 
     def validate(self, attrs):
-        if "is_pinned" in attrs and not _is_admin(self.context.get("request")):
+        request = self.context.get("request")
+        if "is_pinned" in attrs and not _is_admin(request):
             raise PermissionDenied("Only admins can pin or unpin threads.")
+
+        is_pinning = attrs.get("is_pinned")
+        if is_pinning is True:
+            instance = getattr(self, "instance", None)
+            if instance is None or not instance.is_pinned:
+                max_pinned = settings.FORUM_MAX_PINNED_THREADS
+                current = ForumThread.objects.filter(is_pinned=True).exclude(pk=getattr(instance, "pk", None)).count()
+                if current >= max_pinned:
+                    raise serializers.ValidationError(
+                        {"is_pinned": f"You have already reached the maximum of {max_pinned} pinned threads."}
+                    )
         return attrs
 
 

@@ -73,6 +73,12 @@ export default function Sidebar({
                 key={href}
                 aria-current={isActive ? "page" : undefined}
                 href={href}
+                onClick={(event) => {
+                  if (pathname === "/forum" && href === "/forum") {
+                    event.preventDefault();
+                    window.dispatchEvent(new CustomEvent("forum:reset"));
+                  }
+                }}
                 className={[
                   "flex h-[44px] w-full items-center gap-3 rounded-[5px] px-3 transition-colors",
                   isActive
