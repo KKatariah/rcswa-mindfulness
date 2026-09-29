@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { useEffect, useState, type FormEvent } from "react";
 import Navbar from "@/components/main/Navbar";
 import Sidebar from "@/components/main/Sidebar";
+import NotificationSetupModal from "@/components/notifications/NotificationSetupModal";
 import NextSession from "@/components/modules/NextSession";
 import { LockIcon } from "@/components/ui/icons";
 import { UserAvatar } from "@/components/ui/UserAvatar";
@@ -159,6 +160,7 @@ export default function ProfilePage() {
 
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -312,6 +314,13 @@ export default function ProfilePage() {
                     }
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowNotificationModal(true)}
+                  className="mt-4 rounded-lg border border-blue-500 px-4 py-2 text-sm font-medium text-blue-500 transition-colors hover:bg-blue-50"
+                >
+                  Set up notifications
+                </button>
               </div>
 
               <div className="border-b border-gray-100 p-6">
@@ -378,6 +387,10 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+      <NotificationSetupModal
+        isOpen={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+      />
     </>
   );
 }
