@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import Head from "next/head";
 import Image from "next/image";
+import Link from "next/link";
 import Navbar from "@/components/main/Navbar";
 import Footer from "@/components/main/Footer";
 import SignUpModal from "@/components/main/SignUpModal";
+import { useAuth } from "@/context/AuthContext";
 import { listModuleSummaries, type ApiModuleSummary } from "@/lib/api";
 import {
 	CalendarIcon,
@@ -35,8 +37,11 @@ const HOW_IT_WORKS = [
 ];
 
 const CARD_SCROLL_DISTANCE = 320;
+const CTA_CLASS =
+	"items-center justify-center rounded-xl bg-brand-blue px-8 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]";
 
 export default function Home() {
+	const { user } = useAuth();
 	const weeksRef = useRef<HTMLDivElement>(null);
 	const [signUpOpen, setSignUpOpen] = useState(false);
 	const [programmeWeeks, setProgrammeWeeks] = useState<ApiModuleSummary[]>([]);
@@ -93,13 +98,19 @@ export default function Home() {
 					<p className="mt-4 text-lg text-white/90">
 						An 8-week guided meditation journey for lasting wellbeing
 					</p>
-					<button
-						type="button"
-						onClick={() => setSignUpOpen(true)}
-						className="mt-8 flex h-14 items-center justify-center rounded-xl bg-brand-blue px-8 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]"
-					>
-						Start Your Journey
-					</button>
+					{user ? (
+						<Link href="/modules" className={`mt-8 flex h-14 ${CTA_CLASS}`}>
+							Continue Your Journey
+						</Link>
+					) : (
+						<button
+							type="button"
+							onClick={() => setSignUpOpen(true)}
+							className={`mt-8 flex h-14 ${CTA_CLASS}`}
+						>
+							Start Your Journey
+						</button>
+					)}
 				</div>
 			</div>
 
@@ -206,15 +217,27 @@ export default function Home() {
 			</section>
 
 			<section className="bg-white px-6 py-20 text-center sm:px-10 lg:px-30">
-				<h2 className="text-3xl font-extrabold text-ink sm:text-4xl">Ready to Begin?</h2>
-				<p className="mt-4 text-[15px] text-muted">Join others on the path to wellbeing.</p>
-				<button
-					type="button"
-					onClick={() => setSignUpOpen(true)}
-					className="mt-8 inline-flex h-14 items-center justify-center rounded-xl bg-brand-blue px-8 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]"
-				>
-					Sign Up Free
-				</button>
+				{user ? (
+					<>
+						<h2 className="text-3xl font-extrabold text-ink sm:text-4xl">Ready for Your Next Session?</h2>
+						<p className="mt-4 text-[15px] text-muted">Pick up where you left off in the programme.</p>
+						<Link href="/modules" className={`mt-8 inline-flex h-14 ${CTA_CLASS}`}>
+							Go to Programme
+						</Link>
+					</>
+				) : (
+					<>
+						<h2 className="text-3xl font-extrabold text-ink sm:text-4xl">Ready to Begin?</h2>
+						<p className="mt-4 text-[15px] text-muted">Join others on the path to wellbeing.</p>
+						<button
+							type="button"
+							onClick={() => setSignUpOpen(true)}
+							className={`mt-8 inline-flex h-14 ${CTA_CLASS}`}
+						>
+							Sign Up Free
+						</button>
+					</>
+				)}
 			</section>
 
 			<Footer />
