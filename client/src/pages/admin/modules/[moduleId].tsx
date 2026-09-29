@@ -5,10 +5,12 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import AdminLayout from "@/components/admin/AdminLayout";
 import Select from "@/components/ui/Select";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { PencilIcon, TrashIcon } from "@/components/ui/icons";
 import {
 	getModuleAdmin,
 	updateModule,
+	deleteModule,
 	createContentItem,
 	updateContentItem,
 	deleteContentItem,
@@ -179,6 +181,8 @@ export default function AdminModuleEditorPage() {
 	const [metaSaving, setMetaSaving] = useState(false);
 	const [metaError, setMetaError] = useState<string | null>(null);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
+	const [confirmingModuleDelete, setConfirmingModuleDelete] = useState(false);
+	const [moduleDeleting, setModuleDeleting] = useState(false);
 
 	useEffect(() => {
 		if (!moduleId || Array.isArray(moduleId)) return;
@@ -249,6 +253,21 @@ export default function AdminModuleEditorPage() {
 			await refresh();
 		} catch (err) {
 			setDeleteError(err instanceof Error ? err.message : "Failed to delete content item");
+		}
+	}
+
+	async function handleDeleteModule() {
+		if (!module) return;
+		setConfirmingModuleDelete(false);
+		setDeleteError(null);
+		setModuleDeleting(true);
+		try {
+			const token = localStorage.getItem("token") ?? "";
+			await deleteModule(module.id, token);
+			router.push("/admin/modules");
+		} catch (err) {
+			setDeleteError(err instanceof Error ? err.message : "Failed to delete module");
+			setModuleDeleting(false);
 		}
 	}
 
@@ -330,6 +349,23 @@ export default function AdminModuleEditorPage() {
 				</button>
 			</form>
 
+			<div className="mt-4 flex items-center justify-between rounded-2xl border border-red-200 bg-red-50 p-4">
+				<div>
+					<p className="text-sm font-semibold text-red-700">Danger zone</p>
+					<p className="text-xs text-red-600">
+						Permanently delete this module, its content items, and all student completion history for them.
+					</p>
+				</div>
+				<button
+					type="button"
+					onClick={() => setConfirmingModuleDelete(true)}
+					disabled={moduleDeleting}
+					className="h-10 shrink-0 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-600 hover:bg-red-100 disabled:opacity-50"
+				>
+					{moduleDeleting ? "Deleting…" : "Delete module"}
+				</button>
+			</div>
+
 			{deleteError && (
 				<p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
 					{deleteError}
@@ -392,6 +428,21 @@ export default function AdminModuleEditorPage() {
 					)
 				)}
 			</div>
+
+			{confirmingModuleDelete && (
+				<ConfirmDialog
+					title={`Delete "${module.title}"?`}
+					message={
+						module.content_items.length === 0
+							? "This module has no content items yet. This can't be undone."
+							: `This will permanently delete ${module.content_items.length} content item${module.content_items.length === 1 ? "" : "s"} and all student completion history for ${module.content_items.length === 1 ? "it" : "them"}. This can't be undone.`
+					}
+					confirmLabel="Delete module"
+					danger
+					onConfirm={handleDeleteModule}
+					onCancel={() => setConfirmingModuleDelete(false)}
+				/>
+			)}
 		</AdminLayout>
 	);
 }
