@@ -9,10 +9,10 @@ import logging
 import threading
 
 from django.db import transaction
-from django.db.models.signals import post_save
+from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
-from .models import ContentItem, Module
+from .models import AdditionalResource, ContentItem, Module
 
 logger = logging.getLogger(__name__)
 
@@ -70,3 +70,28 @@ def content_item_post_save(sender, instance, created, **kwargs):
         return
     pk = instance.module_id
     transaction.on_commit(lambda: _fire_async(pk))
+
+
+# ── AdditionalResource cover image cleanup ──────────────────────────────────
+# ImageField/FileField never delete their underlying file on their own — not on
+# row delete, not when replaced with a new upload — so without this, every
+# admin edit/delete leaks an orphaned file under media/resource_covers/.
+
+@receiver(pre_save, sender=AdditionalResource)
+def additional_resource_pre_save(sender, instance, **kwargs):
+    """Delete the old cover file when an existing resource's cover is replaced."""
+    if not instance.pk:
+        return  # new row, nothing to clean up yet
+    try:
+        old_cover = AdditionalResource.objects.get(pk=instance.pk).cover_image
+    except AdditionalResource.DoesNotExist:
+        return
+    if old_cover and old_cover != instance.cover_image:
+        old_cover.delete(save=False)
+
+
+@receiver(post_delete, sender=AdditionalResource)
+def additional_resource_post_delete(sender, instance, **kwargs):
+    """Delete the cover file from disk when the resource row itself is deleted."""
+    if instance.cover_image:
+        instance.cover_image.delete(save=False)

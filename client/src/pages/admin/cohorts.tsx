@@ -2,8 +2,9 @@ import { useEffect, useState, type FormEvent } from "react";
 import Head from "next/head";
 import AdminLayout from "@/components/admin/AdminLayout";
 import Modal from "@/components/main/Modal";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { PlusIcon, PencilIcon, TrashIcon } from "@/components/ui/icons";
-import { listCohorts, createCohort, updateCohort, deleteCohort } from "@/lib/api";
+import { listCohorts, listEnrollments, createCohort, updateCohort, deleteCohort } from "@/lib/api";
 import type { Cohort } from "@/types/admin";
 
 type CohortFormState = { name: string; year: string; start_date: string; end_date: string };
@@ -116,6 +117,10 @@ export default function AdminCohortsPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [modalOpen, setModalOpen] = useState(false);
 	const [editing, setEditing] = useState<Cohort | null>(null);
+	const [deleteError, setDeleteError] = useState<string | null>(null);
+	const [deleting, setDeleting] = useState<Cohort | null>(null);
+	const [deletingEnrollmentCount, setDeletingEnrollmentCount] = useState<number | null>(null);
+	const [checkingEnrollments, setCheckingEnrollments] = useState(false);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -156,11 +161,39 @@ export default function AdminCohortsPage() {
 		setModalOpen(false);
 	}
 
-	async function handleDelete(cohort: Cohort) {
-		if (!confirm(`Delete cohort "${cohort.name}"?`)) return;
+	// Deleting a cohort cascades at the database level and permanently destroys
+	// every enrollment record for students in it, so this looks up how many
+	// enrollments are at stake before asking for confirmation — a plain "are
+	// you sure?" undersells how destructive this action actually is.
+	async function openDeleteConfirm(cohort: Cohort) {
+		setDeleteError(null);
+		setCheckingEnrollments(true);
+		try {
+			const token = localStorage.getItem("token") ?? "";
+			const enrollments = await listEnrollments({ cohort: cohort.id }, token);
+			setDeletingEnrollmentCount(enrollments.length);
+		} catch {
+			// If the count fails to load, fall back to a generic warning rather
+			// than blocking the delete flow entirely.
+			setDeletingEnrollmentCount(null);
+		} finally {
+			setCheckingEnrollments(false);
+		}
+		setDeleting(cohort);
+	}
+
+	async function confirmDelete() {
+		if (!deleting) return;
+		const cohort = deleting;
+		setDeleting(null);
+		setDeleteError(null);
 		const token = localStorage.getItem("token") ?? "";
-		await deleteCohort(cohort.id, token);
-		setCohorts((prev) => prev.filter((c) => c.id !== cohort.id));
+		try {
+			await deleteCohort(cohort.id, token);
+			setCohorts((prev) => prev.filter((c) => c.id !== cohort.id));
+		} catch (e) {
+			setDeleteError(e instanceof Error ? e.message : "Failed to delete cohort");
+		}
 	}
 
 	return (
@@ -180,6 +213,12 @@ export default function AdminCohortsPage() {
 					New Cohort
 				</button>
 			</div>
+
+			{deleteError && (
+				<p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
+					{deleteError}
+				</p>
+			)}
 
 			<div className="mt-6 overflow-x-auto rounded-2xl border border-gray-200 bg-white">
 				{loading ? (
@@ -213,7 +252,13 @@ export default function AdminCohortsPage() {
 											<button type="button" onClick={() => openEdit(cohort)} aria-label="Edit cohort">
 												<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
 											</button>
-											<button type="button" onClick={() => handleDelete(cohort)} aria-label="Delete cohort">
+											<button
+												type="button"
+												onClick={() => openDeleteConfirm(cohort)}
+												disabled={checkingEnrollments}
+												aria-label="Delete cohort"
+												className="disabled:opacity-50"
+											>
 												<TrashIcon className="size-4 text-muted hover:text-red-500" />
 											</button>
 										</div>
@@ -232,6 +277,23 @@ export default function AdminCohortsPage() {
 					onCancel={() => setModalOpen(false)}
 				/>
 			</Modal>
+
+			{deleting && (
+				<ConfirmDialog
+					title={`Delete "${deleting.name}"?`}
+					message={
+						deletingEnrollmentCount === null
+							? "This permanently deletes the cohort. Any students enrolled in it will lose their enrollment record. This can't be undone."
+							: deletingEnrollmentCount === 0
+								? "No students are currently enrolled in this cohort. This can't be undone."
+								: `This will permanently delete ${deletingEnrollmentCount} enrollment record${deletingEnrollmentCount === 1 ? "" : "s"} for ${deletingEnrollmentCount === 1 ? "the student" : "students"} in this cohort. This can't be undone.`
+					}
+					confirmLabel="Delete cohort"
+					danger
+					onConfirm={confirmDelete}
+					onCancel={() => setDeleting(null)}
+				/>
+			)}
 		</AdminLayout>
 	);
 }

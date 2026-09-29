@@ -64,8 +64,9 @@ export default function AdminDashboardPage() {
 				<p className="mt-6 text-sm text-red-600">{error}</p>
 			) : stats ? (
 				<div className="mt-6 flex flex-col gap-6">
-					<div className="grid gap-4 sm:grid-cols-3">
+					<div className="grid gap-4 sm:grid-cols-4">
 						<StatCard label="Total enrolled" value={stats.total_enrolled} />
+						<StatCard label="Pending approval" value={stats.enrollment_status_breakdown.pending ?? 0} />
 						<StatCard label="Active" value={stats.enrollment_status_breakdown.active ?? 0} />
 						<StatCard label="Completed" value={stats.enrollment_status_breakdown.completed ?? 0} />
 					</div>
@@ -96,6 +97,7 @@ export default function AdminDashboardPage() {
 									<tr className="text-xs font-semibold uppercase tracking-wide text-muted">
 										<th className="py-2 pr-4">Cohort</th>
 										<th className="py-2 pr-4">Enrolled</th>
+										<th className="py-2 pr-4">Pending</th>
 										<th className="py-2 pr-4">Active</th>
 										<th className="py-2 pr-4">Completed</th>
 										<th className="py-2 pr-4">Withdrawn</th>
@@ -106,6 +108,7 @@ export default function AdminDashboardPage() {
 										<tr key={c.cohort_id} className="border-t border-gray-100">
 											<td className="py-2 pr-4 font-semibold text-ink">{c.cohort_name}</td>
 											<td className="py-2 pr-4 text-ink-soft">{c.enrolled}</td>
+											<td className="py-2 pr-4 text-ink-soft">{c.pending}</td>
 											<td className="py-2 pr-4 text-ink-soft">{c.active}</td>
 											<td className="py-2 pr-4 text-ink-soft">{c.completed}</td>
 											<td className="py-2 pr-4 text-ink-soft">{c.withdrawn}</td>
