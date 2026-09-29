@@ -726,7 +726,7 @@ function FeedView({
   const isAdmin = isAdminUser(user);
 
   return (
-    <>
+    <div className="flex flex-col gap-4">
       {isActive ? (
         <Composer onSubmit={onCreateThread} user={user} />
       ) : (
@@ -754,7 +754,7 @@ function FeedView({
           ))
         )}
       </div>
-    </>
+    </div>
   );
 }
 
