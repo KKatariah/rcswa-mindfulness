@@ -25,6 +25,7 @@ type AuthContextValue = {
 	) => Promise<void>;
 	logout: () => Promise<void>;
 	loginWithGoogle: (credential: string) => Promise<void>;
+	updateUser: (updates: Partial<AuthUser>) => void;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -91,9 +92,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		localStorage.setItem("user", JSON.stringify(data.user));
 	}
 
+
+	function updateUser(updates: Partial<AuthUser>) {
+		setUser((prev) => {
+			if (!prev) return prev;
+			const next = { ...prev, ...updates };
+			localStorage.setItem("user", JSON.stringify(next));
+			return next;
+		});
+	}
+
 	return (
 		<AuthContext.Provider
-			value={{ user, isLoading, login, register, logout, loginWithGoogle }}
+			value={{
+				user,
+				isLoading,
+				login,
+				register,
+				logout,
+				loginWithGoogle,
+				updateUser,
+			}}
 		>
 			{children}
 		</AuthContext.Provider>
