@@ -28,6 +28,17 @@ export type AdminModule = {
 	resources: unknown[];
 };
 
+export type AdminUser = {
+	id: number;
+	email: string;
+	full_name: string;
+	display_name: string;
+	role: "student" | "admin";
+	auth_provider: string;
+	is_staff: boolean;
+	created_at: string;
+};
+
 export type Enrollment = {
 	id: number;
 	user: number;
@@ -39,12 +50,27 @@ export type Enrollment = {
 	enrolled_at: string;
 };
 
+export type AdditionalResourceCategory = "book" | "documentary" | "online_program";
+
+export type AdminAdditionalResource = {
+	id: number;
+	category: AdditionalResourceCategory;
+	title: string;
+	author: string;
+	url: string;
+	cover_image: string | null;
+	display_order: number;
+	created_at: string;
+	updated_at: string;
+};
+
 export type DashboardStats = {
 	total_enrolled: number;
 	by_cohort: {
 		cohort_id: number;
 		cohort_name: string;
 		enrolled: number;
+		pending: number;
 		active: number;
 		completed: number;
 		withdrawn: number;
