@@ -710,3 +710,50 @@ export async function submitSurveyResponse(
   });
   return handleResponse(res);
 }
+
+// ── Notification Preferences ──────────────────────────────────────────────
+
+export type NotificationPreferences = {
+    id: number;
+    email_enabled: boolean;
+    inapp_enabled: boolean;
+    reminder_time: string;
+    push_denied: boolean;
+    daily_content_reminder: boolean;
+    survey_unlocked_reminder: boolean;
+    daily_survey_reminder: boolean;
+};
+
+export async function getNotificationPreferences(
+    token: string
+): Promise<NotificationPreferences> {
+    const res = await fetch(
+        `${API_BASE_URL}/notifications/preferences/me/`,
+        {
+            headers: {
+                Authorization: `Token ${token}`,
+            },
+        }
+    );
+
+    return handleResponse<NotificationPreferences>(res);
+}
+
+export async function updateNotificationPreferences(
+    token: string,
+    preferences: Partial<NotificationPreferences>
+): Promise<NotificationPreferences> {
+    const res = await fetch(
+        `${API_BASE_URL}/notifications/preferences/me/`,
+        {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Token ${token}`,
+            },
+            body: JSON.stringify(preferences),
+        }
+    );
+
+    return handleResponse<NotificationPreferences>(res);
+}

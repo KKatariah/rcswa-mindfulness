@@ -352,13 +352,21 @@ class NotificationPreference(models.Model):
         on_delete=models.CASCADE,
         related_name="notification_preference",
     )
+
     inapp_enabled = models.BooleanField(default=True)
     email_enabled = models.BooleanField(default=True)
+
     # Default: 8am Perth. Command filters by this hour when running on an hourly cron.
     reminder_time = models.TimeField(default=datetime.time(8, 0))
+
     # Set by the frontend when Notification.permission === 'denied'.
     # When True: no push attempted, no email fallback (user explicitly refused).
     push_denied = models.BooleanField(default=False)
+
+    # Profile notification preferences
+    daily_content_reminder = models.BooleanField(default=True)
+    survey_unlocked_reminder = models.BooleanField(default=False)
+    daily_survey_reminder = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Preferences for {self.user}"

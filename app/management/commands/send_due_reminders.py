@@ -35,6 +35,8 @@ from app.models import (
     NotificationLog,
     NotificationPreference,
     PushSubscription,
+    Survey,
+    SurveyResponse,
 )
 
 PERTH_TZ = ZoneInfo("Australia/Perth")
@@ -189,6 +191,16 @@ class Command(BaseCommand):
 
                 pref = getattr(user, "notification_preference", None)
 
+                # Respect the user's daily content reminder preference.
+                if pref and not pref.daily_content_reminder:
+                    skipped += 1
+                    continue
+
+                # push_denied=True means the user explicitly refused — no push, no email.
+                if pref and pref.push_denied:
+                    skipped += 1
+                    continue
+
                 # push_denied=True means the user explicitly refused — no push, no email.
                 if pref and pref.push_denied:
                     skipped += 1
@@ -237,11 +249,196 @@ class Command(BaseCommand):
                     else:
                         errors += 1
 
+                # ── Daily survey completion reminders ────────────────────────────────
+
+        for enr in enrollments:
+            user = enr.user
+            pref = getattr(user, "notification_preference", None)
+
+            # User must explicitly enable this reminder.
+            if pref is None or not pref.daily_survey_reminder:
+                continue
+
+            # Respect the user's preferred reminder hour.
+            user_hour = pref_hours.get(user.id, 8)
+            if user_hour != current_hour:
+                continue
+
+            # User explicitly denied notifications.
+            if pref.push_denied:
+                continue
+
+            # Only consider surveys that have not already been submitted.
+            responded_survey_ids = set(
+                SurveyResponse.objects.filter(
+                    user=user
+                ).values_list("survey_id", flat=True)
+            )
+
+            surveys = (
+                Survey.objects
+                .filter(module__isnull=False)
+                .exclude(id__in=responded_survey_ids)
+                .select_related("module")
+            )
+
+            unlocked_surveys = []
+
+            completed = completed_by_user.get(user.id, set())
+
+            for survey in surveys:
+                module = survey.module
+
+                # Module must already be available.
+                if not module.is_published:
+                    continue
+
+                if module.unlock_at and module.unlock_at > timezone.now():
+                    continue
+
+                required_ids = set(
+                    ContentItem.objects.filter(
+                        module=module
+                    ).values_list("id", flat=True)
+                )
+
+                # Match the existing survey unlock rule.
+                if required_ids and not required_ids.issubset(completed):
+                    continue
+
+                unlocked_surveys.append(survey)
+
+            if not unlocked_surveys:
+                continue
+
+            # Only one daily survey reminder per user per day.
+            already_reminded = NotificationLog.objects.filter(
+                user=user,
+                type=NotificationLog.NotificationType.SURVEY_PROMPT,
+                scheduled_for=scheduled_for_utc,
+                status=NotificationLog.Status.SENT,
+            ).exists()
+
+            if already_reminded:
+                skipped += 1
+                continue
+
+            survey = unlocked_surveys[0]
+
+            if dry_run:
+                channel = "push" if subs_by_user.get(user.id) else "email"
+                self.stdout.write(
+                    f"  [dry-run] would send survey reminder ({channel}): "
+                    f"user={user.email} survey='{survey.title}' day={today}"
+                )
+                sent += 1
+                continue
+
+            channel = self._send_survey_reminder(
+                user,
+                survey,
+                subs_by_user.get(user.id, []),
+                pref,
+            )
+
+            NotificationLog.objects.create(
+                user=user,
+                type=NotificationLog.NotificationType.SURVEY_PROMPT,
+                module=survey.module,
+                channel=channel or NotificationLog.Channel.PUSH,
+                scheduled_for=scheduled_for_utc,
+                sent_at=timezone.now() if channel else None,
+                status=(
+                    NotificationLog.Status.SENT
+                    if channel
+                    else NotificationLog.Status.FAILED
+                ),
+            )
+
+            if channel:
+                sent += 1
+            else:
+                errors += 1
+
         self.stdout.write(
             f"[send_due_reminders] done: sent={sent} skipped={skipped} errors={errors}"
         )
 
     # ── Delivery helpers ───────────────────────────────────────────────────────
+    def _send_survey_reminder(self, user, survey, push_subs, pref):
+        """Send a reminder for an unlocked but incomplete survey."""
+
+        if push_subs:
+            try:
+                from pywebpush import webpush, WebPushException
+            except ImportError:
+                WebPushException = Exception
+                webpush = None
+
+            if webpush and settings.VAPID_PRIVATE_KEY:
+                payload = json.dumps({
+                    "title": "Don't forget your survey",
+                    "body": survey.title,
+                    "url": "/surveys",
+                })
+
+                sent_any = False
+
+                for sub in list(push_subs):
+                    try:
+                        webpush(
+                            subscription_info={
+                                "endpoint": sub.endpoint,
+                                "keys": {
+                                    "p256dh": sub.p256dh,
+                                    "auth": sub.auth,
+                                },
+                            },
+                            data=payload,
+                            vapid_private_key=settings.VAPID_PRIVATE_KEY,
+                            vapid_claims={
+                                "sub": f"mailto:{settings.VAPID_ADMIN_EMAIL}"
+                            },
+                            content_encoding="aes128gcm",
+                        )
+                        sent_any = True
+
+                    except WebPushException as exc:
+                        resp = getattr(exc, "response", None)
+
+                        if resp is not None and resp.status_code in (404, 410):
+                            sub.delete()
+                        else:
+                            self.stderr.write(
+                                f"    survey push failed for {user.email}: {exc}"
+                            )
+
+                if sent_any:
+                    return NotificationLog.Channel.PUSH
+
+        # Fall back to email.
+        if pref is None or pref.email_enabled:
+            try:
+                send_mail(
+                    subject=f"Survey reminder: {survey.title}",
+                    message=(
+                        f"Hi {user.full_name},\n\n"
+                        f"Your survey '{survey.title}' is ready to complete.\n\n"
+                        "Please log in to the mindfulness program to complete it."
+                    ),
+                    from_email=settings.DEFAULT_FROM_EMAIL,
+                    recipient_list=[user.email],
+                    fail_silently=False,
+                )
+
+                return NotificationLog.Channel.EMAIL
+
+            except Exception as exc:
+                self.stderr.write(
+                    f"    survey email failed for {user.email}: {exc}"
+                )
+
+        return None
 
     def _send(self, user, item, push_subs, pref):
         """Attempt push, fall back to email if push_denied is False. Returns channel or None."""
