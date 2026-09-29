@@ -177,6 +177,8 @@ export default function AdminModuleEditorPage() {
 	const [addingItem, setAddingItem] = useState(false);
 	const [editingItem, setEditingItem] = useState<AdminContentItem | null>(null);
 	const [metaSaving, setMetaSaving] = useState(false);
+	const [metaError, setMetaError] = useState<string | null>(null);
+	const [deleteError, setDeleteError] = useState<string | null>(null);
 
 	useEffect(() => {
 		if (!moduleId || Array.isArray(moduleId)) return;
@@ -206,6 +208,7 @@ export default function AdminModuleEditorPage() {
 		e.preventDefault();
 		if (!module) return;
 		setMetaSaving(true);
+		setMetaError(null);
 		try {
 			const token = localStorage.getItem("token") ?? "";
 			const updated = await updateModule(
@@ -214,6 +217,8 @@ export default function AdminModuleEditorPage() {
 				token,
 			);
 			setModule((prev) => (prev ? { ...prev, ...updated } : prev));
+		} catch (err) {
+			setMetaError(err instanceof Error ? err.message : "Failed to save module");
 		} finally {
 			setMetaSaving(false);
 		}
@@ -237,9 +242,14 @@ export default function AdminModuleEditorPage() {
 
 	async function handleDeleteItem(item: AdminContentItem) {
 		if (!confirm(`Delete content item "${item.title}"?`)) return;
+		setDeleteError(null);
 		const token = localStorage.getItem("token") ?? "";
-		await deleteContentItem(item.id, token);
-		await refresh();
+		try {
+			await deleteContentItem(item.id, token);
+			await refresh();
+		} catch (err) {
+			setDeleteError(err instanceof Error ? err.message : "Failed to delete content item");
+		}
 	}
 
 	if (loading) {
@@ -267,6 +277,11 @@ export default function AdminModuleEditorPage() {
 			</Head>
 
 			<form onSubmit={handleMetaSave} className="rounded-2xl border border-gray-200 bg-white p-5">
+				{metaError && (
+					<p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
+						{metaError}
+					</p>
+				)}
 				<div className="grid gap-4 sm:grid-cols-2">
 					<div className="flex flex-col gap-2">
 						<label htmlFor="meta-week" className="text-sm font-semibold text-ink">Week number</label>
@@ -314,6 +329,12 @@ export default function AdminModuleEditorPage() {
 					{metaSaving ? "Saving…" : "Save module"}
 				</button>
 			</form>
+
+			{deleteError && (
+				<p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
+					{deleteError}
+				</p>
+			)}
 
 			<div className="mt-6 flex items-center justify-between">
 				<h2 className="text-lg font-extrabold text-ink">Content items</h2>

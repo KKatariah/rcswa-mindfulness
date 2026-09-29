@@ -208,9 +208,18 @@ export default function AdminUsersPage() {
 		return () => { cancelled = true; };
 	}, []);
 
+	// A user can have more than one enrollment record over time (e.g. withdrawn
+	// from one cohort, later enrolled in another) — always keep the most recent
+	// one by enrolled_at rather than whichever the API happens to return last,
+	// so this doesn't silently depend on the endpoint's default ordering.
 	const enrollmentByUser = useMemo(() => {
 		const map = new Map<number, Enrollment>();
-		for (const e of enrollments) map.set(e.user, e);
+		for (const e of enrollments) {
+			const existing = map.get(e.user);
+			if (!existing || new Date(e.enrolled_at) > new Date(existing.enrolled_at)) {
+				map.set(e.user, e);
+			}
+		}
 		return map;
 	}, [enrollments]);
 

@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Head from "next/head";
 import AdminLayout from "@/components/admin/AdminLayout";
 import Modal from "@/components/main/Modal";
@@ -70,7 +70,19 @@ function ResourceForm({
 		}
 	}
 
-	const coverPreview = form.cover_image ? URL.createObjectURL(form.cover_image) : form.existing_cover_url;
+	// Only create a fresh object URL when the picked file actually changes, and
+	// revoke it on cleanup/unmount — creating one on every render (e.g. each
+	// keystroke in the title field) leaks a blob URL that never gets freed.
+	const objectUrl = useMemo(
+		() => (form.cover_image ? URL.createObjectURL(form.cover_image) : null),
+		[form.cover_image],
+	);
+	useEffect(() => {
+		return () => {
+			if (objectUrl) URL.revokeObjectURL(objectUrl);
+		};
+	}, [objectUrl]);
+	const coverPreview = objectUrl ?? form.existing_cover_url;
 
 	return (
 		<form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -81,7 +93,15 @@ function ResourceForm({
 				<Select
 					id="resource-category"
 					value={form.category}
-					onChange={(value) => setForm((f) => ({ ...f, category: value as AdditionalResourceCategory }))}
+					onChange={(value) =>
+						setForm((f) => ({
+							...f,
+							category: value as AdditionalResourceCategory,
+							// Author only applies to books; clear it when switching away so a
+							// hidden stale value can't be silently saved onto a documentary/program.
+							author: value === "book" ? f.author : "",
+						}))
+					}
 					options={CATEGORY_OPTIONS}
 					className="h-12 w-full"
 				/>
@@ -176,6 +196,7 @@ export default function AdminResourcesPage() {
 	const [error, setError] = useState<string | null>(null);
 	const [modalOpen, setModalOpen] = useState(false);
 	const [editing, setEditing] = useState<AdminAdditionalResource | null>(null);
+	const [deleteError, setDeleteError] = useState<string | null>(null);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -227,9 +248,14 @@ export default function AdminResourcesPage() {
 
 	async function handleDelete(resource: AdminAdditionalResource) {
 		if (!confirm(`Delete "${resource.title}"?`)) return;
+		setDeleteError(null);
 		const token = localStorage.getItem("token") ?? "";
-		await deleteAdditionalResource(resource.id, token);
-		setResources((prev) => prev.filter((r) => r.id !== resource.id));
+		try {
+			await deleteAdditionalResource(resource.id, token);
+			setResources((prev) => prev.filter((r) => r.id !== resource.id));
+		} catch (e) {
+			setDeleteError(e instanceof Error ? e.message : "Failed to delete resource");
+		}
 	}
 
 	return (
@@ -249,6 +275,12 @@ export default function AdminResourcesPage() {
 					New Resource
 				</button>
 			</div>
+
+			{deleteError && (
+				<p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
+					{deleteError}
+				</p>
+			)}
 
 			<div className="mt-6 overflow-x-auto rounded-2xl border border-gray-200 bg-white">
 				{loading ? (
