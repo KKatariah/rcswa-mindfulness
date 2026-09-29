@@ -117,7 +117,7 @@ export default function Sidebar({
         aria-label="Bottom navigation"
         className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 md:hidden"
       >
-        <div className="flex w-full max-w-[390px] items-center justify-between rounded-t-[18px] border border-[#E5E7EB] border-b-0 bg-white px-3 pb-[6px] pt-3 shadow-none">
+        <div className="flex w-full max-w-[390px] items-center justify-between rounded-t-[18px] border border-[#E5E7EB] border-b-0 bg-white px-3 pb-[6px] pt-3 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
           {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
             const isActive = isNavActive(pathname, href);
 
