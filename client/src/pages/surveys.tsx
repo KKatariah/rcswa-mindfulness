@@ -2,6 +2,7 @@ import { useEffect, useState} from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import AppShell from "@/components/main/AppShell";
+import Footer from "@/components/main/Footer";
 import SurveyHeader from "@/components/surveys/SurveyHeader";
 import SurveyLinks, {type SurveyLinkItem } from "@/components/surveys/SurveyLinks";
 import { useAuth } from "@/context/AuthContext";
@@ -78,6 +79,7 @@ export default function SurveysHomePage() {
 					<SurveyLinks items={items} />
 				</main>
 			</AppShell>
+			<Footer />
 		</>
 	);
 }
