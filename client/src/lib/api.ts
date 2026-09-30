@@ -303,9 +303,36 @@ import type {
 	Cohort,
 	AdminModule,
 	AdminContentItem,
+	AdminUser,
 	Enrollment,
 	DashboardStats,
+	AdditionalResourceCategory,
+	AdminAdditionalResource,
 } from "@/types/admin";
+
+export async function listUsers(token: string): Promise<AdminUser[]> {
+	const res = await fetch(`${API_BASE_URL}/users/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<AdminUser[]>(res);
+}
+
+export async function updateUser(
+	id: number,
+	data: Partial<{ email: string; full_name: string; display_name: string; role: AdminUser["role"] }>,
+	token: string,
+): Promise<AdminUser> {
+	const res = await fetch(`${API_BASE_URL}/users/${id}/`, {
+		method: "PATCH",
+		headers: authHeader(token),
+		body: JSON.stringify(data),
+	});
+	return handleResponse<AdminUser>(res);
+}
+
+export async function deleteUser(id: number, token: string): Promise<void> {
+	return deleteRequest(`${API_BASE_URL}/users/${id}/`, token);
+}
 
 export async function listCohorts(token: string): Promise<Cohort[]> {
 	const res = await fetch(`${API_BASE_URL}/cohorts/`, {
@@ -348,6 +375,70 @@ export async function deleteCohort(id: number, token: string): Promise<void> {
 	return deleteRequest(`${API_BASE_URL}/cohorts/${id}/`, token);
 }
 
+// ── Admin: Additional Resources (public Resources page) ─────────────────────────
+
+export type AdditionalResourceInput = {
+	category: AdditionalResourceCategory;
+	title: string;
+	author?: string;
+	url?: string;
+	display_order?: number;
+	/** Omit entirely to leave the existing cover unchanged on update. */
+	cover_image?: File | null;
+};
+
+function additionalResourceFormData(data: Partial<AdditionalResourceInput>): FormData {
+	const form = new FormData();
+	if (data.category !== undefined) form.append("category", data.category);
+	if (data.title !== undefined) form.append("title", data.title);
+	if (data.author !== undefined) form.append("author", data.author);
+	if (data.url !== undefined) form.append("url", data.url);
+	if (data.display_order !== undefined) form.append("display_order", String(data.display_order));
+	if (data.cover_image) form.append("cover_image", data.cover_image);
+	return form;
+}
+
+export async function listAdditionalResources(
+	token: string,
+	params?: { category?: AdditionalResourceCategory },
+): Promise<AdminAdditionalResource[]> {
+	const query = params?.category ? `?category=${params.category}` : "";
+	const res = await fetch(`${API_BASE_URL}/additional-resources/${query}`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<AdminAdditionalResource[]>(res);
+}
+
+export async function createAdditionalResource(
+	data: AdditionalResourceInput,
+	token: string,
+): Promise<AdminAdditionalResource> {
+	const res = await fetch(`${API_BASE_URL}/additional-resources/`, {
+		method: "POST",
+		// No Content-Type here — the browser sets the multipart boundary for FormData.
+		headers: { Authorization: `Token ${token}` },
+		body: additionalResourceFormData(data),
+	});
+	return handleResponse<AdminAdditionalResource>(res);
+}
+
+export async function updateAdditionalResource(
+	id: number,
+	data: Partial<AdditionalResourceInput>,
+	token: string,
+): Promise<AdminAdditionalResource> {
+	const res = await fetch(`${API_BASE_URL}/additional-resources/${id}/`, {
+		method: "PATCH",
+		headers: { Authorization: `Token ${token}` },
+		body: additionalResourceFormData(data),
+	});
+	return handleResponse<AdminAdditionalResource>(res);
+}
+
+export async function deleteAdditionalResource(id: number, token: string): Promise<void> {
+	return deleteRequest(`${API_BASE_URL}/additional-resources/${id}/`, token);
+}
+
 export async function listEnrollments(
 	params: { cohort?: number; status?: Enrollment["status"] },
 	token: string,
@@ -362,20 +453,33 @@ export async function listEnrollments(
 	return handleResponse<Enrollment[]>(res);
 }
 
-export async function approveEnrollment(id: number, token: string): Promise<Enrollment> {
-	const res = await fetch(`${API_BASE_URL}/enrollments/${id}/approve/`, {
+export async function createEnrollment(
+	data: { user: number; cohort: number; status?: Enrollment["status"] },
+	token: string,
+): Promise<Enrollment> {
+	const res = await fetch(`${API_BASE_URL}/enrollments/`, {
 		method: "POST",
 		headers: authHeader(token),
+		body: JSON.stringify(data),
 	});
 	return handleResponse<Enrollment>(res);
 }
 
-export async function rejectEnrollment(id: number, token: string): Promise<Enrollment> {
-	const res = await fetch(`${API_BASE_URL}/enrollments/${id}/reject/`, {
-		method: "POST",
+export async function updateEnrollment(
+	id: number,
+	data: Partial<{ cohort: number; status: Enrollment["status"]; current_week: number }>,
+	token: string,
+): Promise<Enrollment> {
+	const res = await fetch(`${API_BASE_URL}/enrollments/${id}/`, {
+		method: "PATCH",
 		headers: authHeader(token),
+		body: JSON.stringify(data),
 	});
 	return handleResponse<Enrollment>(res);
+}
+
+export async function deleteEnrollment(id: number, token: string): Promise<void> {
+	return deleteRequest(`${API_BASE_URL}/enrollments/${id}/`, token);
 }
 
 // ── Admin: Modules ─────────────────────────────────────────────────────────────
@@ -605,4 +709,51 @@ export async function submitSurveyResponse(
     body: JSON.stringify(payload),
   });
   return handleResponse(res);
+}
+
+// ── Notification Preferences ──────────────────────────────────────────────
+
+export type NotificationPreferences = {
+    id: number;
+    email_enabled: boolean;
+    inapp_enabled: boolean;
+    reminder_time: string;
+    push_denied: boolean;
+    daily_content_reminder: boolean;
+    survey_unlocked_reminder: boolean;
+    daily_survey_reminder: boolean;
+};
+
+export async function getNotificationPreferences(
+    token: string
+): Promise<NotificationPreferences> {
+    const res = await fetch(
+        `${API_BASE_URL}/notifications/preferences/me/`,
+        {
+            headers: {
+                Authorization: `Token ${token}`,
+            },
+        }
+    );
+
+    return handleResponse<NotificationPreferences>(res);
+}
+
+export async function updateNotificationPreferences(
+    token: string,
+    preferences: Partial<NotificationPreferences>
+): Promise<NotificationPreferences> {
+    const res = await fetch(
+        `${API_BASE_URL}/notifications/preferences/me/`,
+        {
+            method: "PATCH",
+            headers: {
+                "Content-Type": "application/json",
+                Authorization: `Token ${token}`,
+            },
+            body: JSON.stringify(preferences),
+        }
+    );
+
+    return handleResponse<NotificationPreferences>(res);
 }

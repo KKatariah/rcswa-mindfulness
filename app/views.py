@@ -16,6 +16,7 @@ from .utils import gravatar_url
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
 
 from .models import (
+    AdditionalResource,
     Cohort,
     ContentCompletion,
     ContentItem,
@@ -31,7 +32,8 @@ from .models import (
     User,
 )
 
-from .permissions import IsAdminOrStaff
+from .notifications import notify_survey_unlocked
+from .permissions import IsAdminOrStaff, IsAdminOrSelf
 
 
 from google.oauth2 import id_token
@@ -39,6 +41,7 @@ from google.auth.transport import requests as google_requests
 from django.conf import settings
 
 from .serializers import (
+    AdditionalResourceSerializer,
     CohortSerializer,
     ContentCompletionSerializer,
     ContentItemSerializer,
@@ -59,8 +62,11 @@ from .serializers import (
     SurveyResponseSerializer,
     SurveyResponseUpdateSerializer,
     SurveySerializer,
+    AdminUserSerializer,
+    AdminUserUpdateSerializer,
     UserDisplayNameSerializer,
     _is_program_active,
+    _pick_signup_cohort,
     _survey_is_unlocked,
     _cohort_breakdown,
     _module_completion_stats,
@@ -110,6 +116,14 @@ def _user_payload(user):
     }
 
 
+def _auto_enroll_new_user(user):
+    """New signups are enrolled pending approval into the currently active
+    cohort, or the soonest upcoming one if none is active yet."""
+    cohort = _pick_signup_cohort()
+    if cohort:
+        Enrollment.objects.create(user=user, cohort=cohort, status=Enrollment.Status.PENDING)
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 def register_view(request):
@@ -117,6 +131,7 @@ def register_view(request):
 
     if serializer.is_valid():
         user = serializer.save()
+        _auto_enroll_new_user(user)
 
         return Response(
             {
@@ -159,6 +174,23 @@ def login_view(request):
             "message": "Login successful",
             "token": token.key,
             "user": _user_payload(user),
+        },
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def current_user_view(request):
+    user = request.user
+
+    return Response(
+        {
+            "user": {
+                "id": user.id,
+                "email": user.email,
+                "full_name": user.full_name,
+            }
         },
         status=status.HTTP_200_OK,
     )
@@ -212,6 +244,7 @@ def google_login_view(request):
     if created:
         user.set_unusable_password()
         user.save()
+        _auto_enroll_new_user(user)
 
     token_obj, _ = Token.objects.get_or_create(user=user)
 
@@ -245,6 +278,8 @@ class ModuleViewSet(viewsets.ModelViewSet):
         u = self.request.user
         if getattr(u, "role", None) == "admin" or u.is_staff:
             return qs  # admins see unpublished modules too
+        if not Enrollment.objects.filter(user=u, status=Enrollment.Status.ACTIVE).exists():
+            return qs.none()  # not yet approved into an active cohort
         return qs.filter(is_published=True)
 
     def retrieve(self, request, *args, **kwargs):
@@ -299,6 +334,25 @@ class CohortViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
 
+class AdditionalResourceViewSet(viewsets.ModelViewSet):
+    queryset = AdditionalResource.objects.all()
+    serializer_class = AdditionalResourceSerializer
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+
+    def get_permissions(self):
+        # Any authenticated user can read; only admins/staff can write.
+        if self.action in ("list", "retrieve"):
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsAdminOrStaff()]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        category = self.request.query_params.get("category")
+        if category:
+            qs = qs.filter(category=category)
+        return qs
+
+
 class EnrollmentViewSet(viewsets.ModelViewSet):
     serializer_class = EnrollmentSerializer
     permission_classes = [IsAuthenticated, IsAdminOrStaff]
@@ -309,6 +363,9 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
         cohort_id = self.request.query_params.get("cohort")
         if cohort_id:
             qs = qs.filter(cohort_id=cohort_id)
+        status_param = self.request.query_params.get("status")
+        if status_param:
+            qs = qs.filter(status=status_param)
         return qs
 
 
@@ -327,11 +384,23 @@ class ContentCompletionViewSet(
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+
+        content_item = serializer.validated_data["content_item"]
+
         obj, created = ContentCompletion.objects.get_or_create(
             user=request.user,
-            content_item=serializer.validated_data["content_item"],
+            content_item=content_item,
         )
+
+        # Check whether this new completion unlocks the module survey.
+        if created:
+            notify_survey_unlocked(
+                user=request.user,
+                module=content_item.module,
+            )
+
         out = self.get_serializer(obj)
+
         return Response(
             out.data,
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
@@ -388,11 +457,6 @@ class IsAuthorOrAdmin(BasePermission):
         if isinstance(obj, ForumPost):
             return obj.author_id == u.pk
         return False
-
-
-class IsSelf(BasePermission):
-    def has_object_permission(self, request, view, obj):
-        return obj.pk == request.user.pk
 
 
 class ForumThreadViewSet(viewsets.ModelViewSet):
@@ -523,11 +587,12 @@ class UserProfileViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
     permission_classes = [IsAuthenticated]
     serializer_class = UserDisplayNameSerializer
-    http_method_names = ["get", "patch", "head", "options"]
+    http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         u = self.request.user
@@ -535,10 +600,26 @@ class UserProfileViewSet(
             return User.objects.all()
         return User.objects.filter(pk=u.pk)
 
+    def get_serializer_class(self):
+        u = self.request.user
+        is_admin = getattr(u, "role", None) == "admin" or u.is_staff
+        if self.action in ("partial_update", "update") and is_admin:
+            return AdminUserUpdateSerializer
+        if is_admin:
+            return AdminUserSerializer
+        return UserDisplayNameSerializer
+
     def get_permissions(self):
         if self.action in ("partial_update", "update"):
-            return [IsAuthenticated(), IsSelf()]
+            return [IsAuthenticated(), IsAdminOrSelf()]
+        if self.action == "destroy":
+            return [IsAuthenticated(), IsAdminOrStaff()]
         return [IsAuthenticated()]
+
+    def perform_destroy(self, instance):
+        if instance.pk == self.request.user.pk:
+            raise PermissionDenied("You can't delete your own account.")
+        instance.delete()
 
 
 # ── Surveys ────────────────────────────────────────────────────────────────────

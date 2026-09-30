@@ -133,6 +133,7 @@ class Cohort(models.Model):
 
 class Enrollment(models.Model):
     class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
         ACTIVE = "active", "Active"
         COMPLETED = "completed", "Completed"
         WITHDRAWN = "withdrawn", "Withdrawn"
@@ -254,6 +255,36 @@ class Resource(models.Model):
         return self.title
 
 
+class AdditionalResource(models.Model):
+    """Books/documentaries/online programs shown on the public Resources page.
+
+    Distinct from `Resource` above, which is a per-module supplementary link —
+    this model backs a standalone, admin-managed marketing/reading-list page
+    and is not tied to a Module.
+    """
+
+    class Category(models.TextChoices):
+        BOOK = "book", "Book"
+        DOCUMENTARY = "documentary", "Documentary"
+        ONLINE_PROGRAM = "online_program", "Online Program"
+
+    category = models.CharField(max_length=20, choices=Category.choices, db_index=True)
+    title = models.CharField(max_length=200)
+    # Optional; used by books, generally blank for documentaries/online programs.
+    author = models.CharField(max_length=200, blank=True, default="")
+    url = models.URLField(blank=True, default="")
+    cover_image = models.ImageField(upload_to="resource_covers/", null=True, blank=True)
+    display_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["category", "display_order", "id"]
+
+    def __str__(self):
+        return f"{self.get_category_display()}: {self.title}"
+
+
 # Progress
 
 class ContentCompletion(models.Model):
@@ -321,13 +352,21 @@ class NotificationPreference(models.Model):
         on_delete=models.CASCADE,
         related_name="notification_preference",
     )
+
     inapp_enabled = models.BooleanField(default=True)
     email_enabled = models.BooleanField(default=True)
+
     # Default: 8am Perth. Command filters by this hour when running on an hourly cron.
     reminder_time = models.TimeField(default=datetime.time(8, 0))
+
     # Set by the frontend when Notification.permission === 'denied'.
     # When True: no push attempted, no email fallback (user explicitly refused).
     push_denied = models.BooleanField(default=False)
+
+    # Profile notification preferences
+    daily_content_reminder = models.BooleanField(default=True)
+    survey_unlocked_reminder = models.BooleanField(default=False)
+    daily_survey_reminder = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Preferences for {self.user}"

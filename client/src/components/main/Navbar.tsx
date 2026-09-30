@@ -5,6 +5,7 @@ import { MenuIcon, XIcon } from "@/components/ui/icons";
 import LoginModal from "@/components/main/LoginModal";
 import SignUpModal from "@/components/main/SignUpModal";
 import { useAuth } from "@/context/AuthContext";
+import { UserAvatar } from "@/components/ui/UserAvatar";
 
 const NAV_LINKS = [
 	{ label: "Home", href: "/" },
@@ -14,6 +15,7 @@ const NAV_LINKS = [
 export default function Navbar() {
 	const router = useRouter();
 	const { user, logout } = useAuth();
+	const fullName = user?.full_name?.trim() || "Username";
 	const [isOpen, setIsOpen] = useState(false);
 	const [loginOpen, setLoginOpen] = useState(false);
 	const visibleLinks = [
@@ -43,7 +45,22 @@ export default function Navbar() {
 		<>
 			<nav className="absolute inset-x-0 top-0 z-20 px-6 py-4 sm:px-10 lg:px-30 lg:py-5.5">
 				<div className="grid grid-cols-[1fr_auto_1fr] items-center">
-					<Link href="/" className="flex items-center gap-3">
+					<Link
+						href="/profile"
+						className="flex min-w-0 max-w-full items-center gap-2 justify-self-start md:hidden"
+					>
+						<UserAvatar
+							avatarUrl={user?.avatar_url}
+							fullName={fullName}
+							size={32}
+							className="shrink-0"
+						/>
+						<span className="truncate text-sm font-semibold text-white">
+							{fullName}
+						</span>
+					</Link>
+
+					<Link href="/" className="hidden items-center gap-3 md:flex">
 						<span className="size-9 shrink-0 rounded-[10px] bg-brand-blue" />
 						<span className="text-lg font-bold text-white">logo</span>
 					</Link>

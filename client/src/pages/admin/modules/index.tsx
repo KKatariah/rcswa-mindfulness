@@ -3,8 +3,9 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import AdminLayout from "@/components/admin/AdminLayout";
 import Modal from "@/components/main/Modal";
-import { PlusIcon } from "@/components/ui/icons";
-import { listModulesAdmin, createModule } from "@/lib/api";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { PlusIcon, TrashIcon } from "@/components/ui/icons";
+import { listModulesAdmin, createModule, deleteModule } from "@/lib/api";
 import type { AdminModule } from "@/types/admin";
 
 type ModuleFormState = { week_number: string; title: string; description: string; is_published: boolean };
@@ -20,6 +21,8 @@ export default function AdminModulesPage() {
 	const [form, setForm] = useState<ModuleFormState>(EMPTY_FORM);
 	const [formError, setFormError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
+	const [deleting, setDeleting] = useState<AdminModule | null>(null);
+	const [deleteError, setDeleteError] = useState<string | null>(null);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -62,6 +65,20 @@ export default function AdminModulesPage() {
 		}
 	}
 
+	async function handleDelete() {
+		if (!deleting) return;
+		const target = deleting;
+		setDeleting(null);
+		setDeleteError(null);
+		try {
+			const token = localStorage.getItem("token") ?? "";
+			await deleteModule(target.id, token);
+			setModules((prev) => prev.filter((m) => m.id !== target.id));
+		} catch (err) {
+			setDeleteError(err instanceof Error ? err.message : "Failed to delete module");
+		}
+	}
+
 	return (
 		<AdminLayout>
 			<Head>
@@ -80,6 +97,12 @@ export default function AdminModulesPage() {
 				</button>
 			</div>
 
+			{deleteError && (
+				<p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
+					{deleteError}
+				</p>
+			)}
+
 			<div className="mt-6 overflow-x-auto rounded-2xl border border-gray-200 bg-white">
 				{loading ? (
 					<div className="flex justify-center py-16">
@@ -97,6 +120,7 @@ export default function AdminModulesPage() {
 								<th className="px-5 py-3">Title</th>
 								<th className="px-5 py-3">Published</th>
 								<th className="px-5 py-3">Content items</th>
+								<th className="px-5 py-3" />
 							</tr>
 						</thead>
 						<tbody>
@@ -118,6 +142,18 @@ export default function AdminModulesPage() {
 										</span>
 									</td>
 									<td className="px-5 py-3 text-ink-soft">{m.content_items.length}</td>
+									<td className="px-5 py-3">
+										<button
+											type="button"
+											onClick={(e) => {
+												e.stopPropagation();
+												setDeleting(m);
+											}}
+											aria-label="Delete module"
+										>
+											<TrashIcon className="size-4 text-muted hover:text-red-500" />
+										</button>
+									</td>
 								</tr>
 							))}
 						</tbody>
@@ -181,6 +217,21 @@ export default function AdminModulesPage() {
 					</button>
 				</form>
 			</Modal>
+
+			{deleting && (
+				<ConfirmDialog
+					title={`Delete "${deleting.title}"?`}
+					message={
+						deleting.content_items.length === 0
+							? "This module has no content items yet. This can't be undone."
+							: `This will permanently delete ${deleting.content_items.length} content item${deleting.content_items.length === 1 ? "" : "s"} and all student completion history for ${deleting.content_items.length === 1 ? "it" : "them"}. This can't be undone.`
+					}
+					confirmLabel="Delete module"
+					danger
+					onConfirm={handleDelete}
+					onCancel={() => setDeleting(null)}
+				/>
+			)}
 		</AdminLayout>
 	);
 }

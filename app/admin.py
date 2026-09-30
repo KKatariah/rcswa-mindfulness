@@ -11,6 +11,7 @@ from .models import (
     Module,
     ContentItem,
     Resource,
+    AdditionalResource,
     ContentCompletion,
     ContentView,
     NotificationPreference,
@@ -29,6 +30,24 @@ class CustomUserAdmin(UserAdmin):
     list_filter = ("role", "is_staff", "is_active")
     search_fields = ("email", "full_name")
     ordering = ("email",)
+
+    fieldsets = (
+        (None, {"fields": ("email", "password")}),
+        ("Personal info", {"fields": ("full_name", "display_name", "role", "auth_provider", "provider_uid")}),
+        ("Permissions", {
+            "fields": ("is_active", "is_staff", "is_superuser", "groups", "user_permissions"),
+        }),
+        ("Important dates", {"fields": ("last_login", "created_at")}),
+    )
+
+    add_fieldsets = (
+        (None, {
+            "classes": ("wide",),
+            "fields": ("email", "full_name", "password1", "password2", "role"),
+        }),
+    )
+
+    readonly_fields = ("created_at",)
 
 
 class ContentItemInline(admin.TabularInline):
@@ -178,6 +197,7 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
 admin.site.register(Cohort)
 admin.site.register(Enrollment)
 admin.site.register(Resource)
+admin.site.register(AdditionalResource)
 admin.site.register(ContentCompletion)
 admin.site.register(ContentView)
 admin.site.register(NotificationLog)
