@@ -121,6 +121,17 @@ export default function SurveyQuestions({
 		setAnswers((currentAnswers) => ({ ...currentAnswers, [questionId]: value }));
 	};
 
+	const clearScaleSelections = () => {
+		const scaleQuestionIds = new Set(
+			[...formalQuestions, ...informalQuestions].map((question) => question.id),
+		);
+		setAnswers((currentAnswers) =>
+			Object.fromEntries(
+				Object.entries(currentAnswers).filter(([questionId]) => !scaleQuestionIds.has(Number(questionId))),
+			),
+		);
+	};
+
 	const submit = async (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		if (submitting) return;
@@ -134,7 +145,7 @@ export default function SurveyQuestions({
 	};
 
 	return (
-		<form onSubmit={submit} className="grid gap-4 pb-[calc(var(--mobile-bottom-nav-height)+var(--mobile-bottom-nav-safe))] md:gap-5 md:pb-0">
+		<form onSubmit={submit} className="grid gap-4 pb-[calc(var(--mobile-bottom-nav-height)+var(--mobile-bottom-nav-safe)-1rem)] md:gap-5 md:pb-0">
 			<section className="rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10">
 				<h2 className="text-[13px] font-bold leading-5 text-ink md:text-base">
 					Questions 1 to 6 ask about your <u>formal meditation practice</u> (e.g. sitting meditation).
@@ -197,7 +208,15 @@ export default function SurveyQuestions({
 				/>
 			</section>
 
-			<div className="flex justify-center pt-1 md:pt-2">
+			<div className="flex flex-wrap justify-center gap-3">
+				<button
+					type="button"
+					disabled={submitting}
+					onClick={clearScaleSelections}
+					className="inline-flex h-11 items-center justify-center rounded-xl bg-orange-700 px-5 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-orange-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					Clear selections
+				</button>
 				<button
 					type="submit"
 					disabled={submitting}
