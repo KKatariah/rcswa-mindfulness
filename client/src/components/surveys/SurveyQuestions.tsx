@@ -208,19 +208,19 @@ export default function SurveyQuestions({
 				/>
 			</section>
 
-			<div className="flex flex-wrap justify-center gap-3">
+			<div className="flex flex-nowrap items-center justify-center gap-3">
 				<button
 					type="button"
 					disabled={submitting}
 					onClick={clearScaleSelections}
-					className="inline-flex h-11 items-center justify-center rounded-xl bg-orange-700 px-5 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-orange-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 disabled:cursor-not-allowed disabled:opacity-50"
+					className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-orange-700 px-5 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-orange-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-[11px]"
 				>
 					Clear selections
 				</button>
 				<button
 					type="submit"
 					disabled={submitting}
-					className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50"
+					className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-[11px]"
 				>
 					{submitting ? "Submitting..." : "Submit survey"}
 				</button>
