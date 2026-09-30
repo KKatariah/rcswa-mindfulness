@@ -41,13 +41,13 @@ export default function Sidebar({
   return (
     <>
       <aside
-        className={`hidden md:flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-4 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full md:sticky md:top-24 md:bottom-4 md:h-[calc(100dvh-7rem)] md:max-h-[1032px] lg:top-[7.5rem] lg:bottom-6 lg:h-[calc(100dvh-9rem)]" : "h-screen w-[280px] overflow-y-auto"}`}
+        className={`hidden md:flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-4 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full overflow-y-auto overscroll-contain md:sticky md:top-24 md:bottom-4 md:h-[calc(100dvh-7rem)] md:max-h-[1032px] lg:top-[7.5rem] lg:bottom-6 lg:h-[calc(100dvh-9rem)]" : "h-screen w-[280px] overflow-y-auto"}`}
       >
         <nav
           aria-label="Main navigation"
           className={
             responsive
-              ? "grid grid-cols-2 gap-2 md:block md:space-y-2"
+              ? "grid grid-cols-2 gap-2 md:block md:shrink-0 md:space-y-2"
               : "space-y-2"
           }
         >
@@ -94,7 +94,7 @@ export default function Sidebar({
           href="/profile"
           aria-current={pathname === "/profile" ? "page" : undefined}
           className={[
-            "flex w-full items-center gap-3 rounded-[10px] border px-3 py-[10px] transition-colors",
+            "flex w-full shrink-0 items-center gap-3 rounded-[10px] border px-3 py-[10px] transition-colors",
             pathname === "/profile"
               ? "border-brand-blue bg-brand-blue/5"
               : "border-[#E5E7EB] bg-[#F9FAFB] hover:bg-[#F3F4F6]",
