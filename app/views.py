@@ -2,7 +2,6 @@ from django.conf import settings as django_settings
 from django.shortcuts import render
 from django.utils import timezone
 from django.db import transaction
-from django.db import models
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes

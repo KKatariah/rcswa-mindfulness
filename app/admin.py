@@ -203,6 +203,8 @@ admin.site.register(ContentView)
 admin.site.register(NotificationLog)
 admin.site.register(Survey)
 admin.site.register(SurveyResponse)
+
+
 @admin.register(ForumPost)
 class ForumPostAdmin(admin.ModelAdmin):
     def formfield_for_foreignkey(self, db_field, request, **kwargs):

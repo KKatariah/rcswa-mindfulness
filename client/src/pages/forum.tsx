@@ -119,7 +119,6 @@ function Avatar({
   );
 }
 
-
 const POST_WINDOW_MS = 30_000;
 const POST_LIMIT = 3;
 const TIMEOUT_SECONDS = 30;
@@ -130,12 +129,13 @@ function getStoredTimestamps(): number[] {
     const raw = localStorage.getItem(POST_TIMESTAMPS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((n) => typeof n === "number") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((n) => typeof n === "number")
+      : [];
   } catch {
     return [];
   }
 }
-
 
 function computeRemainingSeconds(timestamps: number[], now: number) {
   const recent = timestamps.filter((t) => now - t < POST_WINDOW_MS);
@@ -143,7 +143,6 @@ function computeRemainingSeconds(timestamps: number[], now: number) {
   const lockoutEnd = Math.max(...recent) + TIMEOUT_SECONDS * 1000;
   return Math.max(0, Math.ceil((lockoutEnd - now) / 1000));
 }
-
 
 type ForumUser = {
   full_name?: string | null;
@@ -156,14 +155,13 @@ function isAdminUser(user: ForumUser | null) {
   return Boolean(user?.is_staff) || user?.role === "admin";
 }
 
-
 function useForumPostCooldown(bypass: boolean) {
   const [remaining, setRemaining] = useState(0);
 
   useEffect(() => {
-      if (bypass) {
-        return;
-      }
+    if (bypass) {
+      return;
+    }
     function tick() {
       setRemaining(computeRemainingSeconds(getStoredTimestamps(), Date.now()));
     }
@@ -220,8 +218,13 @@ function Composer({
     <div className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
       <form onSubmit={handleSubmit}>
         <div className="flex items-center gap-3">
-          <Avatar name={user?.full_name || "User"} avatarUrl={user?.avatar_url} />
-          <p className="text-sm font-bold text-ink">What&apos;s on your mind?</p>
+          <Avatar
+            name={user?.full_name || "User"}
+            avatarUrl={user?.avatar_url}
+          />
+          <p className="text-sm font-bold text-ink">
+            What&apos;s on your mind?
+          </p>
         </div>
         <textarea
           value={body}
@@ -390,7 +393,7 @@ function ThreadDetailView({
   );
   const [savingOpening, setSavingOpening] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
-  const { remaining, markPosted } = useForumPostCooldown();
+  //const { remaining, markPosted } = useForumPostCooldown();
   const { remaining, markPosted } = useForumPostCooldown(isAdminUser(user));
 
   useEffect(() => {
@@ -454,7 +457,10 @@ function ThreadDetailView({
         )}
 
         <div className="flex items-start gap-3">
-          <Avatar name={thread.author_name} avatarUrl={thread.author_avatar_url} />
+          <Avatar
+            name={thread.author_name}
+            avatarUrl={thread.author_avatar_url}
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-baseline gap-2">
@@ -620,7 +626,14 @@ type ThreadRowProps = {
   onDelete: (id: number) => void;
 };
 
-function ThreadRow({ thread, isFirst, isAdmin, onSelect, onEdit, onDelete }: ThreadRowProps) {
+function ThreadRow({
+  thread,
+  isFirst,
+  isAdmin,
+  onSelect,
+  onEdit,
+  onDelete,
+}: ThreadRowProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(thread.body);
   const [saving, setSaving] = useState(false);
@@ -666,7 +679,10 @@ function ThreadRow({ thread, isFirst, isAdmin, onSelect, onEdit, onDelete }: Thr
       )}
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <Avatar name={thread.author_name} avatarUrl={thread.author_avatar_url} />
+          <Avatar
+            name={thread.author_name}
+            avatarUrl={thread.author_avatar_url}
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
               <span className="text-sm font-semibold text-ink">
@@ -678,7 +694,10 @@ function ThreadRow({ thread, isFirst, isAdmin, onSelect, onEdit, onDelete }: Thr
             </div>
 
             {editing ? (
-              <div className="mt-2 space-y-2" onClick={(e) => e.stopPropagation()}>
+              <div
+                className="mt-2 space-y-2"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
