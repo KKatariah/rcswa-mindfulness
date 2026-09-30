@@ -3,6 +3,7 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppShell from "@/components/main/AppShell";
+import Modal from "@/components/main/Modal";
 import SurveyHeader from "@/components/surveys/SurveyHeader";
 import SurveyQuestions from "@/components/surveys/SurveyQuestions";
 import { useAuth } from "@/context/AuthContext";
@@ -12,6 +13,11 @@ type NormalizedQuestion = {
 	id: number;
 	text: string;
 }
+
+type SubmissionFeedback = {
+	title: string;
+	message: string;
+};
 
 export default function SurveyPage() {
 	const router = useRouter();
@@ -27,6 +33,7 @@ export default function SurveyPage() {
 	const [survey, setSurvey] = useState<ApiSurveyDetail | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
+	const [submissionFeedback, setSubmissionFeedback] = useState<SubmissionFeedback | null>(null);
 
 	useEffect(() => {
 		if (authLoading || !router.isReady || !user) return;
@@ -104,8 +111,19 @@ export default function SurveyPage() {
 			);
 
 			console.log("Survey submitted:", result);
+			setSubmissionFeedback({
+				title: "Response recorded",
+				message: "Your survey responses have been recorded.",
+			});
 		} catch (err) {
-			console.error("Submit failed:", err);
+			const message = err instanceof Error ? err.message : "Please try again.";
+			const alreadySubmitted = message.toLowerCase().includes("already submitted");
+			setSubmissionFeedback({
+				title: alreadySubmitted ? "Already submitted" : "Submission error",
+				message: alreadySubmitted
+					? "You have already submitted a response to this survey."
+					: `We couldn't record your responses. ${message}`,
+			});
 		}
 	};
 
@@ -140,6 +158,17 @@ export default function SurveyPage() {
 			<Head>
 				<title>{title}</title>
 			</Head>
+			<Modal
+				isOpen={submissionFeedback !== null}
+				onClose={() => setSubmissionFeedback(null)}
+				title={submissionFeedback?.title}
+			>
+				<div className="text-center">
+					<p role="status" className="text-base leading-6 text-ink-soft">
+						{submissionFeedback?.message}
+					</p>
+				</div>
+			</Modal>
 			<AppShell>
 				<main
 					role="region"
