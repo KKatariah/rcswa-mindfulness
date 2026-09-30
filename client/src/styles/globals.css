@@ -21,3 +21,24 @@ body {
   font-family: var(--font-sans);
   color: var(--color-ink);
 }
+
+.modal-scroll-content {
+  overflow-y: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.modal-scroll-content::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.modal-scroll-thumb {
+  cursor: grab;
+  touch-action: none;
+}
+
+.modal-scroll-thumb:active {
+  cursor: grabbing;
+}

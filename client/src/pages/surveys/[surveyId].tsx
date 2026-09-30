@@ -162,6 +162,7 @@ export default function SurveyPage() {
 				isOpen={submissionFeedback !== null}
 				onClose={() => setSubmissionFeedback(null)}
 				title={submissionFeedback?.title}
+				closeButtonAboveTitle
 			>
 				<div className="text-center">
 					<p role="status" className="text-base leading-6 text-ink-soft">
