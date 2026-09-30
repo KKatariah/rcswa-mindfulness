@@ -393,12 +393,7 @@ function ThreadDetailView({
   );
   const [savingOpening, setSavingOpening] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
-  //const { remaining, markPosted } = useForumPostCooldown();
   const { remaining, markPosted } = useForumPostCooldown(isAdminUser(user));
-
-  useEffect(() => {
-    setPinError(null);
-  }, [thread.id]);
 
   async function handlePinToggle() {
     setPinError(null);
@@ -620,6 +615,8 @@ function ThreadDetailView({
 type ThreadRowProps = {
   thread: ForumThread;
   isFirst: boolean;
+  isLast: boolean;
+  isOnly: boolean;
   isAdmin: boolean;
   onSelect: (id: number) => void;
   onEdit: (id: number, body: string) => Promise<void>;
@@ -629,6 +626,8 @@ type ThreadRowProps = {
 function ThreadRow({
   thread,
   isFirst,
+  isLast,
+  isOnly,
   isAdmin,
   onSelect,
   onEdit,
@@ -668,6 +667,9 @@ function ThreadRow({
         "w-full p-5 text-left transition-colors",
         editing ? "" : "cursor-pointer hover:bg-surface-muted",
         isFirst ? "" : "border-t border-gray-200",
+        isOnly ? "rounded-[10px]" : "",
+        !isOnly && isFirst ? "rounded-t-[10px]" : "",
+        !isOnly && isLast ? "rounded-b-[10px]" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -688,9 +690,10 @@ function ThreadRow({
               <span className="text-sm font-semibold text-ink">
                 {thread.author_name}
               </span>
-              <span className="text-xs text-[#9CA3AF]">
-                {formatRelativeTime(thread.updated_at)}
-              </span>
+              <TimestampWithEdit
+                createdAt={thread.created_at}
+                editedAt={thread.edited_at}
+              />
             </div>
 
             {editing ? (
@@ -802,73 +805,31 @@ function FeedView({
           The forum is read-only — new threads can&apos;t be started right now.
         </p>
       )}
-
       <div className="rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
         {threads.length === 0 ? (
           <p className="py-12 text-center text-sm text-[#9CA3AF]">
             No threads yet. Be the first to start a conversation!
           </p>
         ) : (
-          threads.map((t, i) => {
-            const isFirst = i === 0;
-            const isLast = i === threads.length - 1;
-            const isOnly = threads.length === 1;
-
-            return (
-              <button
-                key={t.id}
-                type="button"
-                onClick={() => onSelect(t.id)}
-                className={[
-                  "w-full p-5 text-left transition-colors hover:bg-surface-muted",
-                  i !== 0 ? "border-t border-gray-200" : "",
-                  isOnly ? "rounded-[10px]" : "",
-                  !isOnly && isFirst ? "rounded-t-[10px]" : "",
-                  !isOnly && isLast ? "rounded-b-[10px]" : "",
-                ].join(" ")}
-              >
-                {t.is_pinned && (
-                  <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-600">
-                    Pinned
-                  </p>
-                )}
-                <div className="flex items-start gap-3">
-                  <Avatar
-                    name={t.author_name}
-                    avatarUrl={t.author_avatar_url}
-                  />
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-sm font-semibold text-ink">
-                        {t.author_name}
-                      </span>
-                      <TimestampWithEdit
-                        createdAt={t.created_at}
-                        editedAt={t.edited_at}
-                      />
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-sm text-[#4B5563]">
-                      {t.body}
-                    </p>
-                    <div className="mt-3 flex items-center gap-1 text-[#9CA3AF]">
-                      <MessageIcon className="h-3.5 w-3.5" />
-                      <span className="text-xs font-medium">
-                        {t.reply_count}{" "}
-                        {t.reply_count === 1 ? "reply" : "replies"}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </button>
-            );
-          })
+          threads.map((thread, index) => (
+            <ThreadRow
+              key={thread.id}
+              thread={thread}
+              isFirst={index === 0}
+              isLast={index === threads.length - 1}
+              isOnly={threads.length === 1}
+              isAdmin={isAdmin}
+              onSelect={onSelect}
+              onEdit={onEditThread}
+              onDelete={onDeleteThread}
+            />
+          ))
         )}
       </div>
     </div>
   );
 }
-
-// ── Right column ─────────────────────────────────────────────────────────────
+// ── Right column ────────────────────────────────────────────────────────────
 
 function ForumSidebar({
   query,
@@ -1122,6 +1083,7 @@ export default function ForumPage() {
 
                 {selectedThread ? (
                   <ThreadDetailView
+                    key={selectedThread.id}
                     thread={selectedThread}
                     onBack={async () => {
                       setSelectedThread(null);
