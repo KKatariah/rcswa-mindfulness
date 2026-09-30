@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
-from django.test import TestCase
+from django.test import TestCase, override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework.authtoken.models import Token
@@ -270,8 +270,13 @@ class ForumTests(APITestCase):
             module=self.module, created_by=self.student, title="Test Thread"
         )
         self.opening = ForumPost.objects.create(
-            thread=self.thread, author=self.student, body="Opening body"
+            thread=self.thread,
+            author=self.student,
+            body="Opening body",
+            is_head_post=True,
         )
+        self.thread.opened_by = self.opening
+        self.thread.save(update_fields=["opened_by"])
         self.reply = ForumPost.objects.create(
             thread=self.thread, author=self.other, body="A reply"
         )
@@ -384,6 +389,10 @@ class ForumTests(APITestCase):
         self.assertEqual(resp.data["reply_count"], 0)
         self.assertIsNone(resp.data["module"])
         self.assertIsNone(resp.data["content_item"])
+        thread = ForumThread.objects.get(pk=resp.data["id"])
+        self.assertIsNotNone(thread.opened_by)
+        self.assertTrue(thread.opened_by.is_head_post)
+        self.assertEqual(thread.opened_by.thread_id, thread.pk)
 
     # ── Fix 1: at-most-one constraint ─────────────────────────────────────────
 
@@ -596,6 +605,73 @@ class ForumTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.thread.refresh_from_db()
         self.assertFalse(self.thread.is_pinned)
+        self.assertEqual(self.thread.pin_order, 0)
+
+    def test_unpin_then_repin_succeeds_at_pin_limit(self):
+        pinned_threads = []
+        for order in range(1, 6):
+            thread = ForumThread.objects.create(
+                module=self.module,
+                created_by=self.student,
+                title=f"Pinned {order}",
+                is_pinned=True,
+                pin_order=order,
+            )
+            head_post = ForumPost.objects.create(
+                thread=thread,
+                author=self.student,
+                body=f"Pinned body {order}",
+                is_head_post=True,
+            )
+            thread.opened_by = head_post
+            thread.save(update_fields=["opened_by"])
+            pinned_threads.append(thread)
+
+        replacement = ForumThread.objects.create(
+            module=self.module, created_by=self.student, title="Replacement"
+        )
+        replacement_head = ForumPost.objects.create(
+            thread=replacement,
+            author=self.student,
+            body="Replacement body",
+            is_head_post=True,
+        )
+        replacement.opened_by = replacement_head
+        replacement.save(update_fields=["opened_by"])
+
+        self.client.force_login(self.admin)
+        unpin_response = self.client.patch(
+            f"/api/forum/threads/{pinned_threads[-1].pk}/",
+            {"is_pinned": False},
+            content_type="application/json",
+        )
+        self.assertEqual(unpin_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            list(
+                ForumThread.objects.filter(is_pinned=True)
+                .order_by("pin_order")
+                .values_list("pin_order", flat=True)
+            ),
+            [1, 2, 3, 4],
+        )
+
+        pin_response = self.client.patch(
+            f"/api/forum/threads/{replacement.pk}/",
+            {"is_pinned": True},
+            content_type="application/json",
+        )
+        self.assertEqual(pin_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(ForumThread.objects.filter(is_pinned=True).count(), 5)
+        self.assertEqual(
+            list(
+                ForumThread.objects.filter(is_pinned=True)
+                .order_by("pin_order")
+                .values_list("pin_order", flat=True)
+            ),
+            [1, 2, 3, 4, 5],
+        )
+        replacement.refresh_from_db()
+        self.assertEqual(replacement.pin_order, 1)
 
     def test_student_pin_returns_403(self):
         self.client.force_login(self.student)
@@ -632,6 +708,182 @@ class ForumTests(APITestCase):
         thread_data = next(t for t in resp.data if t["id"] == self.thread.pk)
         self.assertIn("is_pinned", thread_data)
         self.assertFalse(thread_data["is_pinned"])
+
+    @override_settings(FORUM_MAX_PINNED_THREADS=3)
+    def test_admin_pin_order_choices_use_configured_limit_without_zero(self):
+        from .admin import ForumThreadAdminForm
+
+        for order in (1, 2):
+            ForumThread.objects.create(
+                module=self.module,
+                created_by=self.student,
+                title=f"Existing pinned {order}",
+                is_pinned=True,
+                pin_order=order,
+            )
+        form = ForumThreadAdminForm(instance=self.thread)
+        choices = [value for value, _label in form.fields["pin_order"].choices]
+        self.assertEqual(choices, ["", 1, 2, 3])
+
+    def test_admin_pin_order_change_shifts_other_pinned_threads(self):
+        from django.contrib import admin
+        from .admin import ForumThreadAdmin
+
+        first_pinned = ForumThread.objects.create(
+            module=self.module,
+            created_by=self.student,
+            title="Current first",
+            is_pinned=True,
+            pin_order=1,
+        )
+        thread_admin = ForumThreadAdmin(ForumThread, admin.site)
+
+        self.thread.is_pinned = True
+        self.thread.pin_order = 1
+        thread_admin.save_model(None, self.thread, form=None, change=True)
+
+        self.thread.refresh_from_db()
+        first_pinned.refresh_from_db()
+        self.assertEqual(self.thread.pin_order, 1)
+        self.assertEqual(first_pinned.pin_order, 2)
+
+    def _forum_thread_admin_form_data(self, is_pinned, pin_order):
+        return {
+            "title": self.thread.title,
+            "module": self.module.pk,
+            "content_item": "",
+            "created_by": self.student.pk,
+            "opened_by": self.opening.pk,
+            "is_pinned": is_pinned,
+            "pin_order": pin_order,
+        }
+
+    def test_admin_unpinned_thread_accepts_zero_pin_order(self):
+        from .admin import ForumThreadAdminForm
+
+        form = ForumThreadAdminForm(
+            data=self._forum_thread_admin_form_data(is_pinned=False, pin_order=""),
+            instance=self.thread,
+        )
+        self.assertTrue(form.is_valid(), form.errors)
+        self.assertFalse(form.cleaned_data["is_pinned"])
+        self.assertEqual(form.cleaned_data["pin_order"], 0)
+
+    def test_admin_rejects_pin_order_without_is_pinned(self):
+        from .admin import ForumThreadAdminForm
+
+        form = ForumThreadAdminForm(
+            data=self._forum_thread_admin_form_data(is_pinned=False, pin_order=1),
+            instance=self.thread,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn(
+            "You must select is_pinned to select a pin_order value.",
+            form.errors["pin_order"],
+        )
+
+    @override_settings(FORUM_MAX_PINNED_THREADS=1)
+    def test_admin_reports_max_limit_with_invalid_pin_order(self):
+        from .admin import ForumThreadAdminForm
+
+        ForumThread.objects.create(
+            module=self.module,
+            created_by=self.student,
+            title="Pinned at capacity",
+            is_pinned=True,
+            pin_order=1,
+        )
+        form = ForumThreadAdminForm(
+            data=self._forum_thread_admin_form_data(is_pinned=True, pin_order=2),
+            instance=self.thread,
+        )
+        self.assertFalse(form.is_valid())
+        self.assertIn("is_pinned", form.errors)
+        self.assertIn("pin_order", form.errors)
+        self.assertIn(
+            "You have already reached the maximum of 1 pinned threads.",
+            form.errors["is_pinned"],
+        )
+
+    def test_admin_parent_post_choices_include_only_head_posts(self):
+        from django.contrib import admin
+        from .admin import ForumPostAdmin
+
+        post_admin = ForumPostAdmin(ForumPost, admin.site)
+        parent_field = ForumPost._meta.get_field("parent_post")
+        form_field = post_admin.formfield_for_foreignkey(parent_field, request=None)
+        parent_ids = set(form_field.queryset.values_list("pk", flat=True))
+        self.assertIn(self.opening.pk, parent_ids)
+        self.assertNotIn(self.reply.pk, parent_ids)
+
+    @override_settings(FORUM_MAX_PINNED_THREADS=2)
+    def test_pin_order_is_used_for_pinned_threads(self):
+        first = ForumThread.objects.create(
+            module=self.module, created_by=self.student, title="First pinned"
+        )
+        second = ForumThread.objects.create(
+            module=self.module, created_by=self.student, title="Second pinned"
+        )
+        ForumPost.objects.create(thread=first, author=self.student, body="first")
+        ForumPost.objects.create(thread=second, author=self.student, body="second")
+
+        first.is_pinned = True
+        first.pin_order = 2
+        first.save(update_fields=["is_pinned", "pin_order"])
+
+        second.is_pinned = True
+        second.pin_order = 1
+        second.save(update_fields=["is_pinned", "pin_order"])
+
+        self.client.force_login(self.admin)
+        resp = self.client.get("/api/forum/threads/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        ids = [t["id"] for t in resp.data if t["is_pinned"]]
+        self.assertEqual(ids, [second.pk, first.pk])
+
+    @override_settings(FORUM_MAX_PINNED_THREADS=2)
+    def test_cannot_pin_more_than_max_threads(self):
+        first = ForumThread.objects.create(
+            module=self.module, created_by=self.student, title="Pinned 1"
+        )
+        second = ForumThread.objects.create(
+            module=self.module, created_by=self.student, title="Pinned 2"
+        )
+        ForumPost.objects.create(thread=first, author=self.student, body="one")
+        ForumPost.objects.create(thread=second, author=self.student, body="two")
+
+        first.is_pinned = True
+        first.pin_order = 1
+        first.save(update_fields=["is_pinned", "pin_order"])
+
+        second.is_pinned = True
+        second.pin_order = 2
+        second.save(update_fields=["is_pinned", "pin_order"])
+
+        third = ForumThread.objects.create(
+            module=self.module, created_by=self.student, title="Pinned 3"
+        )
+        ForumPost.objects.create(thread=third, author=self.student, body="three")
+
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/forum/threads/{third.pk}/",
+            {"is_pinned": True},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("You have already reached the maximum of 2 pinned threads.", str(resp.data))
+
+    def test_editing_post_sets_edited_at(self):
+        self.client.force_login(self.other)
+        resp = self.client.patch(
+            f"/api/forum/posts/{self.reply.pk}/",
+            {"body": "Updated reply body"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.reply.refresh_from_db()
+        self.assertIsNotNone(self.reply.edited_at)
 
     # ── updated_at bypass ──────────────────────────────────────────────────────
 

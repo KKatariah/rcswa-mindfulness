@@ -1,6 +1,7 @@
 from django.conf import settings as django_settings
 from django.shortcuts import render
 from django.utils import timezone
+from django.db import transaction
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -467,13 +468,27 @@ class ForumThreadViewSet(viewsets.ModelViewSet):
                 Prefetch("posts", queryset=ForumPost.objects.select_related("author"))
             )
             .select_related("created_by")
-            .order_by("-is_pinned", "-updated_at")
+            .order_by("-is_pinned", "pin_order", "-updated_at")
         )
 
     def get_serializer_class(self):
         if self.action == "retrieve":
             return ForumThreadDetailSerializer
         return ForumThreadSerializer
+
+    def partial_update(self, request, *args, **kwargs):
+        with transaction.atomic():
+            thread_before = self.get_object()
+            was_pinned = thread_before.is_pinned
+            response = super().partial_update(request, *args, **kwargs)
+            thread = ForumThread.objects.get(pk=thread_before.pk)
+
+            if "is_pinned" in request.data and thread.is_pinned != was_pinned:
+                thread.reorder_pinned_threads(1 if thread.is_pinned else None)
+                thread.refresh_from_db()
+                response.data = self.get_serializer(thread).data
+
+            return response
 
     def create(self, request, *args, **kwargs):
         serializer = ForumThreadCreateSerializer(
@@ -489,8 +504,16 @@ class ForumThreadViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("The program has ended; the forum is read-only.")
         body = serializer.validated_data.pop("body")
         title = _derive_title(body)
-        thread = serializer.save(created_by=self.request.user, title=title)
-        ForumPost.objects.create(thread=thread, author=self.request.user, body=body)
+        with transaction.atomic():
+            thread = serializer.save(created_by=self.request.user, title=title)
+            head_post = ForumPost.objects.create(
+                thread=thread,
+                author=self.request.user,
+                body=body,
+                is_head_post=True,
+            )
+            thread.opened_by = head_post
+            thread.save(update_fields=["opened_by"])
 
     def get_permissions(self):
         if self.action in ["partial_update", "destroy"]:
@@ -532,17 +555,9 @@ class ForumPostViewSet(
     def perform_update(self, serializer):
         serializer.save()
         post = serializer.instance
-        first_id = (
-            ForumPost.objects
-            .filter(thread_id=post.thread_id)
-            .order_by("created_at", "pk")
-            .values_list("pk", flat=True)
-            .first()
+        ForumThread.objects.filter(opened_by_id=post.pk).update(
+            title=_derive_title(post.body)
         )
-        if first_id == post.pk:
-            ForumThread.objects.filter(pk=post.thread_id).update(
-                title=_derive_title(post.body)
-            )
 
     def perform_destroy(self, instance):
         first_id = (

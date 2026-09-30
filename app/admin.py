@@ -1,5 +1,8 @@
+from django import forms
+from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
+from django.db import transaction
 
 from .models import (
     User,
@@ -52,6 +55,66 @@ class ContentItemInline(admin.TabularInline):
     extra = 0
     fields = ("title", "type", "provider", "embed_url", "display_order", "day_offset")
     ordering = ("display_order",)
+
+
+class ForumThreadAdminForm(forms.ModelForm):
+    pin_order = forms.TypedChoiceField(
+        choices=(),
+        coerce=int,
+        empty_value=0,
+        required=False,
+    )
+
+    class Meta:
+        model = ForumThread
+        fields = "__all__"
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        max_pinned = settings.FORUM_MAX_PINNED_THREADS
+        pinned_threads = ForumThread.objects.filter(is_pinned=True)
+        if self.instance.pk:
+            pinned_threads = pinned_threads.exclude(pk=self.instance.pk)
+        max_position = min(pinned_threads.count() + 1, max_pinned)
+        self.fields["pin_order"].choices = [
+            ("", "---------"),
+            *((order, str(order)) for order in range(1, max_position + 1)),
+        ]
+        if not self.instance.pin_order:
+            self.initial["pin_order"] = ""
+
+    def clean(self):
+        cleaned_data = super().clean()
+        if not cleaned_data.get("is_pinned"):
+            if "pin_order" in cleaned_data and cleaned_data["pin_order"] != 0:
+                self.add_error(
+                    "pin_order",
+                    "You must select is_pinned to select a pin_order value.",
+                )
+            elif "pin_order" in cleaned_data:
+                cleaned_data["pin_order"] = 0
+        else:
+            if not self.instance.is_pinned and ForumThread.objects.filter(
+                is_pinned=True
+            ).count() >= settings.FORUM_MAX_PINNED_THREADS:
+                self.add_error(
+                    "is_pinned",
+                    f"You have already reached the maximum of "
+                    f"{settings.FORUM_MAX_PINNED_THREADS} pinned threads.",
+                )
+            if "pin_order" in cleaned_data and not cleaned_data["pin_order"]:
+                self.add_error("pin_order", "Choose an order for a pinned thread.")
+        return cleaned_data
+
+
+@admin.register(ForumThread)
+class ForumThreadAdmin(admin.ModelAdmin):
+    form = ForumThreadAdminForm
+
+    @transaction.atomic
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+        obj.reorder_pinned_threads(obj.pin_order if obj.is_pinned else None)
 
 
 @admin.register(Module)
@@ -140,5 +203,11 @@ admin.site.register(ContentView)
 admin.site.register(NotificationLog)
 admin.site.register(Survey)
 admin.site.register(SurveyResponse)
-admin.site.register(ForumThread)
-admin.site.register(ForumPost)
+
+
+@admin.register(ForumPost)
+class ForumPostAdmin(admin.ModelAdmin):
+    def formfield_for_foreignkey(self, db_field, request, **kwargs):
+        if db_field.name == "parent_post":
+            kwargs["queryset"] = ForumPost.objects.filter(is_head_post=True)
+        return super().formfield_for_foreignkey(db_field, request, **kwargs)
