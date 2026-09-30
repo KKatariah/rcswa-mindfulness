@@ -535,6 +535,99 @@ class SurveyDetailSerializer(SurveySerializer):
         fields = SurveySerializer.Meta.fields + ["questions"]
 
 
+# ── Admin-only survey serializers ───────────────────────────────────────────────
+
+class AdminSurveyListSerializer(serializers.ModelSerializer):
+    module_week_number = serializers.SerializerMethodField()
+    question_count = serializers.SerializerMethodField()
+    response_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Survey
+        fields = ["id", "code", "title", "module", "module_week_number", "question_count", "response_count"]
+
+    def get_module_week_number(self, obj):
+        return obj.module.week_number if obj.module_id else None
+
+    def get_question_count(self, obj):
+        return len(obj.questions) if obj.questions else 0
+
+    def get_response_count(self, obj):
+        return getattr(obj, "response_count", 0)
+
+
+class AdminSurveyDetailSerializer(AdminSurveyListSerializer):
+    class Meta(AdminSurveyListSerializer.Meta):
+        fields = AdminSurveyListSerializer.Meta.fields + ["questions"]
+
+
+class AdminSurveyUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Survey
+        fields = ["title", "questions"]
+
+    def validate_questions(self, incoming):
+        if not isinstance(incoming, list):
+            raise serializers.ValidationError("Questions must be a JSON array.")
+
+        existing_by_id = (
+            {q["id"]: q for q in (self.instance.questions or [])}
+            if self.instance
+            else {}
+        )
+        seen_ids: set = set()
+        merged: list = []
+
+        for q in incoming:
+            qid = q.get("id")
+            if not qid or not isinstance(qid, str):
+                raise serializers.ValidationError(
+                    "Each question must have a non-empty string 'id'."
+                )
+            if qid in seen_ids:
+                raise serializers.ValidationError(f"Duplicate question id {qid!r}.")
+            seen_ids.add(qid)
+
+            qtype = q.get("type")
+            if qtype not in {"integer", "likert", "longtext"}:
+                raise serializers.ValidationError(
+                    f"Question {qid!r}: type must be 'integer', 'likert', or 'longtext'."
+                )
+            if qtype == "likert":
+                if not isinstance(q.get("min"), int) or not isinstance(q.get("max"), int):
+                    raise serializers.ValidationError(
+                        f"Question {qid!r}: likert questions require integer 'min' and 'max'."
+                    )
+
+            # Preserve fields the editor doesn't expose (skip_if, scale_labels, etc.)
+            if qid in existing_by_id:
+                merged_q = {**existing_by_id[qid], **q}
+            else:
+                merged_q = dict(q)
+            merged.append(merged_q)
+
+        # Validate that skip_if references point to questions that exist in this list
+        for q in merged:
+            skip_if = q.get("skip_if")
+            if skip_if:
+                ref_id = skip_if.get("question_id")
+                if ref_id and ref_id not in seen_ids:
+                    raise serializers.ValidationError(
+                        f"Question {q['id']!r}: skip_if references {ref_id!r} which is not in the question list."
+                    )
+
+        return merged
+
+    def validate(self, attrs):
+        # Block question edits when any responses have been submitted.
+        if "questions" in attrs and self.instance is not None:
+            if SurveyResponse.objects.filter(survey=self.instance).exists():
+                raise serializers.ValidationError(
+                    {"questions": "Questions cannot be edited once students have submitted responses."}
+                )
+        return attrs
+
+
 class SurveyResponseSerializer(serializers.ModelSerializer):
     class Meta:
         model = SurveyResponse

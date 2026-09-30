@@ -226,3 +226,13 @@ export function LinkedinIcon(props: IconProps) {
   );
 }
 
+export function ClipboardListIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 18 18" {...base} {...props}>
+      <path d="M6.75 2.25H4.5A1.5 1.5 0 0 0 3 3.75v12a1.5 1.5 0 0 0 1.5 1.5h9A1.5 1.5 0 0 0 15 15.75v-12a1.5 1.5 0 0 0-1.5-1.5h-2.25" />
+      <rect x="6.75" y="1.5" width="4.5" height="2.25" rx="0.75" />
+      <path d="M6.75 8.25h4.5M6.75 11.25h4.5" />
+    </svg>
+  );
+}
+

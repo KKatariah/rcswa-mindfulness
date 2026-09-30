@@ -64,6 +64,33 @@ export type AdminAdditionalResource = {
 	updated_at: string;
 };
 
+export type SurveyQuestion = {
+	id: string;
+	type: "integer" | "likert" | "longtext";
+	text: string;
+	unit?: string;
+	min?: number;
+	max?: number;
+	section?: string;
+	scale_labels?: Record<string, string>;
+	skip_if?: { question_id: string; value: number };
+	[key: string]: unknown;
+};
+
+export type AdminSurvey = {
+	id: number;
+	code: string;
+	title: string;
+	module: number | null;
+	module_week_number: number | null;
+	question_count: number;
+	response_count: number;
+};
+
+export type AdminSurveyDetail = AdminSurvey & {
+	questions: SurveyQuestion[];
+};
+
 export type DashboardStats = {
 	total_enrolled: number;
 	by_cohort: {

@@ -41,6 +41,9 @@ from django.conf import settings
 
 from .serializers import (
     AdditionalResourceSerializer,
+    AdminSurveyDetailSerializer,
+    AdminSurveyListSerializer,
+    AdminSurveyUpdateSerializer,
     CohortSerializer,
     ContentCompletionSerializer,
     ContentItemSerializer,
@@ -627,11 +630,17 @@ class SurveyViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return (
+        from django.db.models import Q as DjQ
+        qs = (
             Survey.objects
             .select_related("module")
             .prefetch_related("module__content_items")
         )
+        u = self.request.user
+        if not (getattr(u, "role", None) == "admin" or u.is_staff):
+            # Hide weekly surveys with a null module (orphaned) from students.
+            qs = qs.exclude(DjQ(type=Survey.SurveyType.WEEKLY) & DjQ(module__isnull=True))
+        return qs
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -669,6 +678,63 @@ class SurveyViewSet(viewsets.ReadOnlyModelViewSet):
             responses, many=True, context=self.get_serializer_context()
         )
         return Response(serializer.data)
+
+    @action(detail=False, methods=["get"], url_path="admin-list")
+    def admin_list(self, request):
+        """Admin-only: list all surveys with response counts."""
+        u = request.user
+        if not (getattr(u, "role", None) == "admin" or u.is_staff):
+            raise PermissionDenied()
+        from django.db.models import Count as DjCount
+        surveys = (
+            Survey.objects
+            .select_related("module")
+            .annotate(response_count=DjCount("responses"))
+            .order_by("module__week_number", "type")
+        )
+        serializer = AdminSurveyListSerializer(surveys, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=["get"], url_path="admin-detail")
+    def admin_detail(self, request, pk=None):
+        """Admin-only: survey detail including questions and response count."""
+        u = request.user
+        if not (getattr(u, "role", None) == "admin" or u.is_staff):
+            raise PermissionDenied()
+        from django.db.models import Count as DjCount
+        survey = (
+            Survey.objects
+            .select_related("module")
+            .annotate(response_count=DjCount("responses"))
+            .get(pk=self.get_object().pk)
+        )
+        serializer = AdminSurveyDetailSerializer(survey, context=self.get_serializer_context())
+        return Response(serializer.data)
+
+    def partial_update(self, request, *args, **kwargs):
+        """Admin-only: update survey title and/or questions."""
+        u = request.user
+        if not (getattr(u, "role", None) == "admin" or u.is_staff):
+            raise PermissionDenied()
+        survey = self.get_object()
+        serializer = AdminSurveyUpdateSerializer(
+            survey,
+            data=request.data,
+            partial=True,
+            context=self.get_serializer_context(),
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        from django.db.models import Count as DjCount
+        updated = (
+            Survey.objects
+            .select_related("module")
+            .annotate(response_count=DjCount("responses"))
+            .get(pk=survey.pk)
+        )
+        return Response(
+            AdminSurveyDetailSerializer(updated, context=self.get_serializer_context()).data
+        )
 
 
 class SurveyResponseViewSet(

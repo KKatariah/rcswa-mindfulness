@@ -1,4 +1,5 @@
 import type { AuthUser } from "@/types/user";
+import type { AdminSurvey, AdminSurveyDetail, SurveyQuestion } from "@/types/admin";
 
 export const API_BASE_URL =
 	process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api";
@@ -694,6 +695,33 @@ export async function getSurvey(id: number | string, token: string): Promise<Api
     headers: { Authorization: `Token ${token}` },
   });
   return handleResponse<ApiSurveyDetail>(res);
+}
+
+export async function listSurveysAdmin(token: string): Promise<AdminSurvey[]> {
+  const res = await fetch(`${API_BASE_URL}/surveys/admin-list/`, {
+    headers: { Authorization: `Token ${token}` },
+  });
+  return handleResponse<AdminSurvey[]>(res);
+}
+
+export async function getAdminSurveyDetail(id: number | string, token: string): Promise<AdminSurveyDetail> {
+  const res = await fetch(`${API_BASE_URL}/surveys/${id}/admin-detail/`, {
+    headers: { Authorization: `Token ${token}` },
+  });
+  return handleResponse<AdminSurveyDetail>(res);
+}
+
+export async function updateSurveyAdmin(
+  id: number | string,
+  data: { title?: string; questions?: SurveyQuestion[] },
+  token: string,
+): Promise<AdminSurveyDetail> {
+  const res = await fetch(`${API_BASE_URL}/surveys/${id}/`, {
+    method: "PATCH",
+    headers: authHeader(token),
+    body: JSON.stringify(data),
+  });
+  return handleResponse<AdminSurveyDetail>(res);
 }
 
 export async function submitSurveyResponse(

@@ -57,6 +57,18 @@ class ContentItemInline(admin.TabularInline):
     ordering = ("display_order",)
 
 
+class SurveyInline(admin.TabularInline):
+    model = Survey
+    extra = 0
+    fields = ("code", "title", "type", "question_count")
+    readonly_fields = ("code", "type", "question_count")
+    show_change_link = True
+
+    @admin.display(description="Questions")
+    def question_count(self, obj):
+        return len(obj.questions) if obj.questions else 0
+
+
 class ForumThreadAdminForm(forms.ModelForm):
     pin_order = forms.TypedChoiceField(
         choices=(),
@@ -122,7 +134,7 @@ class ModuleAdmin(admin.ModelAdmin):
     list_display = ("week_number", "title", "is_published", "created_at")
     list_filter = ("is_published",)
     search_fields = ("title",)
-    inlines = [ContentItemInline]
+    inlines = [ContentItemInline, SurveyInline]
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
@@ -201,8 +213,61 @@ admin.site.register(AdditionalResource)
 admin.site.register(ContentCompletion)
 admin.site.register(ContentView)
 admin.site.register(NotificationLog)
-admin.site.register(Survey)
 admin.site.register(SurveyResponse)
+
+
+# ── Survey admin ──────────────────────────────────────────────────────────────
+
+_ALLOWED_QUESTION_TYPES = {"integer", "likert", "longtext"}
+
+
+class SurveyAdminForm(forms.ModelForm):
+    class Meta:
+        model = Survey
+        fields = ["module", "code", "title", "type", "questions"]
+
+    def clean_questions(self):
+        questions = self.cleaned_data.get("questions")
+        if not isinstance(questions, list):
+            raise forms.ValidationError("Questions must be a JSON array.")
+        ids_seen: set = set()
+        for i, q in enumerate(questions):
+            label = f"Question {i + 1}"
+            if not isinstance(q, dict):
+                raise forms.ValidationError(f"{label}: must be a JSON object.")
+            if not q.get("id") or not isinstance(q["id"], str):
+                raise forms.ValidationError(f"{label}: 'id' must be a non-empty string.")
+            if q["id"] in ids_seen:
+                raise forms.ValidationError(f"{label}: duplicate id {q['id']!r}.")
+            ids_seen.add(q["id"])
+            qtype = q.get("type")
+            if qtype not in _ALLOWED_QUESTION_TYPES:
+                raise forms.ValidationError(
+                    f"{label}: 'type' must be one of {sorted(_ALLOWED_QUESTION_TYPES)}."
+                )
+            if qtype == "likert":
+                if not isinstance(q.get("min"), int) or not isinstance(q.get("max"), int):
+                    raise forms.ValidationError(
+                        f"{label}: likert questions require integer 'min' and 'max'."
+                    )
+                if q["min"] >= q["max"]:
+                    raise forms.ValidationError(
+                        f"{label}: 'min' must be less than 'max'."
+                    )
+        return questions
+
+
+@admin.register(Survey)
+class SurveyAdmin(admin.ModelAdmin):
+    form = SurveyAdminForm
+    list_display = ("code", "title", "module", "type", "question_count")
+    list_filter = ("type", "module")
+    search_fields = ("code", "title")
+    ordering = ("module__week_number", "type")
+
+    @admin.display(description="Questions")
+    def question_count(self, obj):
+        return len(obj.questions) if obj.questions else 0
 
 
 @admin.register(ForumPost)

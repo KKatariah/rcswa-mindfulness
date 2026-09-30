@@ -23,6 +23,7 @@ from .models import (
     PushSubscription,
     Survey,
     SurveyResponse,
+    SurveyType,
 )
 
 from .serializers import ForumPostSerializer
@@ -938,12 +939,16 @@ class SurveyTests(APITestCase):
             module=self.module, title="Intro video", type="video",
             provider="youtube", embed_url="https://www.youtube.com/embed/x",
         )
-        self.survey = Survey.objects.create(
+        # The post_save signal auto-creates a weekly survey; update it to match
+        # the test's expected code/title/questions rather than creating a duplicate.
+        self.survey, _ = Survey.objects.update_or_create(
             module=self.module,
-            code="test-weekly",
-            title="Test Weekly Survey",
             type="weekly",
-            questions=self.QUESTIONS,
+            defaults={
+                "code": "test-weekly",
+                "title": "Test Weekly Survey",
+                "questions": self.QUESTIONS,
+            },
         )
 
     def _complete_all(self, user):
@@ -990,11 +995,14 @@ class SurveyTests(APITestCase):
         self.assertTrue(survey_data["is_unlocked"])
 
     def test_weekly_survey_without_module_is_locked(self):
-        """A weekly survey with module=null bypasses clean() but must not be unlocked."""
-        # Use save() directly to skip clean() — simulates loaddata fixture behaviour.
+        """An orphaned weekly survey (module=null) is never unlocked.
+
+        Orphaned surveys are hidden from students (tested separately in
+        OrphanedSurveyTests), so verify via the admin view which still returns them.
+        """
         orphan = Survey(code="orphan-weekly", title="Orphan", type="weekly", questions=[])
         orphan.save()
-        self.client.force_login(self.student)
+        self.client.force_login(self.admin)
         resp = self.client.get("/api/surveys/")
         survey_data = next(s for s in resp.data if s["id"] == orphan.pk)
         self.assertFalse(survey_data["is_unlocked"])
@@ -1212,9 +1220,10 @@ class SurveyTests(APITestCase):
             module=other_module, title="W2 video", type="video",
             provider="youtube", embed_url="https://www.youtube.com/embed/y",
         )
-        other_survey = Survey.objects.create(
-            module=other_module, code="w2-survey", title="Week 2 Survey",
-            type="weekly", questions=self.QUESTIONS,
+        other_survey, _ = Survey.objects.update_or_create(
+            module=other_module,
+            type="weekly",
+            defaults={"code": "w2-survey", "title": "Week 2 Survey", "questions": self.QUESTIONS},
         )
         ContentCompletion.objects.create(user=self.student, content_item=other_item)
         self.client.force_login(self.student)
@@ -1849,3 +1858,352 @@ class S21NotifiesOnlyActiveCohortTests(TestCase):
         notified_user_ids = set(logs.values_list("user_id", flat=True))
         self.assertIn(self.active_user.pk, notified_user_ids)
         self.assertNotIn(self.ended_user.pk, notified_user_ids)
+
+
+# ── Issue #196: surveys per module ────────────────────────────────────────────
+
+class SurveyAutoCreationTests(TestCase):
+    """Signal auto-creates one weekly survey when a Module is first saved."""
+
+    def test_survey_created_on_module_creation(self):
+        module = Module.objects.create(week_number=80, title="Week 80", is_published=False)
+        survey = Survey.objects.get(module=module, type=SurveyType.WEEKLY)
+        self.assertEqual(survey.title, "Week 80")
+        self.assertEqual(survey.code, "weekly-w80")
+        from app.survey_template import STANDARD_WEEKLY_QUESTIONS
+        self.assertEqual(survey.questions, STANDARD_WEEKLY_QUESTIONS)
+
+    def test_survey_not_duplicated_on_module_update(self):
+        module = Module.objects.create(week_number=81, title="Week 81")
+        module.title = "Week 81 Updated"
+        module.save()
+        self.assertEqual(
+            Survey.objects.filter(module=module, type=SurveyType.WEEKLY).count(), 1
+        )
+
+    def test_signal_skips_when_raw(self):
+        """Signal handler must do nothing when raw=True (fixture loading path)."""
+        module = Module.objects.create(week_number=82, title="Week 82")
+        Survey.objects.filter(module=module, type=SurveyType.WEEKLY).delete()
+
+        from app.signals import create_weekly_survey
+        create_weekly_survey(
+            sender=Module, instance=module, created=True, raw=True,
+            using="default", update_fields=None,
+        )
+        self.assertFalse(Survey.objects.filter(module=module, type=SurveyType.WEEKLY).exists())
+
+    def test_auto_created_survey_unlocks_after_module_complete(self):
+        """The auto-created survey obeys the same unlock rule as manually created ones."""
+        from rest_framework.test import APIClient
+
+        module = Module.objects.create(week_number=83, title="Week 83", is_published=True)
+        item = ContentItem.objects.create(
+            module=module, title="Video", type="video",
+            provider="youtube", embed_url="https://www.youtube.com/embed/x",
+        )
+        survey = Survey.objects.get(module=module, type=SurveyType.WEEKLY)
+
+        user = User.objects.create_user(email="autocreate@test.local", password="pass")
+        client = APIClient()
+        client.force_login(user)
+
+        resp = client.get("/api/surveys/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        survey_data = next(s for s in resp.data if s["id"] == survey.pk)
+        self.assertFalse(survey_data["is_unlocked"])
+
+        ContentCompletion.objects.create(user=user, content_item=item)
+        resp2 = client.get("/api/surveys/")
+        survey_data2 = next(s for s in resp2.data if s["id"] == survey.pk)
+        self.assertTrue(survey_data2["is_unlocked"])
+
+
+class OrphanedSurveyTests(APITestCase):
+    """Orphaned weekly surveys (module=None) are hidden from students, not admins."""
+
+    def setUp(self):
+        self.student = User.objects.create_user(email="orphan_student@test.local", password="pass")
+        self.admin = User.objects.create_user(
+            email="orphan_admin@test.local", password="pass", role=User.Role.ADMIN,
+        )
+
+    def test_orphaned_weekly_survey_hidden_from_students(self):
+        orphan = Survey(code="orphan-hide-1", title="Orphan", type="weekly", questions=[])
+        orphan.save()
+
+        self.client.force_login(self.student)
+        resp = self.client.get("/api/surveys/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertNotIn(orphan.pk, [s["id"] for s in resp.data])
+
+    def test_orphaned_weekly_survey_visible_to_admins(self):
+        orphan = Survey(code="orphan-hide-2", title="Orphan Admin", type="weekly", questions=[])
+        orphan.save()
+
+        self.client.force_login(self.admin)
+        resp = self.client.get("/api/surveys/")
+        self.assertIn(orphan.pk, [s["id"] for s in resp.data])
+
+    def test_non_weekly_orphan_still_visible_to_students(self):
+        """Intake/end/followup surveys with no module are NOT hidden."""
+        global_survey = Survey.objects.create(
+            code="global-intake-orphan", title="Intake", type="intake", questions=[],
+        )
+        self.client.force_login(self.student)
+        resp = self.client.get("/api/surveys/")
+        self.assertIn(global_survey.pk, [s["id"] for s in resp.data])
+
+    def test_orphaned_survey_responses_preserved(self):
+        """SurveyResponse rows survive when a module FK becomes NULL (SET_NULL)."""
+        module = Module.objects.create(week_number=84, title="Week 84", is_published=True)
+        survey = Survey.objects.get(module=module, type=SurveyType.WEEKLY)
+        SurveyResponse.objects.create(user=self.student, survey=survey, answers={})
+
+        Survey.objects.filter(pk=survey.pk).update(module=None)
+
+        self.assertTrue(SurveyResponse.objects.filter(user=self.student, survey=survey).exists())
+
+
+class SeedSurveysCommandTests(TestCase):
+    """seed_surveys management command backfills and is idempotent."""
+
+    def test_seed_creates_missing_surveys(self):
+        module = Module.objects.create(week_number=85, title="Week 85")
+        Survey.objects.filter(module=module, type=SurveyType.WEEKLY).delete()
+
+        out = StringIO()
+        call_command("seed_surveys", stdout=out)
+
+        self.assertTrue(Survey.objects.filter(module=module, type=SurveyType.WEEKLY).exists())
+        self.assertIn("1", out.getvalue())
+
+    def test_seed_recognises_auto_created_surveys(self):
+        """Running seed_surveys after the signal already ran must not duplicate."""
+        module = Module.objects.create(week_number=86, title="Week 86")
+        self.assertEqual(Survey.objects.filter(module=module, type=SurveyType.WEEKLY).count(), 1)
+
+        call_command("seed_surveys", stdout=StringIO())
+
+        self.assertEqual(Survey.objects.filter(module=module, type=SurveyType.WEEKLY).count(), 1)
+
+    def test_seed_recognises_fixture_style_surveys(self):
+        """seed_surveys counts a survey created with the old 'weekly-maq-wN' code as present."""
+        module = Module.objects.create(week_number=87, title="Week 87")
+        Survey.objects.filter(module=module, type=SurveyType.WEEKLY).delete()
+        Survey.objects.create(
+            module=module, code="weekly-maq-w87", title="Week 87",
+            type="weekly", questions=[],
+        )
+
+        call_command("seed_surveys", stdout=StringIO())
+
+        self.assertEqual(Survey.objects.filter(module=module, type=SurveyType.WEEKLY).count(), 1)
+
+
+class SurveyTitleSyncTests(TestCase):
+    """pre_save signal keeps the survey title in sync when week_number is changed."""
+
+    def test_title_updated_when_week_number_changes(self):
+        module = Module.objects.create(week_number=88, title="Week 88")
+        survey = Survey.objects.get(module=module, type=SurveyType.WEEKLY)
+        self.assertEqual(survey.title, "Week 88")
+
+        module.week_number = 89
+        module.save()
+
+        survey.refresh_from_db()
+        self.assertEqual(survey.title, "Week 89")
+
+    def test_custom_title_not_overwritten(self):
+        module = Module.objects.create(week_number=90, title="Week 90")
+        survey = Survey.objects.get(module=module, type=SurveyType.WEEKLY)
+        survey.title = "Custom Title"
+        survey.save()
+
+        module.week_number = 91
+        module.save()
+
+        survey.refresh_from_db()
+        self.assertEqual(survey.title, "Custom Title")
+
+    def test_code_never_changed_on_reorder(self):
+        module = Module.objects.create(week_number=92, title="Week 92")
+        survey = Survey.objects.get(module=module, type=SurveyType.WEEKLY)
+        original_code = survey.code
+
+        module.week_number = 93
+        module.save()
+
+        survey.refresh_from_db()
+        self.assertEqual(survey.code, original_code)
+
+
+class SurveyAdminAPITests(APITestCase):
+    """Stage-2: admin-only survey API endpoints and PATCH guardrails."""
+
+    QUESTIONS = [
+        {"id": "q1", "type": "integer", "text": "How many times?", "unit": "times"},
+        {
+            "id": "q2",
+            "type": "likert",
+            "text": "Rate it",
+            "min": 0,
+            "max": 6,
+            "scale_labels": {"0": "Never", "6": "Always"},
+            "skip_if": {"question_id": "q1", "value": 0},
+        },
+        {"id": "q3", "type": "longtext", "text": "Reflect"},
+    ]
+
+    def setUp(self):
+        self.student = User.objects.create_user(
+            email="sadmin_student@test.local", password="pass",
+        )
+        self.admin = User.objects.create_user(
+            email="sadmin_admin@test.local", password="pass", role=User.Role.ADMIN,
+        )
+        self.module = Module.objects.create(
+            week_number=95, title="Week 95", is_published=True,
+        )
+        self.survey, _ = Survey.objects.update_or_create(
+            module=self.module,
+            type="weekly",
+            defaults={"code": "weekly-w95", "title": "Week 95", "questions": self.QUESTIONS},
+        )
+
+    # ── Access control ──────────────────────────────────────────────────────────
+
+    def test_non_admin_gets_403_on_admin_list(self):
+        self.client.force_login(self.student)
+        resp = self.client.get("/api/surveys/admin-list/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_can_access_admin_list(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get("/api/surveys/admin-list/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        ids = [s["id"] for s in resp.data]
+        self.assertIn(self.survey.pk, ids)
+        entry = next(s for s in resp.data if s["id"] == self.survey.pk)
+        self.assertIn("response_count", entry)
+
+    def test_non_admin_gets_403_on_patch(self):
+        self.client.force_login(self.student)
+        resp = self.client.patch(
+            f"/api/surveys/{self.survey.pk}/",
+            {"title": "Hacked"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_existing_get_endpoints_unchanged_for_student(self):
+        """GET /api/surveys/ and GET /api/surveys/{id}/ return the same shape as before."""
+        self.client.force_login(self.student)
+        list_resp = self.client.get("/api/surveys/")
+        self.assertEqual(list_resp.status_code, status.HTTP_200_OK)
+        detail_resp = self.client.get(f"/api/surveys/{self.survey.pk}/")
+        self.assertEqual(detail_resp.status_code, status.HTTP_200_OK)
+        self.assertIn("questions", detail_resp.data)
+        self.assertNotIn("response_count", detail_resp.data)
+
+    # ── Title editing ───────────────────────────────────────────────────────────
+
+    def test_admin_can_update_title(self):
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/surveys/{self.survey.pk}/",
+            {"title": "New Title"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.survey.refresh_from_db()
+        self.assertEqual(self.survey.title, "New Title")
+
+    def test_title_edit_allowed_when_responses_exist(self):
+        SurveyResponse.objects.create(user=self.student, survey=self.survey, answers={})
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/surveys/{self.survey.pk}/",
+            {"title": "New Title Despite Responses"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    # ── Question editing ────────────────────────────────────────────────────────
+
+    def test_question_edit_rejected_when_responses_exist(self):
+        SurveyResponse.objects.create(user=self.student, survey=self.survey, answers={})
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/surveys/{self.survey.pk}/",
+            {"questions": [{"id": "q1", "type": "integer", "text": "Changed"}]},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("questions", resp.data)
+
+    def test_delete_blocked_when_skip_if_dependent_exists(self):
+        """Removing q1 from the list while q2 depends on it via skip_if is rejected."""
+        questions_without_q1 = [q for q in self.survey.questions if q["id"] != "q1"]
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/surveys/{self.survey.pk}/",
+            {"questions": questions_without_q1},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_invalid_skip_if_reference_rejected(self):
+        self.client.force_login(self.admin)
+        bad_questions = [
+            {"id": "q1", "type": "integer", "text": "Count", "unit": "times"},
+            {
+                "id": "q2",
+                "type": "likert",
+                "text": "Rate",
+                "min": 0,
+                "max": 6,
+                "skip_if": {"question_id": "q_nonexistent", "value": 0},
+            },
+        ]
+        resp = self.client.patch(
+            f"/api/surveys/{self.survey.pk}/",
+            {"questions": bad_questions},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # ── Unknown field preservation ──────────────────────────────────────────────
+
+    def test_unknown_fields_preserved_after_title_only_edit(self):
+        original_questions = [dict(q) for q in self.survey.questions]
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/surveys/{self.survey.pk}/",
+            {"title": "Title Change Only"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.survey.refresh_from_db()
+        self.assertEqual(self.survey.questions, original_questions)
+
+    def test_unknown_question_fields_preserved_after_question_edit(self):
+        """PATCH with stripped questions (no scale_labels/skip_if) must restore them from existing data."""
+        stripped_qs = [
+            {"id": "q1", "type": "integer", "text": "Modified text", "unit": "times"},
+            {"id": "q2", "type": "likert", "text": "Rate it", "min": 0, "max": 6},
+            {"id": "q3", "type": "longtext", "text": "Reflect"},
+        ]
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/surveys/{self.survey.pk}/",
+            {"questions": stripped_qs},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.survey.refresh_from_db()
+
+        q2 = next(q for q in self.survey.questions if q["id"] == "q2")
+        self.assertEqual(q2.get("scale_labels"), {"0": "Never", "6": "Always"})
+        self.assertEqual(q2.get("skip_if"), {"question_id": "q1", "value": 0})
