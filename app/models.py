@@ -88,6 +88,7 @@ class UserManager(BaseUserManager):
     def create_superuser(self, email, password, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault("role", "admin")
         if extra_fields.get("is_staff") is not True:
             raise ValueError("Superuser must have is_staff=True.")
         if extra_fields.get("is_superuser") is not True:
@@ -116,6 +117,14 @@ class User(AbstractUser):
     provider_uid = models.CharField(max_length=255, blank=True, null=True)  # noqa: DJ01 (so flake8 linting ignores null=True)
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.STUDENT)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        # Superusers are always app admins.
+        if self.is_superuser:
+            self.role = self.Role.ADMIN
+        # Role is the source of truth for staff status.
+        self.is_staff = self.role == self.Role.ADMIN
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.full_name or self.email
