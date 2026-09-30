@@ -243,6 +243,9 @@ web_modules/
 .env.local
 .env.prod
 
+# flake8 and flake8-django linting config file
+.flake8
+
 # parcel-bundler cache (https://parceljs.org/)
 .cache
 .parcel-cache

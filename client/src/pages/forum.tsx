@@ -85,6 +85,23 @@ function formatRelativeTime(iso: string) {
   });
 }
 
+function TimestampWithEdit({
+  createdAt,
+  editedAt,
+  className = "text-xs text-[#9CA3AF]",
+}: {
+  createdAt: string;
+  editedAt?: string | null;
+  className?: string;
+}) {
+  return (
+    <span className={className}>
+      {formatRelativeTime(createdAt)}
+      {editedAt && <span className={className}> (edited)</span>}
+    </span>
+  );
+}
+
 function Avatar({
   name,
   avatarUrl,
@@ -102,7 +119,6 @@ function Avatar({
   );
 }
 
-
 const POST_WINDOW_MS = 30_000;
 const POST_LIMIT = 3;
 const TIMEOUT_SECONDS = 30;
@@ -113,12 +129,13 @@ function getStoredTimestamps(): number[] {
     const raw = localStorage.getItem(POST_TIMESTAMPS_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed.filter((n) => typeof n === "number") : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((n) => typeof n === "number")
+      : [];
   } catch {
     return [];
   }
 }
-
 
 function computeRemainingSeconds(timestamps: number[], now: number) {
   const recent = timestamps.filter((t) => now - t < POST_WINDOW_MS);
@@ -126,7 +143,6 @@ function computeRemainingSeconds(timestamps: number[], now: number) {
   const lockoutEnd = Math.max(...recent) + TIMEOUT_SECONDS * 1000;
   return Math.max(0, Math.ceil((lockoutEnd - now) / 1000));
 }
-
 
 type ForumUser = {
   full_name?: string | null;
@@ -139,14 +155,13 @@ function isAdminUser(user: ForumUser | null) {
   return Boolean(user?.is_staff) || user?.role === "admin";
 }
 
-
 function useForumPostCooldown(bypass: boolean) {
   const [remaining, setRemaining] = useState(0);
 
   useEffect(() => {
-      if (bypass) {
-        return;
-      }
+    if (bypass) {
+      return;
+    }
     function tick() {
       setRemaining(computeRemainingSeconds(getStoredTimestamps(), Date.now()));
     }
@@ -203,13 +218,18 @@ function Composer({
     <div className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
       <form onSubmit={handleSubmit}>
         <div className="flex items-center gap-3">
-          <Avatar name={user?.full_name || "User"} avatarUrl={user?.avatar_url} />
-          <p className="text-sm font-bold text-ink">What&apos;s on your mind?</p>
+          <Avatar
+            name={user?.full_name || "User"}
+            avatarUrl={user?.avatar_url}
+          />
+          <p className="text-sm font-bold text-ink">
+            What&apos;s on your mind?
+          </p>
         </div>
         <textarea
           value={body}
           onChange={(e) => setBody(e.target.value)}
-          placeholder="Share your thoughts, ask a question, or offer support…"
+          placeholder="Share your thoughts, ask a question, or start a discussion..."
           rows={3}
           className="mt-3 w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-brand-blue"
         />
@@ -264,72 +284,77 @@ function PostCard({ post, onEdit, onDelete }: PostCardProps) {
   }
 
   return (
-    <div className="flex gap-3">
-      <Avatar name={post.author_name} avatarUrl={post.author_avatar_url} />
-      <div className="min-w-0 flex-1 rounded-[10px] border border-gray-200 bg-white p-4">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-baseline gap-2">
-            <span className="text-sm font-semibold text-ink">
-              {post.author_name}
-            </span>
-            <span className="text-xs text-[#9CA3AF]">
-              {formatRelativeTime(post.created_at)}
-            </span>
-          </div>
-          {post.can_edit && !editing && (
-            <div className="flex shrink-0 items-center gap-3">
-              <button
-                type="button"
-                onClick={() => {
-                  setDraft(post.body);
-                  setEditing(true);
-                }}
-                className="text-xs font-semibold text-brand-blue hover:underline"
-              >
-                Edit
-              </button>
-              <button
-                type="button"
-                onClick={() => onDelete(post.id)}
-                className="text-xs font-semibold text-red-500 hover:underline"
-              >
-                Delete
-              </button>
+    <div className="rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+      <div className="flex items-start gap-3">
+        <Avatar name={post.author_name} avatarUrl={post.author_avatar_url} />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-baseline gap-2">
+              <span className="text-sm font-semibold text-ink">
+                {post.author_name}
+              </span>
+              <TimestampWithEdit
+                createdAt={post.created_at}
+                editedAt={post.edited_at}
+              />
             </div>
+            {post.can_edit && !editing && (
+              <div className="flex shrink-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDraft(post.body);
+                    setEditing(true);
+                  }}
+                  className="text-xs font-semibold text-brand-blue hover:underline"
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onDelete(post.id)}
+                  className="text-xs font-semibold text-red-500 hover:underline"
+                >
+                  Delete
+                </button>
+              </div>
+            )}
+          </div>
+
+          {editing ? (
+            <div className="mt-3 space-y-2">
+              <textarea
+                value={draft}
+                onChange={(e) => setDraft(e.target.value)}
+                rows={3}
+                className="w-full resize-none rounded-xl border border-gray-200 p-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+              />
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="rounded-lg bg-[#0F172A] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  {saving ? "Saving…" : "Save"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs font-semibold text-ink"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          ) : (
+            <>
+              <p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
+                {post.body}
+              </p>
+            </>
           )}
         </div>
-
-        {editing ? (
-          <div className="mt-3 space-y-2">
-            <textarea
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
-              rows={3}
-              className="w-full resize-none rounded-xl border border-gray-200 p-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
-            />
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={handleSave}
-                disabled={saving}
-                className="rounded-lg bg-[#0F172A] px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
-              >
-                {saving ? "Saving…" : "Save"}
-              </button>
-              <button
-                type="button"
-                onClick={() => setEditing(false)}
-                className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs font-semibold text-ink"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        ) : (
-          <p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
-            {post.body}
-          </p>
-        )}
       </div>
     </div>
   );
@@ -367,7 +392,19 @@ function ThreadDetailView({
     thread.opening_post?.body ?? thread.body,
   );
   const [savingOpening, setSavingOpening] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
   const { remaining, markPosted } = useForumPostCooldown(isAdminUser(user));
+
+  async function handlePinToggle() {
+    setPinError(null);
+    try {
+      await onPinThread(thread.id, !thread.is_pinned);
+    } catch (error) {
+      setPinError(
+        error instanceof Error ? error.message : "Failed to update pin",
+      );
+    }
+  }
 
   async function handleReply(e: FormEvent) {
     e.preventDefault();
@@ -415,22 +452,28 @@ function ThreadDetailView({
         )}
 
         <div className="flex items-start gap-3">
-          <Avatar name={thread.author_name} avatarUrl={thread.author_avatar_url} />
+          <Avatar
+            name={thread.author_name}
+            avatarUrl={thread.author_avatar_url}
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
               <div className="flex items-baseline gap-2">
                 <span className="text-sm font-semibold text-ink">
                   {thread.author_name}
                 </span>
-                <span className="text-xs text-[#9CA3AF]">
-                  {formatRelativeTime(thread.created_at)}
-                </span>
+                <TimestampWithEdit
+                  createdAt={thread.created_at}
+                  editedAt={
+                    thread.edited_at ?? thread.opening_post?.edited_at ?? null
+                  }
+                />
               </div>
               <div className="flex shrink-0 items-center gap-3">
                 {thread.can_pin && !editingOpening && (
                   <button
                     type="button"
-                    onClick={() => onPinThread(thread.id, !thread.is_pinned)}
+                    onClick={handlePinToggle}
                     className="text-xs font-semibold text-amber-600 hover:underline"
                   >
                     {thread.is_pinned ? "Unpin" : "Pin"}
@@ -487,9 +530,16 @@ function ThreadDetailView({
                 </div>
               </div>
             ) : (
-              <p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
-                {thread.body}
-              </p>
+              <>
+                <p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
+                  {thread.body}
+                </p>
+                {pinError && (
+                  <p className="mt-2 text-sm font-medium text-red-600">
+                    {pinError}
+                  </p>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -497,8 +547,8 @@ function ThreadDetailView({
 
       {/* Replies */}
       {thread.replies.length > 0 && (
-        <div className="space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#9CA3AF]">
+        <div className="mt-4 space-y-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-white">
             {thread.replies.length}{" "}
             {thread.replies.length === 1 ? "Reply" : "Replies"}
           </p>
@@ -565,13 +615,24 @@ function ThreadDetailView({
 type ThreadRowProps = {
   thread: ForumThread;
   isFirst: boolean;
+  isLast: boolean;
+  isOnly: boolean;
   isAdmin: boolean;
   onSelect: (id: number) => void;
   onEdit: (id: number, body: string) => Promise<void>;
   onDelete: (id: number) => void;
 };
 
-function ThreadRow({ thread, isFirst, isAdmin, onSelect, onEdit, onDelete }: ThreadRowProps) {
+function ThreadRow({
+  thread,
+  isFirst,
+  isLast,
+  isOnly,
+  isAdmin,
+  onSelect,
+  onEdit,
+  onDelete,
+}: ThreadRowProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(thread.body);
   const [saving, setSaving] = useState(false);
@@ -606,6 +667,9 @@ function ThreadRow({ thread, isFirst, isAdmin, onSelect, onEdit, onDelete }: Thr
         "w-full p-5 text-left transition-colors",
         editing ? "" : "cursor-pointer hover:bg-surface-muted",
         isFirst ? "" : "border-t border-gray-200",
+        isOnly ? "rounded-[10px]" : "",
+        !isOnly && isFirst ? "rounded-t-[10px]" : "",
+        !isOnly && isLast ? "rounded-b-[10px]" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -617,19 +681,26 @@ function ThreadRow({ thread, isFirst, isAdmin, onSelect, onEdit, onDelete }: Thr
       )}
       <div className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-start gap-3">
-          <Avatar name={thread.author_name} avatarUrl={thread.author_avatar_url} />
+          <Avatar
+            name={thread.author_name}
+            avatarUrl={thread.author_avatar_url}
+          />
           <div className="min-w-0 flex-1">
             <div className="flex items-baseline gap-2">
               <span className="text-sm font-semibold text-ink">
                 {thread.author_name}
               </span>
-              <span className="text-xs text-[#9CA3AF]">
-                {formatRelativeTime(thread.updated_at)}
-              </span>
+              <TimestampWithEdit
+                createdAt={thread.created_at}
+                editedAt={thread.edited_at}
+              />
             </div>
 
             {editing ? (
-              <div className="mt-2 space-y-2" onClick={(e) => e.stopPropagation()}>
+              <div
+                className="mt-2 space-y-2"
+                onClick={(e) => e.stopPropagation()}
+              >
                 <textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
@@ -734,18 +805,19 @@ function FeedView({
           The forum is read-only — new threads can&apos;t be started right now.
         </p>
       )}
-
       <div className="rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
         {threads.length === 0 ? (
           <p className="py-12 text-center text-sm text-[#9CA3AF]">
             No threads yet. Be the first to start a conversation!
           </p>
         ) : (
-          threads.map((t, i) => (
+          threads.map((thread, index) => (
             <ThreadRow
-              key={t.id}
-              thread={t}
-              isFirst={i === 0}
+              key={thread.id}
+              thread={thread}
+              isFirst={index === 0}
+              isLast={index === threads.length - 1}
+              isOnly={threads.length === 1}
               isAdmin={isAdmin}
               onSelect={onSelect}
               onEdit={onEditThread}
@@ -757,8 +829,7 @@ function FeedView({
     </div>
   );
 }
-
-// ── Right column ─────────────────────────────────────────────────────────────
+// ── Right column ────────────────────────────────────────────────────────────
 
 function ForumSidebar({
   query,
@@ -805,6 +876,15 @@ export default function ForumPage() {
   const [query, setQuery] = useState("");
 
   useEffect(() => {
+    const handleForumReset = () => {
+      setSelectedThread(null);
+    };
+
+    window.addEventListener("forum:reset", handleForumReset);
+    return () => window.removeEventListener("forum:reset", handleForumReset);
+  }, []);
+
+  useEffect(() => {
     if (authLoading) return;
 
     let cancelled = false;
@@ -847,6 +927,13 @@ export default function ForumPage() {
         t.author_name.toLowerCase().includes(q),
     );
   }, [threads, query]);
+
+  async function refreshThreads() {
+    const token = localStorage.getItem("token") ?? "";
+    const updated = await listForumThreads(token);
+    setThreads(updated);
+    return updated;
+  }
 
   async function loadThread(id: number) {
     const token = localStorage.getItem("token") ?? "";
@@ -900,11 +987,12 @@ export default function ForumPage() {
   async function handlePinThread(id: number, is_pinned: boolean) {
     const token = localStorage.getItem("token") ?? "";
     await pinForumThread(id, is_pinned, token);
-    setSelectedThread((prev) =>
-      prev && prev.id === id ? { ...prev, is_pinned } : prev,
-    );
     const updated = await listForumThreads(token);
     setThreads(updated);
+    if (selectedThread && selectedThread.id === id) {
+      const refreshedThread = await getForumThread(id, token);
+      setSelectedThread(refreshedThread);
+    }
   }
 
   async function handleDeleteThread() {
@@ -995,8 +1083,12 @@ export default function ForumPage() {
 
                 {selectedThread ? (
                   <ThreadDetailView
+                    key={selectedThread.id}
                     thread={selectedThread}
-                    onBack={() => setSelectedThread(null)}
+                    onBack={async () => {
+                      setSelectedThread(null);
+                      await refreshThreads();
+                    }}
                     onReply={handleReply}
                     onEditPost={handleEditPost}
                     onDeletePost={handleDeletePost}
