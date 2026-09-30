@@ -41,7 +41,7 @@ export default function Sidebar({
   return (
     <>
       <aside
-        className={`hidden md:flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-4 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full md:sticky md:top-4 md:bottom-4 md:min-h-[calc(100dvh-2rem)] lg:top-6 lg:bottom-6 lg:min-h-[calc(100dvh-3rem)]" : "h-screen w-[280px] overflow-y-auto"}`}
+        className={`hidden md:flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-4 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full md:sticky md:top-24 md:bottom-4 md:h-[calc(100dvh-7rem)] md:max-h-[1032px] lg:top-[7.5rem] lg:bottom-6 lg:h-[calc(100dvh-9rem)]" : "h-screen w-[280px] overflow-y-auto"}`}
       >
         <nav
           aria-label="Main navigation"
