@@ -1,3 +1,4 @@
+import re
 from datetime import timedelta
 
 from django.conf import settings
@@ -677,6 +678,144 @@ class SurveyResponseSerializer(serializers.ModelSerializer):
 class SurveyResponseUpdateSerializer(SurveyResponseSerializer):
     class Meta(SurveyResponseSerializer.Meta):
         read_only_fields = list(SurveyResponseSerializer.Meta.read_only_fields) + ["survey"]
+
+
+SURVEY_QUESTION_TYPES = ("integer", "likert", "longtext")
+SURVEY_QUESTION_ID_RE = re.compile(r"^[A-Za-z0-9_-]{1,30}$")
+_SURVEY_QUESTION_KEYS = {"id", "type", "text", "section", "unit", "min", "max", "scale_labels", "skip_if"}
+# Fields that only make sense for one question type.
+_SURVEY_TYPE_ONLY_KEYS = {"unit": "integer", "min": "likert", "max": "likert", "scale_labels": "likert"}
+SURVEY_MAX_QUESTIONS = 100
+SURVEY_CODE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+# Control characters other than tab/newline; Postgres also rejects NUL in JSON.
+_CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+# Changing these on a survey that already has responses would invalidate stored
+# answers or shift CSV columns, so they're frozen once anyone has responded.
+_SURVEY_STRUCTURE_KEYS = ("id", "type", "min", "max", "skip_if")
+
+
+def _is_int(value):
+    return isinstance(value, int) and not isinstance(value, bool)
+
+
+def validate_survey_questions(questions):
+    """Check a survey's question definitions; raise ValidationError listing every problem."""
+    if not isinstance(questions, list) or not questions:
+        raise serializers.ValidationError("A survey needs at least one question.")
+    if len(questions) > SURVEY_MAX_QUESTIONS:
+        raise serializers.ValidationError(f"A survey can have at most {SURVEY_MAX_QUESTIONS} questions.")
+    errors = []
+    seen = {}
+    for i, q in enumerate(questions, start=1):
+        if not isinstance(q, dict):
+            errors.append(f"Question {i}: must be an object.")
+            continue
+        label = f"Question {q.get('id', i)!s}"
+        unknown = set(q) - _SURVEY_QUESTION_KEYS
+        if unknown:
+            errors.append(f"{label}: unknown field(s) {', '.join(sorted(unknown))}.")
+        qid = q.get("id")
+        if not isinstance(qid, str) or not SURVEY_QUESTION_ID_RE.match(qid):
+            errors.append(f"Question {i}: id must be 1-30 letters, digits, '-' or '_'.")
+        elif qid in seen:
+            errors.append(f"{label}: duplicate id.")
+        if q.get("type") not in SURVEY_QUESTION_TYPES:
+            errors.append(f"{label}: type must be one of {', '.join(SURVEY_QUESTION_TYPES)}.")
+        misplaced = sorted(k for k, t in _SURVEY_TYPE_ONLY_KEYS.items() if k in q and q.get("type") != t)
+        if misplaced:
+            errors.append(f"{label}: {', '.join(misplaced)} not allowed on {q.get('type')} questions.")
+        text = q.get("text")
+        if not isinstance(text, str) or not text.strip():
+            errors.append(f"{label}: text is required.")
+        elif len(text) > 1000:
+            errors.append(f"{label}: text must be at most 1000 characters.")
+        for key in ("section", "unit"):
+            if key in q and (not isinstance(q[key], str) or len(q[key]) > 1000):
+                errors.append(f"{label}: {key} must be text of at most 1000 characters.")
+        texts = [q.get(k) for k in ("text", "section", "unit")]
+        if isinstance(q.get("scale_labels"), dict):
+            texts += list(q["scale_labels"].values())
+        if any(isinstance(t, str) and _CONTROL_CHARS_RE.search(t) for t in texts):
+            errors.append(f"{label}: text contains invalid control characters.")
+        if q.get("type") == "likert":
+            lo, hi = q.get("min"), q.get("max")
+            if not (_is_int(lo) and _is_int(hi) and lo < hi <= lo + 10):
+                errors.append(f"{label}: likert questions need whole-number min < max, at most 10 apart.")
+            labels = q.get("scale_labels", {})
+            if not isinstance(labels, dict) or not all(
+                isinstance(v, str) and k.lstrip("-").isdigit() for k, v in labels.items()
+            ):
+                errors.append(f"{label}: scale_labels must map scale values to text.")
+        skip_if = q.get("skip_if")
+        if skip_if is not None:
+            target_id = skip_if.get("question_id") if isinstance(skip_if, dict) else None
+            target = seen.get(target_id) if isinstance(target_id, str) else None
+            if (
+                not isinstance(skip_if, dict)
+                or set(skip_if) != {"question_id", "value"}
+                or target is None
+                or target.get("type") not in ("integer", "likert")
+                or not _is_int(skip_if.get("value"))
+            ):
+                errors.append(f"{label}: skip_if must name an earlier number/scale question and a whole-number value.")
+        if isinstance(qid, str):
+            seen.setdefault(qid, q)
+    if errors:
+        raise serializers.ValidationError(errors)
+    return questions
+
+
+class SurveyAdminSerializer(serializers.ModelSerializer):
+    response_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Survey
+        fields = ["id", "code", "title", "type", "module", "questions", "response_count"]
+
+    def get_response_count(self, obj):
+        count = getattr(obj, "response_count", None)
+        return count if count is not None else obj.responses.count()
+
+    def get_fields(self):
+        fields = super().get_fields()
+        # The model defaults questions to [], which would let a survey be created empty.
+        fields["questions"].required = self.instance is None
+        return fields
+
+    def validate_code(self, value):
+        # The code ends up in the CSV download's filename.
+        if not SURVEY_CODE_RE.match(value):
+            raise serializers.ValidationError("Use only letters, digits, '-' and '_'.")
+        return value
+
+    def validate_questions(self, value):
+        return validate_survey_questions(value)
+
+    def validate(self, attrs):
+        survey = self.instance
+        if survey is not None and survey.responses.exists():
+            for field in ("type", "module"):
+                if field in attrs and attrs[field] != getattr(survey, field):
+                    raise serializers.ValidationError(
+                        {field: "Can't be changed once participants have responded."}
+                    )
+            if "questions" in attrs:
+                def structure(qs):
+                    return [tuple(q.get(k) for k in _SURVEY_STRUCTURE_KEYS) for q in qs]
+                if structure(attrs["questions"]) != structure(survey.questions or []):
+                    raise serializers.ValidationError({"questions": [
+                        "Participants have already responded, so questions can't be added, removed, "
+                        "reordered or change type, range or skip logic. Wording can still be edited."
+                    ]})
+        candidate = Survey(
+            type=attrs.get("type", survey.type if survey else None),
+            module=attrs.get("module", survey.module if survey else None),
+        )
+        try:
+            candidate.clean()
+        except DjangoValidationError as e:
+            raise serializers.ValidationError(e.message_dict)
+        return attrs
 
 
 class SurveyResponseAdminSerializer(serializers.ModelSerializer):

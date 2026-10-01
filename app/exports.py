@@ -31,7 +31,7 @@ def _question_ids(surveys):
     return ids
 
 
-def _cohort_names(user_ids):
+def cohort_names(user_ids):
     """Each user's cohort: the latest active enrollment, else their latest enrollment of any status."""
     names = {}
     enrollments = (
@@ -60,7 +60,7 @@ def survey_responses_csv(surveys, include_identity=False):
         .select_related("survey__module", "user")
         .order_by("survey__module__week_number", "survey__code", "submitted_at")
     )
-    cohorts = _cohort_names({r.user_id for r in responses})
+    cohorts = cohort_names({r.user_id for r in responses})
 
     header = ["response_id", "survey_code", "survey_title", "week", "participant_id"]
     if include_identity:

@@ -331,6 +331,8 @@ import type {
 	DashboardStats,
 	AdditionalResourceCategory,
 	AdminAdditionalResource,
+	AdminSurvey,
+	AdminSurveyResponse,
 } from "@/types/admin";
 
 export async function listUsers(token: string): Promise<AdminUser[]> {
@@ -638,6 +640,61 @@ export async function getDashboardStats(
 		headers: { Authorization: `Token ${token}` },
 	});
 	return handleResponse<DashboardStats>(res);
+}
+
+// ── Admin: Surveys ────────────────────────────────────────────────────────────
+
+export async function listSurveysAdmin(token: string): Promise<AdminSurvey[]> {
+	const res = await fetch(`${API_BASE_URL}/surveys/manage/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<AdminSurvey[]>(res);
+}
+
+export async function getSurveyAdmin(
+	id: number,
+	token: string,
+): Promise<Omit<AdminSurvey, "response_count">> {
+	const res = await fetch(`${API_BASE_URL}/surveys/${id}/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<Omit<AdminSurvey, "response_count">>(res);
+}
+
+export async function createSurvey(
+	data: Omit<AdminSurvey, "id" | "response_count">,
+	token: string,
+): Promise<AdminSurvey> {
+	const res = await fetch(`${API_BASE_URL}/surveys/`, {
+		method: "POST",
+		headers: authHeader(token),
+		body: JSON.stringify(data),
+	});
+	return handleResponse<AdminSurvey>(res);
+}
+
+export async function updateSurvey(
+	id: number,
+	data: Partial<Omit<AdminSurvey, "id" | "response_count">>,
+	token: string,
+): Promise<AdminSurvey> {
+	const res = await fetch(`${API_BASE_URL}/surveys/${id}/`, {
+		method: "PATCH",
+		headers: authHeader(token),
+		body: JSON.stringify(data),
+	});
+	return handleResponse<AdminSurvey>(res);
+}
+
+export async function deleteSurvey(id: number, token: string): Promise<void> {
+	return deleteRequest(`${API_BASE_URL}/surveys/${id}/`, token);
+}
+
+export async function listSurveyResponses(id: number, token: string): Promise<AdminSurveyResponse[]> {
+	const res = await fetch(`${API_BASE_URL}/surveys/${id}/responses/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<AdminSurveyResponse[]>(res);
 }
 
 /** Download survey responses as CSV (admin only). Omit surveyId for all surveys. */

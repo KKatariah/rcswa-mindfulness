@@ -175,6 +175,9 @@ const PAGES: { path: string; as: string; interact?: (page: Page) => Promise<void
 	{ path: "/admin/resources", as: ADMIN },
 	{ path: "/admin/modules", as: ADMIN },
 	{ path: "/admin/modules/1", as: ADMIN },
+	{ path: "/admin/surveys", as: ADMIN },
+	{ path: "/admin/surveys/2", as: ADMIN, interact: (page) => page.getByRole("tab", { name: /Responses/ }).click() },
+	{ path: "/surveys/1", as: "reader@e2e.local" },
 ];
 
 test.describe("fuzz: hostile API data", () => {

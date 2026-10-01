@@ -1,3 +1,4 @@
+import re
 import unicodedata
 
 from django.conf import settings as django_settings
@@ -5,7 +6,7 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import Count, Prefetch, ProtectedError
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -38,7 +39,7 @@ from .models import (
 from .notifications import notify_survey_unlocked
 from .permissions import IsAdminOrStaff, IsAdminOrSelf
 from .throttles import AuthRateThrottle
-from .exports import survey_responses_csv
+from .exports import cohort_names, survey_responses_csv
 
 
 from google.oauth2 import id_token
@@ -62,6 +63,7 @@ from .serializers import (
     NotificationPreferenceSerializer,
     PushSubscriptionSerializer,
     RegisterSerializer,
+    SurveyAdminSerializer,
     SurveyDetailSerializer,
     SurveyResponseAdminSerializer,
     SurveyResponseSerializer,
@@ -669,20 +671,68 @@ class UserProfileViewSet(
 
 # ── Surveys ────────────────────────────────────────────────────────────────────
 
-class SurveyViewSet(viewsets.ReadOnlyModelViewSet):
+class SurveyViewSet(viewsets.ModelViewSet):
+    """Participants list and read surveys; admins also create, edit and delete them.
+
+    GET /surveys/manage/            admin list with questions and response counts
+    GET /surveys/{id}/responses/    admin view of one survey's responses
+    """
     permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    _ADMIN_ACTIONS = ("create", "partial_update", "destroy", "manage", "responses")
+
+    def get_permissions(self):
+        if self.action in self._ADMIN_ACTIONS:
+            return [IsAuthenticated(), IsAdminOrStaff()]
+        # Falls back to permission_classes, which @action(permission_classes=...) overrides (e.g. export).
+        return super().get_permissions()
 
     def get_queryset(self):
-        return (
+        qs = (
             Survey.objects
             .select_related("module")
             .prefetch_related("module__content_items")
         )
+        if self.action in self._ADMIN_ACTIONS:
+            qs = qs.annotate(response_count=Count("responses")).order_by("module__week_number", "code")
+        return qs
 
     def get_serializer_class(self):
+        if self.action in self._ADMIN_ACTIONS:
+            return SurveyAdminSerializer
         if self.action == "retrieve":
             return SurveyDetailSerializer
         return SurveySerializer
+
+    def perform_destroy(self, instance):
+        try:
+            instance.delete()
+        except ProtectedError:
+            raise ValidationError({"detail": "This survey has responses, so it can't be deleted."})
+
+    @action(detail=False, methods=["get"])
+    def manage(self, request):
+        return Response(self.get_serializer(self.get_queryset(), many=True).data)
+
+    @action(detail=True, methods=["get"])
+    def responses(self, request, pk=None):
+        survey = self.get_object()
+        responses = list(
+            survey.responses.select_related("user").order_by("submitted_at")
+        )
+        cohorts = cohort_names({r.user_id for r in responses})
+        return Response([
+            {
+                "id": r.pk,
+                "participant_id": r.user_id,
+                "full_name": r.user.full_name,
+                "email": r.user.email,
+                "cohort": cohorts.get(r.user_id, ""),
+                "submitted_at": r.submitted_at,
+                "answers": r.answers,
+            }
+            for r in responses
+        ])
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
@@ -709,7 +759,8 @@ class SurveyViewSet(viewsets.ReadOnlyModelViewSet):
                 return Response({"detail": "Survey not found."}, status=status.HTTP_404_NOT_FOUND)
         include_identity = request.query_params.get("identify") in ("1", "true")
 
-        label = surveys.first().code if survey_id else "all"
+        # Codes set before codes were validated may hold characters unsafe in a header.
+        label = re.sub(r"[^A-Za-z0-9_-]", "_", surveys.first().code) if survey_id else "all"
         filename = f"survey-responses-{label}-{timezone.localdate().isoformat()}.csv"
         response = HttpResponse(
             survey_responses_csv(surveys, include_identity=include_identity),

@@ -2623,3 +2623,183 @@ class SurveyExportTests(APITestCase):
         self.assertEqual(self.client.get("/api/surveys/export/").status_code, status.HTTP_403_FORBIDDEN)
         self.client.logout()
         self.assertIn(self.client.get("/api/surveys/export/").status_code, (401, 403))
+
+
+class SurveyAdminTests(APITestCase):
+    QUESTIONS = [
+        {"id": "q1", "type": "integer", "text": "How many times?", "unit": "times", "section": "Formal practice"},
+        {"id": "q2", "type": "likert", "text": "How focused?", "min": 0, "max": 6,
+         "scale_labels": {"0": "Never", "6": "Always"}, "skip_if": {"question_id": "q1", "value": 0}},
+        {"id": "q3", "type": "longtext", "text": "Reflect."},
+    ]
+
+    def setUp(self):
+        self.admin = User.objects.create_user(email="admin@test.local", password="testpass", role=User.Role.ADMIN)
+        self.student = User.objects.create_user(email="s@test.local", password="testpass", full_name="Sam Student")
+        Enrollment.objects.create(user=self.student, cohort=_cohort(10))
+        with patch("app.signals._fire_async"):
+            self.w1 = Module.objects.create(week_number=1, title="W1", is_published=True)
+            self.w2 = Module.objects.create(week_number=2, title="W2", is_published=True)
+        self.survey = Survey.objects.create(
+            module=self.w1, code="wk1", title="Week 1", type="weekly", questions=self.QUESTIONS,
+        )
+        self.client.force_login(self.admin)
+
+    def _questions(self, **changes):
+        import copy
+        qs = copy.deepcopy(self.QUESTIONS)
+        for index, fields in changes.items():
+            qs[int(index[1:])].update(fields)
+        return qs
+
+    def _respond(self):
+        return SurveyResponse.objects.create(
+            user=self.student, survey=self.survey, answers={"q1": 2, "q2": 4, "q3": "Calm"},
+        )
+
+    def test_manage_lists_surveys_with_questions_and_response_counts(self):
+        self._respond()
+        resp = self.client.get("/api/surveys/manage/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data[0]["response_count"], 1)
+        self.assertEqual(resp.data[0]["questions"], self.QUESTIONS)
+
+    def test_admin_creates_survey(self):
+        resp = self.client.post("/api/surveys/", {
+            "code": "wk2", "title": "Week 2", "type": "weekly", "module": self.w2.pk, "questions": self.QUESTIONS,
+        }, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertEqual(Survey.objects.get(code="wk2").questions, self.QUESTIONS)
+
+    def test_weekly_survey_needs_module(self):
+        resp = self.client.post("/api/surveys/", {
+            "code": "wk9", "title": "Week 9", "type": "weekly", "questions": self.QUESTIONS,
+        }, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("module", resp.data)
+
+    def test_invalid_questions_are_rejected(self):
+        bad = [
+            [],
+            [{"id": "q1", "type": "integer", "text": ""}],
+            [{"id": "q1", "type": "rating", "text": "x"}],
+            [{"id": "q1", "type": "likert", "text": "x", "min": 6, "max": 0}],
+            [{"id": "q1", "type": "integer", "text": "x"}, {"id": "q1", "type": "integer", "text": "y"}],
+            [{"id": "q2", "type": "integer", "text": "x", "skip_if": {"question_id": "q9", "value": 0}}],
+            [{"id": "q1", "type": "integer", "text": "x", "colour": "red"}],
+            [{"id": "bad id!", "type": "integer", "text": "x"}],
+        ]
+        for questions in bad:
+            with self.subTest(questions=questions):
+                resp = self.client.patch(f"/api/surveys/{self.survey.pk}/", {"questions": questions}, format="json")
+                self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.survey.refresh_from_db()
+        self.assertEqual(self.survey.questions, self.QUESTIONS)
+
+    def test_wording_is_editable_after_responses(self):
+        self._respond()
+        questions = self._questions(q0={"text": "How often?", "section": "New heading"}, q2={"text": "Write."})
+        resp = self.client.patch(
+            f"/api/surveys/{self.survey.pk}/", {"title": "Week one", "questions": questions}, format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        self.survey.refresh_from_db()
+        self.assertEqual(self.survey.title, "Week one")
+        self.assertEqual(self.survey.questions[0]["text"], "How often?")
+
+    def test_structure_is_frozen_after_responses(self):
+        self._respond()
+        changes = [
+            self.QUESTIONS[:2],
+            self.QUESTIONS + [{"id": "q4", "type": "longtext", "text": "More?"}],
+            list(reversed(self.QUESTIONS)),
+            self._questions(q1={"max": 10}),
+            self._questions(q0={"type": "longtext"}),
+        ]
+        for questions in changes:
+            with self.subTest(questions=questions):
+                resp = self.client.patch(f"/api/surveys/{self.survey.pk}/", {"questions": questions}, format="json")
+                self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        resp = self.client.patch(f"/api/surveys/{self.survey.pk}/", {"module": self.w2.pk}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_structure_is_editable_before_responses(self):
+        questions = self.QUESTIONS + [{"id": "q4", "type": "longtext", "text": "More?"}]
+        resp = self.client.patch(f"/api/surveys/{self.survey.pk}/", {"questions": questions}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+
+    def test_delete_only_without_responses(self):
+        self._respond()
+        resp = self.client.delete(f"/api/surveys/{self.survey.pk}/")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertTrue(Survey.objects.filter(pk=self.survey.pk).exists())
+        SurveyResponse.objects.all().delete()
+        self.assertEqual(self.client.delete(f"/api/surveys/{self.survey.pk}/").status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_responses_lists_answers_with_identity_and_cohort(self):
+        self._respond()
+        resp = self.client.get(f"/api/surveys/{self.survey.pk}/responses/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data[0]["email"], "s@test.local")
+        self.assertEqual(resp.data[0]["cohort"], "Cohort 10")
+        self.assertEqual(resp.data[0]["answers"]["q2"], 4)
+
+    def test_students_cannot_manage(self):
+        self.client.force_login(self.student)
+        pk = self.survey.pk
+        self.assertEqual(self.client.get("/api/surveys/manage/").status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self.client.get(f"/api/surveys/{pk}/responses/").status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(
+            self.client.patch(f"/api/surveys/{pk}/", {"title": "x"}, format="json").status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertEqual(self.client.delete(f"/api/surveys/{pk}/").status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self.client.get("/api/surveys/export/").status_code, status.HTTP_403_FORBIDDEN)
+        # Reading surveys is unchanged for participants.
+        self.assertEqual(self.client.get(f"/api/surveys/{pk}/").status_code, status.HTTP_200_OK)
+
+    def test_unsafe_codes_are_rejected(self):
+        for code in ('wk"1', "wk\n1", "wk/1", "../x", "wk 1"):
+            with self.subTest(code=code):
+                resp = self.client.patch(f"/api/surveys/{self.survey.pk}/", {"code": code}, format="json")
+                self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_export_filename_is_safe_for_legacy_codes(self):
+        # Codes written before validation existed (e.g. via fixtures) must not break the header.
+        Survey.objects.filter(pk=self.survey.pk).update(code='wk"1\n')
+        resp = self.client.get(f"/api/surveys/export/?survey={self.survey.pk}")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIn('filename="survey-responses-wk_1_-', resp["Content-Disposition"])
+
+    def test_create_requires_questions(self):
+        resp = self.client.post("/api/surveys/", {"code": "x", "title": "x", "type": "intake"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("questions", resp.data)
+
+    def test_question_edge_cases_are_rejected_not_crashing(self):
+        integer = {"id": "q1", "type": "integer", "text": "x"}
+        bad = [
+            [{"id": f"q{i}", "type": "integer", "text": "x"} for i in range(101)],
+            [{"id": "q1", "type": "integer", "text": "a\x00b"}],
+            [{"id": "q1", "type": "longtext", "text": "x", "min": 0}],
+            [{"id": "q1", "type": "likert", "text": "x", "min": 0, "max": 6, "unit": "kg"}],
+            [integer, {"id": "q2", "type": "integer", "text": "y", "skip_if": {"question_id": ["q1"], "value": 0}}],
+            [integer, {"id": "q2", "type": "integer", "text": "y", "skip_if": {"question_id": {}, "value": 0}}],
+        ]
+        for questions in bad:
+            with self.subTest(questions=str(questions)[:80]):
+                resp = self.client.patch(f"/api/surveys/{self.survey.pk}/", {"questions": questions}, format="json")
+                self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_staff_can_manage(self):
+        staff = User.objects.create_user(email="staff@test.local", password="testpass", is_staff=True)
+        self.client.force_login(staff)
+        self.assertEqual(self.client.get("/api/surveys/manage/").status_code, status.HTTP_200_OK)
+
+    def test_manage_query_count_is_constant(self):
+        for week in range(3, 13):
+            with patch("app.signals._fire_async"):
+                module = Module.objects.create(week_number=week, title=f"W{week}", is_published=True)
+            Survey.objects.create(module=module, code=f"wk{week}", title="x", type="weekly", questions=self.QUESTIONS)
+        with self.assertNumQueries(5):
+            self.client.get("/api/surveys/manage/")

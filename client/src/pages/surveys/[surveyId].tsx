@@ -85,6 +85,18 @@ export default function SurveyPage() {
 		}));
 	}, [survey]);
 	
+	// Wording for the questions SurveyQuestions lays out itself, so admin edits show up.
+	const { questionText, sectionText } = useMemo(() => {
+		const questionText: Record<number, string> = {};
+		const sectionText: Record<number, string> = {};
+		for (const q of survey?.questions ?? []) {
+			const n = Number(q.id.replace("q", ""));
+			if (q.text) questionText[n] = q.text;
+			if (q.section) sectionText[n] = q.section;
+		}
+		return { questionText, sectionText };
+	}, [survey]);
+
 	const title = survey?.title || `Week ${surveyId ?? "1"} Survey`;
 
 	const handleSubmit = async (answers: Record<number, number | string>) => {
@@ -174,6 +186,8 @@ export default function SurveyPage() {
 							<SurveyQuestions
 								formalQuestions={formalQuestions}
 								informalQuestions={informalQuestions}
+								questionText={questionText}
+								sectionText={sectionText}
 								onSubmit={handleSubmit}
 								isSubmitting={submitting}
 							/>
