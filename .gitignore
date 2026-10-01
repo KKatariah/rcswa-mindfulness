@@ -300,3 +300,9 @@ dist
 .DS_Store
 
 opt/
+
+# Playwright e2e run output
+.next-e2e/
+e2e.sqlite3
+client/test-results/
+client/playwright-report/

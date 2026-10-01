@@ -470,7 +470,7 @@ export async function createEnrollment(
 
 export async function updateEnrollment(
 	id: number,
-	data: Partial<{ cohort: number; status: Enrollment["status"]; current_week: number }>,
+	data: Partial<{ cohort: number; status: Enrollment["status"] }>,
 	token: string,
 ): Promise<Enrollment> {
 	const res = await fetch(`${API_BASE_URL}/enrollments/${id}/`, {

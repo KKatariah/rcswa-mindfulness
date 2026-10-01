@@ -4,9 +4,10 @@ from django.utils import timezone
 from django.db import transaction
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from .serializers import ProfileUpdateSerializer, ChangePasswordSerializer
@@ -33,6 +34,7 @@ from .models import (
 
 from .notifications import notify_survey_unlocked
 from .permissions import IsAdminOrStaff, IsAdminOrSelf
+from .throttles import AuthRateThrottle
 
 
 from google.oauth2 import id_token
@@ -126,6 +128,7 @@ def _auto_enroll_new_user(user):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def register_view(request):
     serializer = RegisterSerializer(data=request.data)
 
@@ -149,6 +152,7 @@ def register_view(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def login_view(request):
     email = request.data.get("email")
     password = request.data.get("password")
@@ -179,23 +183,6 @@ def login_view(request):
     )
 
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def current_user_view(request):
-    user = request.user
-
-    return Response(
-        {
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-            }
-        },
-        status=status.HTTP_200_OK,
-    )
-
-
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
@@ -208,6 +195,7 @@ def logout_view(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def google_login_view(request):
     token = request.data.get("credential")
 
@@ -462,6 +450,11 @@ class IsAuthorOrAdmin(BasePermission):
 
 class ForumThreadViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    throttle_scope = "forum_post"
+
+    def get_throttles(self):
+        # Only creating threads/posts is rate limited; reads and edits are not.
+        return [ScopedRateThrottle()] if self.action == "create" else []
 
     def get_queryset(self):
         return (
@@ -531,6 +524,11 @@ class ForumPostViewSet(
 ):
     http_method_names = ["post", "patch", "delete", "head", "options"]
     serializer_class = ForumPostSerializer
+    throttle_scope = "forum_post"
+
+    def get_throttles(self):
+        # Only creating threads/posts is rate limited; reads and edits are not.
+        return [ScopedRateThrottle()] if self.action == "create" else []
 
     def get_queryset(self):
         return ForumPost.objects.filter(is_deleted=False).select_related("author")
@@ -834,7 +832,7 @@ def change_password_view(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    serializer = ChangePasswordSerializer(data=request.data)
+    serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

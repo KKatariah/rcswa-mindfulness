@@ -119,6 +119,7 @@ function Avatar({
   );
 }
 
+// Keep in step with the "forum_post" throttle rate in server/settings.py (6/min).
 const POST_WINDOW_MS = 30_000;
 const POST_LIMIT = 3;
 const TIMEOUT_SECONDS = 30;

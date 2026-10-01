@@ -27,6 +27,9 @@ export default function SurveyPage() {
 	const [survey, setSurvey] = useState<ApiSurveyDetail | null>(null);
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
+	const [submitting, setSubmitting] = useState(false);
+	const [submitError, setSubmitError] = useState<string | null>(null);
+	const [submitted, setSubmitted] = useState(false);
 
 	useEffect(() => {
 		if (authLoading || !router.isReady || !user) return;
@@ -94,18 +97,21 @@ export default function SurveyPage() {
 			payloadAnswers[`q${Number(key)}`] = value;
 		});
 
+		setSubmitting(true);
+		setSubmitError(null);
 		try {
-			const result = await submitSurveyResponse(
+			await submitSurveyResponse(
 				{
 					survey: Number(surveyId),
 					answers: payloadAnswers,
 				},
 				token,
 			);
-
-			console.log("Survey submitted:", result);
+			setSubmitted(true);
 		} catch (err) {
-			console.error("Submit failed:", err);
+			setSubmitError(err instanceof Error ? err.message : "Failed to submit survey");
+		} finally {
+			setSubmitting(false);
 		}
 	};
 
@@ -148,11 +154,31 @@ export default function SurveyPage() {
 					className="flex min-w-0 flex-col gap-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 				>
 					<SurveyHeader title={title} />
-					<SurveyQuestions
-						formalQuestions={formalQuestions}
-						informalQuestions={informalQuestions}
-						onSubmit={handleSubmit}
-					/>
+					{submitted || survey.has_responded ? (
+						<section
+							role="status"
+							className="rounded-[10px] border border-gray-200 bg-white p-6 text-center shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10"
+						>
+							<p className="text-base font-bold text-ink">Thank you, your survey has been submitted.</p>
+							<Link href="/surveys" className="mt-3 inline-block text-sm text-brand-blue underline">
+								Back to surveys
+							</Link>
+						</section>
+					) : (
+						<>
+							{submitError && (
+								<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+									{submitError}
+								</p>
+							)}
+							<SurveyQuestions
+								formalQuestions={formalQuestions}
+								informalQuestions={informalQuestions}
+								onSubmit={handleSubmit}
+								isSubmitting={submitting}
+							/>
+						</>
+					)}
 				</main>
 			</AppShell>
 		</>

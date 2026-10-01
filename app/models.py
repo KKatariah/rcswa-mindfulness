@@ -150,9 +150,6 @@ class Enrollment(models.Model):
         on_delete=models.CASCADE,
         related_name="enrollments",
     )
-    # TODO: current_week is never written by any application code — appears to be
-    # dead. Candidate for removal in a separate cleanup issue.
-    current_week = models.PositiveSmallIntegerField(default=1)
     status = models.CharField(
         max_length=12, choices=Status.choices, default=Status.ACTIVE
     )

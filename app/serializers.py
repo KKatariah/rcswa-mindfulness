@@ -1,6 +1,8 @@
-from datetime import date, timedelta
+from datetime import timedelta
 
 from django.conf import settings
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import serializers
@@ -33,6 +35,16 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = User
         fields = ["email", "full_name", "password"]
 
+    def validate(self, attrs):
+        # Run AUTH_PASSWORD_VALIDATORS; the unsaved user lets the similarity
+        # check compare the password against the email and name.
+        candidate = User(email=attrs.get("email", ""), full_name=attrs.get("full_name", ""))
+        try:
+            validate_password(attrs["password"], user=candidate)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)})
+        return attrs
+
     def create(self, validated_data):
         return User.objects.create_user(
             email=validated_data["email"],
@@ -62,7 +74,7 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Enrollment
-        fields = ["id", "user", "user_email", "user_full_name", "cohort", "current_week", "status", "enrolled_at"]
+        fields = ["id", "user", "user_email", "user_full_name", "cohort", "status", "enrolled_at"]
         read_only_fields = ["enrolled_at"]
 
     def get_user_email(self, obj):
@@ -323,7 +335,7 @@ def _is_program_active(today=None):
     ever been created, there is no "programme" to have ended yet, so stay open."""
     if not Cohort.objects.exists():
         return True
-    today = today or date.today()
+    today = today or timezone.localdate()
     return Cohort.objects.filter(start_date__lte=today, end_date__gte=today).exists()
 
 
@@ -331,7 +343,7 @@ def _pick_signup_cohort(today=None):
     """The cohort a new signup should be auto-enrolled into: the currently
     active one, or if none is active, the soonest upcoming one. None if
     neither exists."""
-    today = today or date.today()
+    today = today or timezone.localdate()
     active = (
         Cohort.objects.filter(start_date__lte=today, end_date__gte=today)
         .order_by("start_date")
@@ -728,7 +740,15 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
 
 class ChangePasswordSerializer(serializers.Serializer):
     current_password = serializers.CharField(write_only=True)
-    new_password = serializers.CharField(write_only=True, min_length=8)
+    new_password = serializers.CharField(write_only=True)
+
+    def validate_new_password(self, value):
+        user = self.context["request"].user if "request" in self.context else None
+        try:
+            validate_password(value, user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value
 
 
 # ── Push notifications ─────────────────────────────────────────────────────────

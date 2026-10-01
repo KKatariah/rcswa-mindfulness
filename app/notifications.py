@@ -25,6 +25,7 @@ from django.core.mail import send_mail
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from .serializers import module_is_unlocked
 from .models import (
     Enrollment,
     NotificationLog,
@@ -155,7 +156,7 @@ def notify_content_update(module=None, content_item=None):
 
     Only ACTIVE enrollments whose cohort has not yet finished receive the
     notification — no point alerting students about a module they've already
-    passed.
+    passed. Students for whom the module is still locked are skipped too.
 
     S21 wiring: called automatically by signals in app/signals.py.
     """
@@ -201,6 +202,12 @@ def notify_content_update(module=None, content_item=None):
 
     for enr in affected_enrollments:
         user = enr.user
+
+        # Skip users for whom this week is still locked; they would only hit a
+        # 403. They are told when it opens by send_module_unlock_notifications.
+        if not module_is_unlocked(module, user):
+            continue
+
         payload = {
             "title": f"New content: Week {module.week_number}",
             "body": module.title,
@@ -250,11 +257,8 @@ def notify_survey_unlocked(user, module):
     if pref is None or not pref.survey_unlocked_reminder:
         return False
 
-    # Module itself must already be available.
-    if not module.is_published:
-        return False
-
-    if module.unlock_at and module.unlock_at > timezone.now():
+    # Module itself must already be available to this user.
+    if not module_is_unlocked(module, user):
         return False
 
     # The survey unlock rule must match serializers.py:

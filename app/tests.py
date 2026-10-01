@@ -5,9 +5,10 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
-from django.test import TestCase, override_settings
+from django.core.cache import cache
+from django.test import TestCase as DjangoTestCase, override_settings
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase as DRFAPITestCase
 from rest_framework.authtoken.models import Token
 
 from .models import (
@@ -29,6 +30,22 @@ from .serializers import ForumPostSerializer
 from .utils import gravatar_url
 
 User = get_user_model()
+
+
+class _ClearCacheMixin:
+    """Rate-limit counters live in the cache, which Django does not reset between tests."""
+
+    def _pre_setup(self):
+        super()._pre_setup()
+        cache.clear()
+
+
+class TestCase(_ClearCacheMixin, DjangoTestCase):
+    pass
+
+
+class APITestCase(_ClearCacheMixin, DRFAPITestCase):
+    pass
 
 
 def _enroll(*users):
@@ -292,6 +309,25 @@ class ForumTests(APITestCase):
         self.reply = ForumPost.objects.create(
             thread=self.thread, author=self.other, body="A reply"
         )
+
+    def test_post_creation_rate_limited_but_edits_are_not(self):
+        self.client.force_login(self.other)
+        for i in range(6):
+            resp = self.client.post(
+                "/api/forum/posts/", {"thread": self.thread.pk, "body": f"reply {i}"},
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        resp = self.client.post(
+            "/api/forum/posts/", {"thread": self.thread.pk, "body": "one too many"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        resp = self.client.patch(
+            f"/api/forum/posts/{self.reply.pk}/", {"body": "still editable"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
     # ── S24/anonymous rejection ────────────────────────────────────────────────
 
@@ -1338,11 +1374,47 @@ class AuthRoleTests(APITestCase):
     def test_register_response_includes_role(self):
         resp = self.client.post(
             "/api/register/",
-            {"email": "new@test.local", "full_name": "New User", "password": "testpass"},
+            {"email": "new@test.local", "full_name": "New User", "password": "Calm-River-42"},
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         self.assertEqual(resp.data["user"]["role"], "student")
+
+    def test_register_rejects_weak_passwords(self):
+        for password in ["a", "password1", "12345678", "newuser123"]:
+            resp = self.client.post(
+                "/api/register/",
+                {"email": "newuser@test.local", "full_name": "New User", "password": password},
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, password)
+            self.assertIn("password", resp.data)
+        self.assertFalse(User.objects.filter(email="newuser@test.local").exists())
+
+    def test_change_password_rejects_weak_password(self):
+        self.client.force_login(self.student)
+        resp = self.client.post(
+            "/api/change-password/",
+            {"current_password": "testpass", "new_password": "password1"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("new_password", resp.data)
+
+    def test_login_rate_limited_after_10_attempts(self):
+        for _ in range(10):
+            resp = self.client.post(
+                "/api/login/",
+                {"email": "student@test.local", "password": "wrong"},
+                content_type="application/json",
+            )
+            self.assertNotEqual(resp.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        resp = self.client.post(
+            "/api/login/",
+            {"email": "student@test.local", "password": "testpass"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
     def test_current_user_returns_role(self):
         self.client.force_login(self.student)
@@ -1930,3 +2002,17 @@ class S21NotifiesOnlyActiveCohortTests(TestCase):
         notified_user_ids = set(logs.values_list("user_id", flat=True))
         self.assertIn(self.active_user.pk, notified_user_ids)
         self.assertNotIn(self.ended_user.pk, notified_user_ids)
+
+    def test_users_with_module_still_locked_not_notified(self):
+        # Active cohort started 7 days ago, so week 3 opens in 7 days.
+        locked_module = _make_module(week=3)
+        with self.settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
+            from app.notifications import notify_content_update
+            notify_content_update(module=locked_module)
+
+        self.assertFalse(
+            NotificationLog.objects.filter(
+                type=NotificationLog.NotificationType.CONTENT_UPDATE,
+                user=self.active_user,
+            ).exists()
+        )

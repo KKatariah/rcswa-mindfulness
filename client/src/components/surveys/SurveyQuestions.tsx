@@ -9,6 +9,7 @@ type SurveyQuestionsProps = {
 	formalQuestions?: ScaleQuestion[];
 	informalQuestions?: ScaleQuestion[];
 	onSubmit?: (answers: Record<number, number | string>) => void;
+	isSubmitting?: boolean;
 };
 
 const DEFAULT_FORMAL_QUESTIONS: ScaleQuestion[] = [
@@ -113,6 +114,7 @@ export default function SurveyQuestions({
 	formalQuestions = DEFAULT_FORMAL_QUESTIONS,
 	informalQuestions = DEFAULT_INFORMAL_QUESTIONS,
 	onSubmit,
+	isSubmitting = false,
 }: SurveyQuestionsProps) {
 	const [answers, setAnswers] = useState<Record<number, number | string>>({});
 
@@ -192,9 +194,10 @@ export default function SurveyQuestions({
 			<div className="flex justify-center pt-1 md:pt-2">
 				<button
 					type="submit"
+					disabled={isSubmitting}
 					className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50"
 				>
-					Submit survey
+					{isSubmitting ? "Submitting..." : "Submit survey"}
 				</button>
 			</div>
 		</form>
