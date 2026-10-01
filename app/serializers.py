@@ -99,7 +99,13 @@ class AdditionalResourceSerializer(serializers.ModelSerializer):
 class ContentItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContentItem
-        fields = ["id", "module", "title", "type", "provider", "embed_url", "display_order"]
+        fields = ["id", "module", "title", "type", "provider", "embed_url", "display_order", "day_offset"]
+
+    def validate_day_offset(self, value):
+        # 0 = first day of the module's week; send_due_reminders only ever looks for 0-6.
+        if value is not None and value > 6:
+            raise serializers.ValidationError("Reminder day must be between 0 and 6.")
+        return value
 
     def validate(self, attrs):
         provider = attrs.get("provider", getattr(self.instance, "provider", ""))
@@ -109,6 +115,13 @@ class ContentItemSerializer(serializers.ModelSerializer):
         if not embed_url:
             raise serializers.ValidationError({"embed_url": "Content items require an embed_url."})
         return attrs
+
+    def create(self, validated_data):
+        # New items go to the end of their module unless a position is given.
+        if "display_order" not in validated_data:
+            last = validated_data["module"].content_items.order_by("-display_order").first()
+            validated_data["display_order"] = last.display_order + 1 if last else 1
+        return super().create(validated_data)
 
 
 def _cohort_start_date(user):
@@ -177,6 +190,7 @@ class ModuleSerializer(serializers.ModelSerializer):
             "is_unlocked",
             "title",
             "description",
+            "summary",
             "is_published",
             "content_items",
             "resources",

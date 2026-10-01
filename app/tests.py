@@ -1234,6 +1234,58 @@ class ModuleAdminTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertFalse(ContentItem.objects.filter(title="Notes").exists())
 
+    def _create_item(self, title):
+        return self.client.post(
+            "/api/content-items/",
+            {
+                "module": self.published.pk, "title": title, "type": "video",
+                "provider": "youtube", "embed_url": "https://www.youtube.com/embed/ZToicYcHIOU",
+            },
+            content_type="application/json",
+        )
+
+    def test_new_content_item_goes_to_end_of_module(self):
+        self.client.force_login(self.admin)
+        first = self._create_item("First").data
+        second = self._create_item("Second").data
+        self.assertLess(first["display_order"], second["display_order"])
+
+    def test_reorder_sets_display_order(self):
+        self.client.force_login(self.admin)
+        a = self._create_item("A").data["id"]
+        b = self._create_item("B").data["id"]
+        resp = self.client.post(
+            "/api/content-items/reorder/",
+            {"module": self.published.pk, "ids": [b, a]},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        ordered = list(self.published.content_items.order_by("display_order").values_list("id", flat=True))
+        self.assertEqual(ordered, [b, a])
+
+    def test_admin_can_set_summary_and_reminder_day(self):
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/modules/{self.published.pk}/", {"summary": "Short blurb"}, content_type="application/json",
+        )
+        self.assertEqual(resp.data["summary"], "Short blurb")
+        item_id = self._create_item("Audio").data["id"]
+        resp = self.client.patch(f"/api/content-items/{item_id}/", {"day_offset": 6}, content_type="application/json")
+        self.assertEqual(resp.data["day_offset"], 6)
+        resp = self.client.patch(f"/api/content-items/{item_id}/", {"day_offset": 7}, content_type="application/json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reorder_rejects_incomplete_id_list(self):
+        self.client.force_login(self.admin)
+        a = self._create_item("A").data["id"]
+        self._create_item("B")
+        resp = self.client.post(
+            "/api/content-items/reorder/",
+            {"module": self.published.pk, "ids": [a]},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 # ── Admin portal: module unlock computation ──────────────────────────────────────
 

@@ -1,5 +1,6 @@
 from django.conf import settings as django_settings
 from django.shortcuts import render
+from django.db import transaction
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -307,6 +308,22 @@ class ContentItemViewSet(viewsets.ModelViewSet):
         if module_id:
             qs = qs.filter(module_id=module_id)
         return qs
+
+    @action(detail=False, methods=["post"])
+    def reorder(self, request):
+        """Set a module's item order in one go: {"module": id, "ids": [item ids in display order]}."""
+        module_id = request.data.get("module")
+        ids = request.data.get("ids")
+        if not isinstance(ids, list):
+            raise ValidationError({"ids": "Expected a list of content item ids."})
+        items = {item.id: item for item in ContentItem.objects.filter(module_id=module_id)}
+        if sorted(ids) != sorted(items):
+            raise ValidationError({"ids": "Must list every content item in the module exactly once."})
+        with transaction.atomic():
+            for position, item_id in enumerate(ids, start=1):
+                items[item_id].display_order = position
+            ContentItem.objects.bulk_update(items.values(), ["display_order"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class CohortViewSet(viewsets.ModelViewSet):

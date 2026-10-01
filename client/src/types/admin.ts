@@ -14,6 +14,8 @@ export type AdminContentItem = {
 	provider: "youtube" | "soundcloud" | "";
 	embed_url: string;
 	display_order: number;
+	// Day of the module's week (0 = Day 1) that the audio reminder is sent; null = no reminder.
+	day_offset: number | null;
 };
 
 export type AdminModule = {
@@ -21,6 +23,7 @@ export type AdminModule = {
 	week_number: number;
 	title: string;
 	description: string;
+	summary: string;
 	is_published: boolean;
 	is_unlocked: boolean;
 	content_items: AdminContentItem[];

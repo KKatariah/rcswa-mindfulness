@@ -527,6 +527,7 @@ export async function updateModule(
 		week_number: number;
 		title: string;
 		description: string;
+		summary: string;
 		is_published: boolean;
 	}>,
 	token: string,
@@ -589,6 +590,23 @@ export async function deleteContentItem(
 	token: string,
 ): Promise<void> {
 	return deleteRequest(`${API_BASE_URL}/content-items/${id}/`, token);
+}
+
+// ids: every content item in the module, in the new display order.
+export async function reorderContentItems(moduleId: number, ids: number[], token: string): Promise<void> {
+	const res = await fetch(`${API_BASE_URL}/content-items/reorder/`, {
+		method: "POST",
+		headers: authHeader(token),
+		body: JSON.stringify({ module: moduleId, ids }),
+	});
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({}));
+		const message =
+			typeof data === "object" && data !== null
+				? Object.values(data).flat().join(" ")
+				: "Something went wrong";
+		throw new Error(message || "Failed to reorder content items");
+	}
 }
 
 // ── Admin: Dashboard ───────────────────────────────────────────────────────────
