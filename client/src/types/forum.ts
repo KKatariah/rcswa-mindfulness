@@ -8,6 +8,7 @@ export type ForumPost = {
   body: string;
   created_at: string;
   updated_at: string;
+  edited_at?: string | null;
   can_edit: boolean;
 };
 
@@ -21,6 +22,7 @@ export type ForumThread = {
   author_avatar_url?: string | null;
   created_at: string;
   updated_at: string;
+  edited_at?: string | null;
   body: string;
   reply_count: number;
   can_edit: boolean;

@@ -18,7 +18,7 @@ from django.conf import settings
 from django.contrib.auth.base_user import BaseUserManager
 from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.db.models import Q
 
 # Matches the video ID out of any common YouTube share/watch link shape:
@@ -348,13 +348,21 @@ class NotificationPreference(models.Model):
         on_delete=models.CASCADE,
         related_name="notification_preference",
     )
+
     inapp_enabled = models.BooleanField(default=True)
     email_enabled = models.BooleanField(default=True)
+
     # Default: 8am Perth. Command filters by this hour when running on an hourly cron.
     reminder_time = models.TimeField(default=datetime.time(8, 0))
+
     # Set by the frontend when Notification.permission === 'denied'.
     # When True: no push attempted, no email fallback (user explicitly refused).
     push_denied = models.BooleanField(default=False)
+
+    # Profile notification preferences
+    daily_content_reminder = models.BooleanField(default=True)
+    survey_unlocked_reminder = models.BooleanField(default=False)
+    daily_survey_reminder = models.BooleanField(default=False)
 
     def __str__(self):
         return f"Preferences for {self.user}"
@@ -530,6 +538,14 @@ class ForumThread(models.Model):
     )
     title = models.CharField(max_length=200)
     is_pinned = models.BooleanField(default=False)
+    pin_order = models.PositiveIntegerField(default=0, db_index=True)
+    opened_by = models.OneToOneField(
+        "ForumPost",
+        on_delete=models.SET_NULL,
+        related_name="opened_thread",
+        null=True,
+        blank=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -541,6 +557,35 @@ class ForumThread(models.Model):
                 name="forum_thread_at_most_one_context",
             ),
         ]
+
+    def reorder_pinned_threads(self, requested_order=None):
+        with transaction.atomic():
+            thread = type(self).objects.select_for_update().get(pk=self.pk)
+            pinned_threads = list(
+                type(self).objects.select_for_update()
+                .filter(is_pinned=True)
+                .exclude(pk=thread.pk)
+                .order_by("pin_order", "created_at", "pk")
+            )
+
+            if thread.is_pinned:
+                position = min(
+                    max(requested_order or 1, 1),
+                    len(pinned_threads) + 1,
+                )
+                pinned_threads.insert(position - 1, thread)
+            else:
+                thread.pin_order = 0
+                thread.save(update_fields=["pin_order"])
+
+            for order, pinned_thread in enumerate(pinned_threads, start=1):
+                if pinned_thread.pin_order != order:
+                    type(self).objects.filter(pk=pinned_thread.pk).update(
+                        pin_order=order
+                    )
+                    pinned_thread.pin_order = order
+
+            self.refresh_from_db(fields=["is_pinned", "pin_order"])
 
     def __str__(self):
         return self.title
@@ -568,9 +613,11 @@ class ForumPost(models.Model):
         null=True,
         blank=True,
     )
+    is_head_post = models.BooleanField(default=False)
     body = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    edited_at = models.DateTimeField(null=True, blank=True)
     # Soft-delete flag. delete() is NOT overridden per spec.
     is_deleted = models.BooleanField(default=False)
 

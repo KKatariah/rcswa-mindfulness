@@ -3,11 +3,17 @@ import { useRouter } from "next/router";
 import { useEffect, useState, type FormEvent } from "react";
 import Navbar from "@/components/main/Navbar";
 import Sidebar from "@/components/main/Sidebar";
+import NotificationSetupModal from "@/components/notifications/NotificationSetupModal";
 import NextSession from "@/components/modules/NextSession";
 import { LockIcon } from "@/components/ui/icons";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAuth } from "@/context/AuthContext";
-import { updateProfile, changePassword } from "@/lib/api";
+import {
+  updateProfile,
+  changePassword,
+  getNotificationPreferences,
+  updateNotificationPreferences,
+} from "@/lib/api";
 
 type NotificationPreferences = {
   dailyContentReminder: boolean;
@@ -16,6 +22,13 @@ type NotificationPreferences = {
 };
 
 type SaveStatus = "idle" | "saving" | "success" | "error";
+
+// Set max length of displayname!
+const DISPLAY_NAME_MAX_LENGTH = 20;
+
+function sanitizeDisplayName(value: string) {
+  return value.replace(/[^\p{L}\s'-]/gu, "").slice(0, DISPLAY_NAME_MAX_LENGTH);
+}
 
 function ToggleSwitch({
   id,
@@ -132,7 +145,7 @@ function ChangePasswordForm() {
 
 export default function ProfilePage() {
   const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, updateUser } = useAuth();
 
   // null means "the user hasn't edited the field yet", so we show the saved name.
   // Once they type (even to clear the field), their edit takes over.
@@ -146,17 +159,52 @@ export default function ProfilePage() {
     surveyUnlockedReminder: false,
     dailySurveyCompletionReminder: false,
   });
+
+  const savedDisplayName = user?.display_name ?? "";
+  const [savedNotifications, setSavedNotifications] = useState<NotificationPreferences>(notifications);
+
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [showPasswordForm, setShowPasswordForm] = useState(false);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
 
   useEffect(() => {
-    if (!authLoading && !user) {
-      router.replace("/");
+  if (!authLoading && !user) {
+    router.replace("/");
+  }
+}, [authLoading, user, router]);
+
+useEffect(() => {
+  if (authLoading || !user) return;
+
+  const token = localStorage.getItem("token");
+  if (!token) return;
+
+  const loadNotificationPreferences = async () => {
+    try {
+      const prefs = await getNotificationPreferences(token);
+
+      setNotifications({
+        dailyContentReminder: prefs.daily_content_reminder,
+        surveyUnlockedReminder: prefs.survey_unlocked_reminder,
+        dailySurveyCompletionReminder: prefs.daily_survey_reminder,
+      });
+    } catch (error) {
+      console.error("Failed to load notification preferences:", error);
     }
-  }, [authLoading, user, router]);
+  };
+
+  loadNotificationPreferences();
+}, [authLoading, user]);
+
 
   const signedInName = user?.full_name?.trim() || "User";
   const isGoogleUser = user?.auth_provider === "google";
+
+  const hasChanges =
+    displayName !== savedDisplayName ||
+    notifications.dailyContentReminder !== savedNotifications.dailyContentReminder ||
+    notifications.surveyUnlockedReminder !== savedNotifications.surveyUnlockedReminder ||
+    notifications.dailySurveyCompletionReminder !== savedNotifications.dailySurveyCompletionReminder;
 
   const updateNotification = (
     key: keyof NotificationPreferences,
@@ -166,16 +214,28 @@ export default function ProfilePage() {
   };
 
   const handleSave = async () => {
-    setStatus("saving");
-    const token = localStorage.getItem("token") ?? "";
+  setStatus("saving");
+  const token = localStorage.getItem("token") ?? "";
 
-    try {
-      await updateProfile({ display_name: displayName }, token);
-      setStatus("success");
-    } catch {
-      setStatus("error");
-    }
-  };
+
+  try {
+    await updateProfile({ display_name: displayName }, token);
+
+    await updateNotificationPreferences(token, {
+      daily_content_reminder: notifications.dailyContentReminder,
+      survey_unlocked_reminder: notifications.surveyUnlockedReminder,
+      daily_survey_reminder: notifications.dailySurveyCompletionReminder,
+    });
+
+    setStatus("success");
+    updateUser({ display_name: displayName });
+    setSavedNotifications(notifications);
+    setEditedDisplayName(null);
+  } catch (error) {
+    console.error("Failed to save profile:", error);
+    setStatus("error");
+  }
+};
 
   return (
     <>
@@ -233,8 +293,9 @@ export default function ProfilePage() {
                   id="displayName"
                   type="text"
                   placeholder="(optional)"
+                  maxLength={DISPLAY_NAME_MAX_LENGTH}
                   value={displayName}
-                  onChange={(event) => setEditedDisplayName(event.target.value)}
+                  onChange={(event) => setEditedDisplayName(sanitizeDisplayName(event.target.value))}
                   className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-transparent focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
                 <p className="mt-1.5 text-sm text-gray-500">
@@ -291,6 +352,13 @@ export default function ProfilePage() {
                     }
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => setShowNotificationModal(true)}
+                  className="mt-4 rounded-lg border border-blue-500 px-4 py-2 text-sm font-medium text-blue-500 transition-colors hover:bg-blue-50"
+                >
+                  Set up notifications
+                </button>
               </div>
 
               <div className="border-b border-gray-100 p-6">
@@ -329,8 +397,8 @@ export default function ProfilePage() {
                 <button
                   type="button"
                   onClick={handleSave}
-                  disabled={status === "saving"}
-                  className="w-full rounded-lg bg-blue-500 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-600 disabled:opacity-60"
+                  disabled={status === "saving" || !hasChanges}
+                  className="w-full rounded-lg bg-blue-500 py-3 text-sm font-semibold text-white transition-colors hover:bg-blue-600 disabled:opacity-60 disabled:cursor-not-allowed"
                 >
                   {status === "saving" ? "Saving..." : "Save Changes"}
                 </button>
@@ -357,6 +425,10 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+      <NotificationSetupModal
+        isOpen={showNotificationModal}
+        onClose={() => setShowNotificationModal(false)}
+      />
     </>
   );
 }
