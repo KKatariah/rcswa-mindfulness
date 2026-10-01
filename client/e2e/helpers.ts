@@ -22,6 +22,9 @@ export async function apiToken(request: APIRequestContext, email: string): Promi
 /** Log in through the API and hand the token to the app, skipping the login form. */
 export async function loginAs(page: Page, request: APIRequestContext, email: string): Promise<string> {
 	const token = await apiToken(request, email);
-	await page.addInitScript((t) => window.localStorage.setItem("token", t), token);
+	// Top frame only: embedded iframes (e.g. a failed video embed) can't use localStorage.
+	await page.addInitScript((t) => {
+		if (window === window.top) window.localStorage.setItem("token", t);
+	}, token);
 	return token;
 }

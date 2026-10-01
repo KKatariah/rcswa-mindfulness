@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { safeUrl } from "@/lib/safeUrl";
 import Head from "next/head";
 import AdminLayout from "@/components/admin/AdminLayout";
 import Modal from "@/components/main/Modal";
@@ -309,7 +310,7 @@ export default function AdminResourcesPage() {
 									<td className="px-5 py-3">
 										{resource.cover_image ? (
 											// eslint-disable-next-line @next/next/no-img-element -- API-hosted thumbnail, not a next/image candidate
-											<img src={resource.cover_image} alt="" className="size-10 rounded-lg object-cover" />
+											<img src={safeUrl(resource.cover_image)} alt="" className="size-10 rounded-lg object-cover" />
 										) : (
 											<div className="size-10 rounded-lg bg-surface-muted" />
 										)}

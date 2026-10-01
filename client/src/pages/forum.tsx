@@ -290,8 +290,8 @@ function PostCard({ post, onEdit, onDelete }: PostCardProps) {
         <Avatar name={post.author_name} avatarUrl={post.author_avatar_url} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm font-semibold text-ink">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="min-w-0 truncate text-sm font-semibold text-ink">
                 {post.author_name}
               </span>
               <TimestampWithEdit
@@ -459,8 +459,8 @@ function ThreadDetailView({
           />
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
-              <div className="flex items-baseline gap-2">
-                <span className="text-sm font-semibold text-ink">
+              <div className="flex min-w-0 items-baseline gap-2">
+                <span className="min-w-0 truncate text-sm font-semibold text-ink">
                   {thread.author_name}
                 </span>
                 <TimestampWithEdit
@@ -687,8 +687,8 @@ function ThreadRow({
             avatarUrl={thread.author_avatar_url}
           />
           <div className="min-w-0 flex-1">
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm font-semibold text-ink">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="min-w-0 truncate text-sm font-semibold text-ink">
                 {thread.author_name}
               </span>
               <TimestampWithEdit

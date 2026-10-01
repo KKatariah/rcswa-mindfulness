@@ -1,5 +1,6 @@
 import { useId } from "react";
 import { CheckIcon, PlayIcon } from "@/components/ui/icons";
+import { safeUrl } from "@/lib/safeUrl";
 import type { AudioAttribution } from "@/types/module";
 
 type ContentEmbedProps = {
@@ -14,12 +15,14 @@ type ContentEmbedProps = {
 export default function ContentEmbed({
 	type,
 	title,
-	embedUrl,
+	embedUrl: rawEmbedUrl,
 	attribution,
 	completed = false,
 	onToggleComplete,
 }: ContentEmbedProps) {
 	const checkboxId = useId();
+	// An unsafe URL shows the "no media" placeholder instead of a broken iframe.
+	const embedUrl = safeUrl(rawEmbedUrl);
 
 	return (
 		<div className="my-10 w-full max-w-[540px]">
@@ -44,7 +47,7 @@ export default function ContentEmbed({
 						</>
 					)}
 					{title && (
-						<p className="text-xs font-bold uppercase tracking-wide text-brand-blue">
+						<p className="min-w-0 wrap-anywhere text-xs font-bold uppercase tracking-wide text-brand-blue">
 							{type === "video" ? "Watch" : "Listen"} · {title}
 						</p>
 					)}
@@ -73,7 +76,7 @@ export default function ContentEmbed({
 					{attribution && (
 						<div className="mt-2 break-words text-xs text-muted">
 							<a
-								href={attribution.artistUrl}
+								href={safeUrl(attribution.artistUrl)}
 								target="_blank"
 								rel="noreferrer"
 								className="hover:underline"
@@ -82,7 +85,7 @@ export default function ContentEmbed({
 							</a>{" "}
 							·{" "}
 							<a
-								href={attribution.trackUrl}
+								href={safeUrl(attribution.trackUrl)}
 								target="_blank"
 								rel="noreferrer"
 								className="hover:underline"

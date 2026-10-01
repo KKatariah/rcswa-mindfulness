@@ -450,12 +450,12 @@ export default function AdminModuleEditorPage() {
 							onCancel={() => setEditingItem(null)}
 						/>
 					) : (
-						<div key={item.id} className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white p-4">
-							<div className="flex items-center gap-3">
+						<div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-4">
+							<div className="flex min-w-0 items-center gap-3">
 								<span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-semibold uppercase text-muted">
 									{item.type}
 								</span>
-								<span className="text-sm font-semibold text-ink">{item.title}</span>
+								<span className="min-w-0 wrap-anywhere text-sm font-semibold text-ink">{item.title}</span>
 								{item.type === "audio" && (
 									<span className="text-xs text-muted">
 										{item.day_offset === null ? "No reminder" : `Reminder: Day ${item.day_offset + 1}`}

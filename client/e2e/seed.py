@@ -4,7 +4,9 @@ from datetime import timedelta
 from django.core.management import call_command
 from django.utils import timezone
 
-from app.models import Cohort, ContentCompletion, ContentItem, Enrollment, Module, Survey, SurveyResponse, User
+from app.models import (
+    Cohort, ContentCompletion, ContentItem, Enrollment, ForumPost, ForumThread, Module, Survey, SurveyResponse, User,
+)
 
 PASSWORD = "Calm-River-42"
 
@@ -42,5 +44,14 @@ SurveyResponse.objects.create(
     user=responder, survey=Survey.objects.get(code="weekly-maq-w2"),
     answers={"q1": 2, "q2": 10, "q3": 4, "q13": "Seeded reflection for export."},
 )
+
+# Data the UI fuzz test uses as templates (kept separate from what other tests consume).
+fuzz_pending = User.objects.create_user(email="fuzz-pending@e2e.local", password=PASSWORD, full_name="Fuzz Pending")
+Enrollment.objects.create(user=fuzz_pending, cohort=cohort, status=Enrollment.Status.PENDING)
+thread = ForumThread.objects.create(created_by=other, title="Seeded thread")
+opening = ForumPost.objects.create(thread=thread, author=other, body="Seeded thread", is_head_post=True)
+thread.opened_by = opening
+thread.save(update_fields=["opened_by"])
+ForumPost.objects.create(thread=thread, author=student, body="Seeded reply")
 
 print("e2e seed complete")

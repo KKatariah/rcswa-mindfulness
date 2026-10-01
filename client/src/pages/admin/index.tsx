@@ -17,9 +17,9 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 function ProgressBar({ label, pct, detail }: { label: string; pct: number; detail: string }) {
 	return (
 		<div>
-			<div className="flex items-center justify-between text-sm">
-				<span className="font-semibold text-ink">{label}</span>
-				<span className="text-muted">{detail}</span>
+			<div className="flex items-center justify-between gap-3 text-sm">
+				<span className="min-w-0 wrap-anywhere font-semibold text-ink">{label}</span>
+				<span className="shrink-0 text-muted">{detail}</span>
 			</div>
 			<div className="mt-1.5 h-2 rounded-full bg-gray-200">
 				<div className="h-2 rounded-full bg-brand-blue" style={{ width: `${Math.min(100, pct)}%` }} />
