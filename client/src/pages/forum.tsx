@@ -350,7 +350,7 @@ function PostCard({ post, onEdit, onDelete }: PostCardProps) {
             </div>
           ) : (
             <>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
+              <p className="mt-2 whitespace-pre-wrap wrap-anywhere text-sm text-[#4B5563]">
                 {post.body}
               </p>
             </>
@@ -532,7 +532,7 @@ function ThreadDetailView({
               </div>
             ) : (
               <>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
+                <p className="mt-2 whitespace-pre-wrap wrap-anywhere text-sm text-[#4B5563]">
                   {thread.body}
                 </p>
                 {pinError && (
@@ -730,7 +730,7 @@ function ThreadRow({
                 </div>
               </div>
             ) : (
-              <p className="mt-1 line-clamp-2 text-sm text-[#4B5563]">
+              <p className="mt-1 line-clamp-2 wrap-anywhere text-sm text-[#4B5563]">
                 {thread.body}
               </p>
             )}

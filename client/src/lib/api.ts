@@ -11,6 +11,26 @@ type AuthResponse = { message: string; token: string; user: AuthUser };
 async function handleResponse<T>(res: Response): Promise<T> {
 	const data = await res.json();
 	if (!res.ok) {
+		// The stored token was rejected (e.g. the password was changed in another
+		// tab). Sign out and go home rather than leaving the page half-broken.
+		// Login itself also returns 401, but with "error" rather than "detail".
+		if (res.status === 401 && data?.detail && typeof window !== "undefined" && localStorage.getItem("token")) {
+			localStorage.removeItem("token");
+			localStorage.removeItem("user");
+			if (window.location.pathname !== "/") {
+				// eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload resets AuthContext; this runs outside React so there's no router
+				window.location.assign("/");
+			}
+			throw new Error("Your session has expired. Please log in again.");
+		}
+		if (res.status === 429) {
+			const seconds = /(\d+) seconds?/.exec(String(data?.detail ?? ""))?.[1];
+			throw new Error(
+				seconds
+					? `You're doing that too often. Please wait ${seconds} seconds and try again.`
+					: "You're doing that too often. Please wait a moment and try again.",
+			);
+		}
 		const message =
 			typeof data === "object" && data !== null
 				? Object.values(data).flat().join(" ")

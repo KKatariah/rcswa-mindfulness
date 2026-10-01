@@ -110,6 +110,9 @@ function ScaleQuestionGroup({
 	);
 }
 
+// Matches LONGTEXT_MAX_CHARS in app/serializers.py.
+const JOURNAL_MAX_CHARS = 5000;
+
 export default function SurveyQuestions({
 	formalQuestions = DEFAULT_FORMAL_QUESTIONS,
 	informalQuestions = DEFAULT_INFORMAL_QUESTIONS,
@@ -117,6 +120,7 @@ export default function SurveyQuestions({
 	isSubmitting = false,
 }: SurveyQuestionsProps) {
 	const [answers, setAnswers] = useState<Record<number, number | string>>({});
+	const journalWords = String(answers[13] ?? "").trim().split(/\s+/).filter(Boolean).length;
 
 	const updateAnswer = (questionId: number, value: number | string) => {
 		setAnswers((currentAnswers) => ({ ...currentAnswers, [questionId]: value }));
@@ -186,9 +190,14 @@ export default function SurveyQuestions({
 				<textarea
 					rows={4}
 					placeholder="Enter reflection..."
+					maxLength={JOURNAL_MAX_CHARS}
+					aria-describedby="journal-word-count"
 					className="mt-5 w-full resize-y rounded-xl border border-[#5b5a5a] bg-white px-3 py-3 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30 md:mt-6"
 					onChange={(event) => updateAnswer(13, event.target.value)}
 				/>
+				<p id="journal-word-count" className="mt-2 text-xs text-muted">
+					{journalWords} {journalWords === 1 ? "word" : "words"} (aim for 100-250)
+				</p>
 			</section>
 
 			<div className="flex justify-center pt-1 md:pt-2">

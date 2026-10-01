@@ -199,9 +199,15 @@ def notify_content_update(module=None, content_item=None):
 
     scheduled_for = timezone.now()
     sent = 0
+    notified_user_ids = set()
 
     for enr in affected_enrollments:
         user = enr.user
+
+        # A user with more than one running enrollment gets one notice, not one per cohort.
+        if user.pk in notified_user_ids:
+            continue
+        notified_user_ids.add(user.pk)
 
         # Skip users for whom this week is still locked; they would only hit a
         # 403. They are told when it opens by send_module_unlock_notifications.

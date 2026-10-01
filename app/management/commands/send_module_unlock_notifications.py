@@ -45,6 +45,10 @@ class Command(BaseCommand):
                 if unlock_date != today:
                     continue
 
+                # Weeks that would open after the cohort has finished aren't announced.
+                if unlock_date > enrollment.cohort.end_date:
+                    continue
+
                 # A successful notification must never be sent twice.
                 # FAILED attempts remain retryable on the next command run.
                 already_sent = NotificationLog.objects.filter(

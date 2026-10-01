@@ -4,6 +4,7 @@ export const API = "http://127.0.0.1:8001/api";
 export const PASSWORD = "Calm-River-42";
 export const STUDENT = "student@e2e.local";
 export const OTHER = "other@e2e.local";
+export const ADMIN = "admin@e2e.local";
 
 // Reuse one token per user: /api/login/ allows only 10 attempts a minute per IP.
 const tokens = new Map<string, string>();

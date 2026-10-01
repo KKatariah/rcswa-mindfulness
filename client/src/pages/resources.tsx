@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/main/AppShell";
 import NextSession from "@/components/modules/NextSession";
 import { BookOpenIcon, VideoIcon, GlobeIcon, ExternalLinkIcon } from "@/components/ui/icons";
+import { useAuth } from "@/context/AuthContext";
 import { listAdditionalResources } from "@/lib/api";
 import type { AdminAdditionalResource } from "@/types/admin";
 
@@ -100,14 +101,26 @@ function LogoThumb({ resource, iconBg, Icon }: { resource: Resource; iconBg: str
 }
 
 export default function ResourcesPage() {
+  const { user, isLoading: authLoading } = useAuth();
   const [resources, setResources] = useState<AdminAdditionalResource[]>([]);
 
   useEffect(() => {
+    if (authLoading || !user) return;
     const token = localStorage.getItem("token") ?? "";
     listAdditionalResources(token)
       .then(setResources)
       .catch(() => setResources([]));
-  }, []);
+  }, [user, authLoading]);
+
+  if (!authLoading && !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-6">
+        <p className="text-ink-soft">
+          Please <Link href="/" className="text-brand-blue underline">log in</Link> to view resources.
+        </p>
+      </div>
+    );
+  }
 
   const BOOKS = resources.filter((r) => r.category === "book").map(toResource);
   const DOCUMENTARIES = resources.filter((r) => r.category === "documentary").map(toResource);

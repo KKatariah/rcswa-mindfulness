@@ -35,6 +35,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = User
         fields = ["email", "full_name", "password"]
 
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("An account with this email already exists.")
+        return value
+
     def validate(self, attrs):
         # Run AUTH_PASSWORD_VALIDATORS; the unsaved user lets the similarity
         # check compare the password against the email and name.
@@ -65,6 +71,19 @@ class CohortSerializer(serializers.ModelSerializer):
         end = attrs.get("end_date", getattr(self.instance, "end_date", None))
         if start and end and end <= start:
             raise serializers.ValidationError({"end_date": "end_date must be after start_date."})
+        instance = self.instance
+        if (
+            instance
+            and "start_date" in attrs
+            and attrs["start_date"] != instance.start_date
+            and instance.start_date <= timezone.localdate()
+            and instance.enrollments.filter(status=Enrollment.Status.ACTIVE).exists()
+        ):
+            # Moving the start date would shift every member's unlock dates and
+            # could re-lock weeks they have already opened.
+            raise serializers.ValidationError(
+                {"start_date": "This cohort has started and has active students, so its start date can't change."}
+            )
         return attrs
 
 
@@ -76,6 +95,21 @@ class EnrollmentSerializer(serializers.ModelSerializer):
         model = Enrollment
         fields = ["id", "user", "user_email", "user_full_name", "cohort", "status", "enrolled_at"]
         read_only_fields = ["enrolled_at"]
+
+    def validate(self, attrs):
+        # One active enrollment per user: unlock dates, reminders and notices all
+        # assume a single cohort. Move a user by changing the cohort instead.
+        user = attrs.get("user", getattr(self.instance, "user", None))
+        new_status = attrs.get("status", getattr(self.instance, "status", Enrollment.Status.ACTIVE))
+        if user and new_status == Enrollment.Status.ACTIVE:
+            others = Enrollment.objects.filter(user=user, status=Enrollment.Status.ACTIVE)
+            if self.instance:
+                others = others.exclude(pk=self.instance.pk)
+            if others.exists():
+                raise serializers.ValidationError(
+                    {"status": "This user is already active in another cohort. Move or withdraw that enrollment first."}
+                )
+        return attrs
 
     def get_user_email(self, obj):
         return obj.user.email if obj.user else None
@@ -490,11 +524,31 @@ class AdminUserUpdateSerializer(serializers.ModelSerializer):
         fields = ["id", "email", "full_name", "display_name", "role"]
         read_only_fields = ["id"]
 
+    def validate_role(self, value):
+        # Stops admins locking everyone out of the admin portal by mistake.
+        request = self.context.get("request")
+        if not self.instance or value == User.Role.ADMIN or self.instance.role != User.Role.ADMIN:
+            return value
+        if request and self.instance.pk == request.user.pk:
+            raise serializers.ValidationError("You can't remove your own admin role.")
+        if not User.objects.filter(role=User.Role.ADMIN).exclude(pk=self.instance.pk).exists():
+            raise serializers.ValidationError("There must always be at least one admin.")
+        return value
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if User.objects.filter(email__iexact=value).exclude(pk=self.instance.pk if self.instance else None).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+
 
 # ── Surveys ────────────────────────────────────────────────────────────────────
 
 def _survey_is_unlocked(survey, user):
     """Return True if every ContentItem in the survey's module is completed by user."""
+    # Once submitted, content added to the module later must not re-lock it.
+    if SurveyResponse.objects.filter(user=user, survey=survey).exists():
+        return True
     if survey.module_id is None:
         # Weekly surveys always require a module; guard against misconfigured data.
         if survey.type == Survey.SurveyType.WEEKLY:
@@ -512,6 +566,10 @@ def _survey_is_unlocked(survey, user):
         .values_list("content_item_id", flat=True)
     )
     return required_ids == completed_ids
+
+
+# Generous cap on free-text answers; the form asks for 100-250 words.
+LONGTEXT_MAX_CHARS = 5000
 
 
 def _validate_survey_answers(questions, answers):
@@ -554,6 +612,8 @@ def _validate_survey_answers(questions, answers):
         elif qtype == "longtext":
             if not isinstance(val, str) or not val.strip():
                 errors.append(f"Question {qid!r}: expected a non-empty string.")
+            elif len(val) > LONGTEXT_MAX_CHARS:
+                errors.append(f"Question {qid!r}: must be at most {LONGTEXT_MAX_CHARS} characters.")
 
     return errors
 
@@ -570,6 +630,8 @@ class SurveySerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return False
+        if self.get_has_responded(obj):
+            return True
         completed_ids = self.context.get("completed_ids")
         if completed_ids is not None:
             if obj.module_id is None:
@@ -777,6 +839,12 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             "daily_survey_reminder",
         ]
         read_only_fields = ["id"]
+
+    def validate_reminder_time(self, value):
+        # send_due_reminders runs hourly and compares hours only.
+        if value.minute or value.second:
+            raise serializers.ValidationError("Reminder time must be on the hour (e.g. 08:00).")
+        return value
 
 
 # –– User profiles –––––––––––––––––––––––––––––––––––––––––––––––––––––––––

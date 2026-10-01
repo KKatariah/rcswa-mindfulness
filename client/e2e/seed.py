@@ -25,8 +25,14 @@ User.objects.create_user(email="admin@e2e.local", password=PASSWORD, full_name="
 for user in (student, other):
     Enrollment.objects.create(user=user, cohort=cohort, status=Enrollment.Status.ACTIVE)
 
-# Finishing week 1's content unlocks the week 1 survey.
+# Signups waiting on the admin Approvals page: one to approve, one to reject.
+for email, name in (("approve-me@e2e.local", "Approve Me"), ("reject-me@e2e.local", "Reject Me")):
+    pending = User.objects.create_user(email=email, password=PASSWORD, full_name=name)
+    Enrollment.objects.create(user=pending, cohort=cohort, status=Enrollment.Status.PENDING)
+
+# Finishing week 1's content unlocks the week 1 survey for both students.
 for item in ContentItem.objects.filter(module__week_number=1):
     ContentCompletion.objects.create(user=student, content_item=item)
+    ContentCompletion.objects.create(user=other, content_item=item)
 
 print("e2e seed complete")

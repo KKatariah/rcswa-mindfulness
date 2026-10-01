@@ -1,6 +1,7 @@
+import unicodedata
+
 from django.conf import settings as django_settings
 from django.shortcuts import render
-from django.utils import timezone
 from django.db import transaction
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
@@ -163,7 +164,9 @@ def login_view(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    user = authenticate(request, email=email, password=password)
+    # Emails are matched case-insensitively; authenticate() needs the stored spelling.
+    match = User.objects.filter(email__iexact=email.strip()).first()
+    user = authenticate(request, email=match.email, password=password) if match else None
 
     if user is None:
         return Response(
@@ -215,7 +218,7 @@ def google_login_view(request):
             status=status.HTTP_401_UNAUTHORIZED,
         )
 
-    email = idinfo.get("email")
+    email = (idinfo.get("email") or "").strip().lower()
     full_name = idinfo.get("name", "")
 
     if not email:
@@ -224,14 +227,16 @@ def google_login_view(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    user, created = User.objects.get_or_create(
-        email=email,
-        defaults={"full_name": full_name, "auth_provider": "google"},
-    )
+    # An unverified address could belong to someone else, and we match accounts by email.
+    if not idinfo.get("email_verified"):
+        return Response(
+            {"error": "Your Google email address isn't verified."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
-    if created:
-        user.set_unusable_password()
-        user.save()
+    user = User.objects.filter(email__iexact=email).first()
+    if user is None:
+        user = User.objects.create_user(email=email, full_name=full_name, auth_provider="google")
         _auto_enroll_new_user(user)
 
     token_obj, _ = Token.objects.get_or_create(user=user)
@@ -433,7 +438,26 @@ def _derive_title(body: str) -> str:
         return text
     truncated = text[:60]
     boundary = truncated.rfind(" ")
-    return truncated[:boundary] if boundary > 0 else truncated
+    if boundary > 0:
+        return truncated[:boundary]
+    # No space to cut at: back off so we don't split an emoji or accented letter.
+    cut = 60
+    while cut > 1 and (_attaches_to_previous(text[cut]) or text[cut - 1] == "\u200d"):
+        cut -= 1
+    return text[:cut]
+
+
+def _attaches_to_previous(ch: str) -> bool:
+    """True for characters that belong to the one before them: zero-width joiner,
+    variation selectors, skin-tone modifiers, tag characters and combining marks."""
+    code = ord(ch)
+    return (
+        code == 0x200D
+        or 0xFE00 <= code <= 0xFE0F
+        or 0x1F3FB <= code <= 0x1F3FF
+        or 0xE0020 <= code <= 0xE007F
+        or unicodedata.combining(ch) != 0
+    )
 
 
 class IsAuthorOrAdmin(BasePermission):
@@ -618,6 +642,11 @@ class UserProfileViewSet(
     def perform_destroy(self, instance):
         if instance.pk == self.request.user.pk:
             raise PermissionDenied("You can't delete your own account.")
+        if (
+            instance.role == User.Role.ADMIN
+            and not User.objects.filter(role=User.Role.ADMIN).exclude(pk=instance.pk).exists()
+        ):
+            raise PermissionDenied("There must always be at least one admin.")
         instance.delete()
 
 

@@ -34,3 +34,17 @@ test("submits the week 1 survey and shows a confirmation", async ({ page, reques
 	await page.reload();
 	await expect(page.getByRole("status")).toContainText(/survey has been submitted/i);
 });
+
+test("resources page asks logged-out visitors to log in", async ({ page }) => {
+	await page.goto("/resources");
+	await expect(page.getByText(/to view resources/i)).toBeVisible();
+	await expect(page.getByRole("heading", { name: "Resources" })).toHaveCount(0);
+});
+
+test("resources page lists resources for a logged-in user", async ({ page, request }) => {
+	await loginAs(page, request, STUDENT);
+	await page.goto("/resources");
+	await expect(page.getByRole("heading", { name: "Resources", level: 1 })).toBeVisible();
+	// The data migration seeds the default reading list.
+	await expect(page.getByRole("region", { name: "Books" })).toContainText("My Year of Living Mindfully");
+});

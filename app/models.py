@@ -70,7 +70,8 @@ class UserManager(BaseUserManager):
     def _create_user(self, email, password, **extra_fields):
         if not email:
             raise ValueError("Email address is required.")
-        email = self.normalize_email(email)
+        # Emails are stored lower-case so sign-up and login ignore capitalisation.
+        email = self.normalize_email(email).lower()
         user = self.model(email=email, **extra_fields)
         if password:
             user.set_password(password)
@@ -249,10 +250,10 @@ class Resource(models.Model):
 
 
 class AdditionalResource(models.Model):
-    """Books/documentaries/online programs shown on the public Resources page.
+    """Books/documentaries/online programs shown on the Resources page (logged-in users only).
 
     Distinct from `Resource` above, which is a per-module supplementary link —
-    this model backs a standalone, admin-managed marketing/reading-list page
+    this model backs a standalone, admin-managed reading-list page
     and is not tied to a Module.
     """
 
@@ -486,10 +487,10 @@ class SurveyResponse(models.Model):
         on_delete=models.CASCADE,
         related_name="survey_responses",
     )
-    # CASCADE: a response is meaningless without its survey definition.
+    # PROTECT: responses are research data; a survey that has any can't be deleted.
     survey = models.ForeignKey(
         Survey,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="responses",
     )
     answers = models.JSONField()
