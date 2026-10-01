@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import Head from "next/head";
 import AdminLayout from "@/components/admin/AdminLayout";
-import { getDashboardStats } from "@/lib/api";
+import Select from "@/components/ui/Select";
+import { downloadSurveyResponsesCsv, getDashboardStats } from "@/lib/api";
 import type { DashboardStats } from "@/types/admin";
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
@@ -23,6 +24,67 @@ function ProgressBar({ label, pct, detail }: { label: string; pct: number; detai
 			<div className="mt-1.5 h-2 rounded-full bg-gray-200">
 				<div className="h-2 rounded-full bg-brand-blue" style={{ width: `${Math.min(100, pct)}%` }} />
 			</div>
+		</div>
+	);
+}
+
+function SurveyExport({ surveys }: { surveys: DashboardStats["survey_response_rates"] }) {
+	const [surveyId, setSurveyId] = useState("");
+	const [includeIdentity, setIncludeIdentity] = useState(false);
+	const [downloading, setDownloading] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+
+	async function handleDownload() {
+		setDownloading(true);
+		setError(null);
+		try {
+			await downloadSurveyResponsesCsv(localStorage.getItem("token") ?? "", {
+				surveyId: surveyId ? Number(surveyId) : undefined,
+				includeIdentity,
+			});
+		} catch (e) {
+			setError(e instanceof Error ? e.message : "Export failed");
+		} finally {
+			setDownloading(false);
+		}
+	}
+
+	return (
+		<div className="mt-5 border-t border-gray-100 pt-5">
+			<h3 className="text-sm font-bold text-ink">Export responses</h3>
+			<div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+				<Select
+					id="export-survey"
+					value={surveyId}
+					onChange={setSurveyId}
+					options={[
+						{ value: "", label: "All surveys" },
+						...surveys.map((s) => ({ value: String(s.survey_id), label: s.title })),
+					]}
+					className="h-11 sm:w-64"
+				/>
+				<label className="flex items-center gap-2 text-sm text-ink">
+					<input
+						type="checkbox"
+						checked={includeIdentity}
+						onChange={(e) => setIncludeIdentity(e.target.checked)}
+						className="size-4 accent-brand-blue"
+					/>
+					Include names and emails
+				</label>
+				<button
+					type="button"
+					onClick={handleDownload}
+					disabled={downloading}
+					className="h-11 rounded-xl bg-brand-blue px-4 text-[14px] font-bold text-white disabled:opacity-50 sm:ml-auto"
+				>
+					{downloading ? "Preparing…" : "Download CSV"}
+				</button>
+			</div>
+			<p className="mt-2 text-xs text-muted">
+				Participants are identified by ID unless names and emails are included. Treat the file as confidential research data.
+			</p>
+			{error && <p role="alert" className="mt-2 text-sm text-red-600">{error}</p>}
 		</div>
 	);
 }
@@ -135,6 +197,7 @@ export default function AdminDashboardPage() {
 								))
 							)}
 						</div>
+						<SurveyExport surveys={stats.survey_response_rates} />
 					</div>
 
 					<div className="grid gap-4 sm:grid-cols-3">

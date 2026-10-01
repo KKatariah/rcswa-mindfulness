@@ -69,6 +69,8 @@ MIDDLEWARE = [
 CORS_ALLOWED_ORIGINS = os.environ.get(
     "CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000"
 ).split(",")
+# Lets the admin dashboard read the filename of CSV downloads.
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 
 ROOT_URLCONF = 'server.urls'
 

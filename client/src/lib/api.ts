@@ -640,6 +640,30 @@ export async function getDashboardStats(
 	return handleResponse<DashboardStats>(res);
 }
 
+/** Download survey responses as CSV (admin only). Omit surveyId for all surveys. */
+export async function downloadSurveyResponsesCsv(
+	token: string,
+	options: { surveyId?: number; includeIdentity?: boolean } = {},
+): Promise<void> {
+	const params = new URLSearchParams();
+	if (options.surveyId) params.set("survey", String(options.surveyId));
+	if (options.includeIdentity) params.set("identify", "1");
+	const query = params.toString() ? `?${params}` : "";
+	const res = await fetch(`${API_BASE_URL}/surveys/export/${query}`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	if (!res.ok) await handleResponse(res);
+
+	const filename =
+		/filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "survey-responses.csv";
+	const url = URL.createObjectURL(await res.blob());
+	const link = document.createElement("a");
+	link.href = url;
+	link.download = filename;
+	link.click();
+	URL.revokeObjectURL(url);
+}
+
 export async function loginWithGoogle(
 	credential: string,
 ): Promise<AuthResponse> {

@@ -4,7 +4,7 @@ from datetime import timedelta
 from django.core.management import call_command
 from django.utils import timezone
 
-from app.models import Cohort, ContentCompletion, ContentItem, Enrollment, Module, User
+from app.models import Cohort, ContentCompletion, ContentItem, Enrollment, Module, Survey, SurveyResponse, User
 
 PASSWORD = "Calm-River-42"
 
@@ -34,5 +34,13 @@ for email, name in (("approve-me@e2e.local", "Approve Me"), ("reject-me@e2e.loca
 for item in ContentItem.objects.filter(module__week_number=1):
     ContentCompletion.objects.create(user=student, content_item=item)
     ContentCompletion.objects.create(user=other, content_item=item)
+
+# A submitted week 2 survey for the admin export test.
+responder = User.objects.create_user(email="responder@e2e.local", password=PASSWORD, full_name="Rae Responder")
+Enrollment.objects.create(user=responder, cohort=cohort, status=Enrollment.Status.WITHDRAWN)
+SurveyResponse.objects.create(
+    user=responder, survey=Survey.objects.get(code="weekly-maq-w2"),
+    answers={"q1": 2, "q2": 10, "q3": 4, "q13": "Seeded reflection for export."},
+)
 
 print("e2e seed complete")

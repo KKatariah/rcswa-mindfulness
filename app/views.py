@@ -1,7 +1,9 @@
 import unicodedata
 
 from django.conf import settings as django_settings
+from django.http import HttpResponse
 from django.shortcuts import render
+from django.utils import timezone
 from django.db import transaction
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
@@ -36,6 +38,7 @@ from .models import (
 from .notifications import notify_survey_unlocked
 from .permissions import IsAdminOrStaff, IsAdminOrSelf
 from .throttles import AuthRateThrottle
+from .exports import survey_responses_csv
 
 
 from google.oauth2 import id_token
@@ -676,6 +679,30 @@ class SurveyViewSet(viewsets.ReadOnlyModelViewSet):
                 .values_list("content_item_id", flat=True)
             )
         return ctx
+
+    @action(detail=False, methods=["get"], url_path="export", permission_classes=[IsAuthenticated, IsAdminOrStaff])
+    def export(self, request):
+        """Admin-only CSV of survey responses.
+
+        ?survey=<id>  limit to one survey (default: all surveys)
+        ?identify=1   include participant names and emails (default: user id only)
+        """
+        surveys = Survey.objects.select_related("module").order_by("module__week_number", "code")
+        survey_id = request.query_params.get("survey")
+        if survey_id:
+            surveys = surveys.filter(pk=survey_id)
+            if not surveys.exists():
+                return Response({"detail": "Survey not found."}, status=status.HTTP_404_NOT_FOUND)
+        include_identity = request.query_params.get("identify") in ("1", "true")
+
+        label = surveys.first().code if survey_id else "all"
+        filename = f"survey-responses-{label}-{timezone.localdate().isoformat()}.csv"
+        response = HttpResponse(
+            survey_responses_csv(surveys, include_identity=include_identity),
+            content_type="text/csv; charset=utf-8",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
 
     @action(detail=False, methods=["get"], url_path="module-responses")
     def module_responses(self, request):

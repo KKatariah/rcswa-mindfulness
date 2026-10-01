@@ -2563,3 +2563,63 @@ class ReminderTimeTests(APITestCase):
         self.assertEqual(bad.status_code, status.HTTP_400_BAD_REQUEST)
         ok = self.client.patch("/api/notifications/preferences/me/", {"reminder_time": "19:00"}, format="json")
         self.assertEqual(ok.status_code, status.HTTP_200_OK)
+
+
+class SurveyExportTests(APITestCase):
+    def setUp(self):
+        import csv as _csv
+        self._csv = _csv
+        self.admin = User.objects.create_user(email="admin@test.local", password="testpass", role=User.Role.ADMIN)
+        self.student = User.objects.create_user(email="s@test.local", password="testpass", full_name="Sam Student")
+        cohort = _cohort(10)
+        Enrollment.objects.create(user=self.student, cohort=cohort)
+        with patch("app.signals._fire_async"):
+            self.w1 = Module.objects.create(week_number=1, title="W1", is_published=True)
+            self.w2 = Module.objects.create(week_number=2, title="W2", is_published=True)
+        questions = [{"id": "q1", "type": "integer"}, {"id": "q13", "type": "longtext"}]
+        self.s1 = Survey.objects.create(module=self.w1, code="wk1", title="Week 1", type="weekly", questions=questions)
+        self.s2 = Survey.objects.create(module=self.w2, code="wk2", title="Week 2", type="weekly", questions=questions)
+        SurveyResponse.objects.create(user=self.student, survey=self.s1, answers={"q1": 3, "q13": "=HYPERLINK(\"x\")"})
+        SurveyResponse.objects.create(user=self.student, survey=self.s2, answers={"q1": 0, "q13": "Calm 😊"})
+
+    def _rows(self, resp):
+        text = resp.content.decode("utf-8").lstrip("﻿")
+        return list(self._csv.DictReader(text.splitlines()))
+
+    def test_admin_downloads_all_responses_without_identity_by_default(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get("/api/surveys/export/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn('filename="survey-responses-all-', resp["Content-Disposition"])
+        rows = self._rows(resp)
+        self.assertEqual([r["survey_code"] for r in rows], ["wk1", "wk2"])
+        self.assertEqual(rows[0]["participant_id"], str(self.student.pk))
+        self.assertEqual(rows[0]["cohort"], "Cohort 10")
+        self.assertEqual(rows[1]["q13"], "Calm 😊")
+        self.assertNotIn("email", rows[0])
+        self.assertNotIn("s@test.local", resp.content.decode("utf-8"))
+
+    def test_identify_adds_name_and_email(self):
+        self.client.force_login(self.admin)
+        rows = self._rows(self.client.get("/api/surveys/export/?identify=1"))
+        self.assertEqual(rows[0]["email"], "s@test.local")
+        self.assertEqual(rows[0]["full_name"], "Sam Student")
+
+    def test_formula_like_answers_are_neutralised(self):
+        self.client.force_login(self.admin)
+        rows = self._rows(self.client.get("/api/surveys/export/"))
+        self.assertEqual(rows[0]["q13"], "'=HYPERLINK(\"x\")")
+
+    def test_single_survey_filter_and_unknown_survey(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get(f"/api/surveys/export/?survey={self.s2.pk}")
+        self.assertIn('filename="survey-responses-wk2-', resp["Content-Disposition"])
+        self.assertEqual([r["survey_code"] for r in self._rows(resp)], ["wk2"])
+        self.assertEqual(self.client.get("/api/surveys/export/?survey=999").status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_students_cannot_export(self):
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get("/api/surveys/export/").status_code, status.HTTP_403_FORBIDDEN)
+        self.client.logout()
+        self.assertIn(self.client.get("/api/surveys/export/").status_code, (401, 403))
