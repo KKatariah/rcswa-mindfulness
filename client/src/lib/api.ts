@@ -63,10 +63,14 @@ export type ApiContentItem = {
 };
 
 export type ApiModule = {
-	id: number;
-	week_number: number;
-	title: string;
-	content_items: ApiContentItem[];
+  id: number;
+  week_number: number;
+  title: string;
+  description: string;
+  is_published: boolean;
+  is_unlocked: boolean;
+  unlock_at: string | null;
+  content_items: ApiContentItem[];
 };
 
 export type ApiModuleDetail = ApiModule & { description: string };
