@@ -161,7 +161,7 @@ def login_view(request):
     email = request.data.get("email")
     password = request.data.get("password")
 
-    if not email or not password:
+    if not isinstance(email, str) or not isinstance(password, str) or not email or not password:
         return Response(
             {"error": "Email and password are required."},
             status=status.HTTP_400_BAD_REQUEST,
@@ -205,7 +205,7 @@ def logout_view(request):
 def google_login_view(request):
     token = request.data.get("credential")
 
-    if not token:
+    if not isinstance(token, str) or not token:
         return Response(
             {"error": "Google credential token is required."},
             status=status.HTTP_400_BAD_REQUEST,
@@ -302,7 +302,7 @@ class ContentItemViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = ContentItem.objects.select_related("module").order_by("module", "display_order")
-        module_id = self.request.query_params.get("module")
+        module_id = _id_param(self.request, "module")
         if module_id:
             qs = qs.filter(module_id=module_id)
         return qs
@@ -357,7 +357,7 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Enrollment.objects.select_related("user", "cohort").order_by("-enrolled_at")
-        cohort_id = self.request.query_params.get("cohort")
+        cohort_id = _id_param(self.request, "cohort")
         if cohort_id:
             qs = qs.filter(cohort_id=cohort_id)
         status_param = self.request.query_params.get("status")
@@ -431,6 +431,20 @@ class ContentViewViewSet(
 
 
 # ── Forum ──────────────────────────────────────────────────────────────────────
+
+def _id_param(request, name):
+    """An optional numeric id from the query string; a 400, not a 500, if it isn't one."""
+    raw = request.query_params.get(name)
+    if raw in (None, ""):
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValidationError({name: "Must be a whole number."})
+    if value < 1:
+        raise ValidationError({name: "Must be a positive id."})
+    return value
+
 
 def _derive_title(body: str) -> str:
     """First ≤60 chars of body, trimmed at the nearest word boundary."""
@@ -688,7 +702,7 @@ class SurveyViewSet(viewsets.ReadOnlyModelViewSet):
         ?identify=1   include participant names and emails (default: user id only)
         """
         surveys = Survey.objects.select_related("module").order_by("module__week_number", "code")
-        survey_id = request.query_params.get("survey")
+        survey_id = _id_param(request, "survey")
         if survey_id:
             surveys = surveys.filter(pk=survey_id)
             if not surveys.exists():
@@ -709,7 +723,7 @@ class SurveyViewSet(viewsets.ReadOnlyModelViewSet):
         u = request.user
         if not (getattr(u, "role", None) == "admin" or u.is_staff):
             raise PermissionDenied()
-        module_id = request.query_params.get("module")
+        module_id = _id_param(request, "module")
         if not module_id:
             return Response(
                 {"detail": "module query parameter is required."},
