@@ -1337,6 +1337,37 @@ class AuthRoleTests(APITestCase):
         self.assertEqual(resp.data["user"]["role"], "student")
 
 
+class RoleStaffSyncTests(TestCase):
+    """User.save() keeps is_staff in step with role."""
+
+    def test_promoting_to_admin_sets_is_staff(self):
+        user = User.objects.create_user(email="promote@test.local", password="testpass")
+        self.assertFalse(user.is_staff)
+        user.role = User.Role.ADMIN
+        user.save()
+        user.refresh_from_db()
+        self.assertTrue(user.is_staff)
+
+    def test_demoting_admin_clears_is_staff(self):
+        user = User.objects.create_user(
+            email="demote@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.assertTrue(user.is_staff)
+        user.role = User.Role.STUDENT
+        user.save()
+        user.refresh_from_db()
+        self.assertFalse(user.is_staff)
+
+    def test_superuser_is_always_admin(self):
+        user = User.objects.create_superuser(email="super@test.local", password="testpass")
+        self.assertEqual(user.role, User.Role.ADMIN)
+        user.role = User.Role.STUDENT
+        user.save()
+        user.refresh_from_db()
+        self.assertEqual(user.role, User.Role.ADMIN)
+        self.assertTrue(user.is_staff)
+
+
 # ── Admin portal: Cohort CRUD permissions ────────────────────────────────────────
 
 class CohortAdminTests(APITestCase):
