@@ -4,9 +4,9 @@ import { useRouter } from "next/router";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import AdminLayout from "@/components/admin/AdminLayout";
-import Select from "@/components/ui/Select";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import { PencilIcon, TrashIcon } from "@/components/ui/icons";
+import ContentEmbed from "@/components/modules/ContentEmbed";
+import { ChevronDownIcon, ChevronUpIcon, PencilIcon, TrashIcon } from "@/components/ui/icons";
 import {
 	getModuleAdmin,
 	updateModule,
@@ -14,18 +14,22 @@ import {
 	createContentItem,
 	updateContentItem,
 	deleteContentItem,
+	reorderContentItems,
 } from "@/lib/api";
 import type { AdminModule, AdminContentItem } from "@/types/admin";
 
 type ContentItemFormState = {
 	title: string;
-	type: "video" | "audio" | "text";
+	type: "video" | "audio";
 	provider: "youtube" | "soundcloud" | "";
 	embed_url: string;
-	body: string;
+	day_offset: number | null;
 };
 
-const EMPTY_ITEM_FORM: ContentItemFormState = { title: "", type: "text", provider: "", embed_url: "", body: "" };
+// New audio items remind on Day 1 by default so reminders work without extra setup.
+const EMPTY_ITEM_FORM: ContentItemFormState = { title: "", type: "video", provider: "", embed_url: "", day_offset: 0 };
+
+const REMINDER_DAYS = [0, 1, 2, 3, 4, 5, 6];
 
 // Mirrors the backend's normalize_youtube_embed_url/normalize_soundcloud_embed_url
 // matching in app/models.py, so a link is classified the same way client-side.
@@ -42,6 +46,19 @@ function detectProvider(url: string): "youtube" | "soundcloud" | null {
 	return null;
 }
 
+const YOUTUBE_ID_RE = /(?:[?&]v=|embed\/|shorts\/|\/v\/|youtu\.be\/)([A-Za-z0-9_-]{11})/;
+
+// Client-side copy of the backend's link normalisation, so the preview shows what students will see.
+function toEmbedUrl(url: string, provider: "youtube" | "soundcloud"): string | null {
+	const trimmed = url.trim();
+	if (provider === "youtube") {
+		const id = trimmed.match(YOUTUBE_ID_RE)?.[1];
+		return id ? `https://www.youtube.com/embed/${id}` : null;
+	}
+	if (trimmed.startsWith(SOUNDCLOUD_EMBED_PREFIX)) return trimmed;
+	return `${SOUNDCLOUD_EMBED_PREFIX}?url=${encodeURIComponent(trimmed)}`;
+}
+
 function ContentItemForm({
 	initial,
 	onSubmit,
@@ -55,19 +72,21 @@ function ContentItemForm({
 	const [error, setError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
 
+	const previewProvider = detectProvider(form.embed_url);
+	const previewUrl = previewProvider ? toEmbedUrl(form.embed_url, previewProvider) : null;
+
 	async function handleSubmit(e: FormEvent) {
 		e.preventDefault();
 		setError(null);
 
-		let toSubmit = form;
-		if (form.type !== "text") {
-			const provider = detectProvider(form.embed_url);
-			if (!provider) {
-				setError("Enter a valid YouTube or SoundCloud link.");
-				return;
-			}
-			toSubmit = { ...form, type: provider === "soundcloud" ? "audio" : "video", provider };
+		const provider = detectProvider(form.embed_url);
+		if (!provider) {
+			setError("Enter a valid YouTube or SoundCloud link.");
+			return;
 		}
+		const isAudio = provider === "soundcloud";
+		// Reminders are only sent for audio items.
+		const toSubmit: ContentItemFormState = { ...form, type: isAudio ? "audio" : "video", provider, day_offset: isAudio ? form.day_offset : null };
 
 		setSubmitting(true);
 		try {
@@ -95,59 +114,42 @@ function ContentItemForm({
 			</div>
 
 			<div className="flex flex-col gap-2">
-				<label htmlFor="item-type" className="text-sm font-semibold text-ink">Type</label>
-				<Select
-					id="item-type"
-					value={form.type === "text" ? "text" : "link"}
-					onChange={(kind) => {
-						if (kind === "text") {
-							setForm((f) => ({ ...f, type: "text", provider: "" }));
-						} else {
-							setForm((f) => ({ ...f, type: "video", provider: "" }));
-						}
-					}}
-					options={[
-						{ value: "text", label: "Text" },
-						{ value: "link", label: "YouTube / SoundCloud link" },
-					]}
-					className="h-11 w-full"
+				<label htmlFor="item-embed-url" className="text-sm font-semibold text-ink">Link</label>
+				<input
+					id="item-embed-url"
+					type="url"
+					value={form.embed_url}
+					onChange={(e) => setForm((f) => ({ ...f, embed_url: e.target.value }))}
+					placeholder="Paste a YouTube or SoundCloud link…"
+					className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
 				/>
+				{previewProvider === "soundcloud" && (
+					<div className="flex flex-col gap-2">
+						<label htmlFor="item-reminder-day" className="text-sm font-semibold text-ink">Reminder day</label>
+						<select
+							id="item-reminder-day"
+							value={form.day_offset ?? ""}
+							onChange={(e) => setForm((f) => ({ ...f, day_offset: e.target.value === "" ? null : Number(e.target.value) }))}
+							className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
+						>
+							<option value="">No reminder</option>
+							{REMINDER_DAYS.map((day) => (
+								<option key={day} value={day}>Day {day + 1} of the week</option>
+							))}
+						</select>
+					</div>
+				)}
+				{previewProvider && previewUrl && (
+					<div className="rounded-xl border border-gray-100 bg-surface-muted p-3">
+						<p className="text-xs font-semibold uppercase tracking-wide text-muted">Preview</p>
+						<ContentEmbed
+							type={previewProvider === "soundcloud" ? "audio" : "video"}
+							title={form.title || undefined}
+							embedUrl={previewUrl}
+						/>
+					</div>
+				)}
 			</div>
-
-			{form.type === "text" ? (
-				<div className="flex flex-col gap-2">
-					<label htmlFor="item-body" className="text-sm font-semibold text-ink">
-						Content (Markdown)
-					</label>
-					<textarea
-						id="item-body"
-						rows={6}
-						value={form.body}
-						onChange={(e) => setForm((f) => ({ ...f, body: e.target.value }))}
-						className="resize-none rounded-xl border border-gray-200 p-3 font-mono text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-					/>
-					{form.body.trim() && (
-						<div className="rounded-xl border border-gray-100 bg-surface-muted p-3">
-							<p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Preview</p>
-							<div className="prose prose-neutral prose-sm max-w-none break-words">
-								<ReactMarkdown remarkPlugins={[remarkGfm]}>{form.body}</ReactMarkdown>
-							</div>
-						</div>
-					)}
-				</div>
-			) : (
-				<div className="flex flex-col gap-2">
-					<label htmlFor="item-embed-url" className="text-sm font-semibold text-ink">Link</label>
-					<input
-						id="item-embed-url"
-						type="url"
-						value={form.embed_url}
-						onChange={(e) => setForm((f) => ({ ...f, embed_url: e.target.value }))}
-						placeholder="Paste a YouTube or SoundCloud link…"
-						className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-					/>
-				</div>
-			)}
 
 			<div className="flex gap-3">
 				<button
@@ -217,7 +219,7 @@ export default function AdminModuleEditorPage() {
 			const token = localStorage.getItem("token") ?? "";
 			const updated = await updateModule(
 				module.id,
-				{ title: module.title, description: module.description, week_number: module.week_number, is_published: module.is_published },
+				{ title: module.title, description: module.description, summary: module.summary, week_number: module.week_number, is_published: module.is_published },
 				token,
 			);
 			setModule((prev) => (prev ? { ...prev, ...updated } : prev));
@@ -242,6 +244,22 @@ export default function AdminModuleEditorPage() {
 		await updateContentItem(editingItem.id, form, token);
 		setEditingItem(null);
 		await refresh();
+	}
+
+	async function handleMoveItem(index: number, direction: -1 | 1) {
+		if (!module) return;
+		const items = [...module.content_items];
+		[items[index], items[index + direction]] = [items[index + direction], items[index]];
+		const previous = module;
+		setModule({ ...module, content_items: items });
+		setDeleteError(null);
+		try {
+			const token = localStorage.getItem("token") ?? "";
+			await reorderContentItems(module.id, items.map((item) => item.id), token);
+		} catch (err) {
+			setModule(previous);
+			setDeleteError(err instanceof Error ? err.message : "Failed to reorder content items");
+		}
 	}
 
 	async function handleDeleteItem(item: AdminContentItem) {
@@ -323,14 +341,37 @@ export default function AdminModuleEditorPage() {
 					</div>
 				</div>
 				<div className="mt-4 flex flex-col gap-2">
-					<label htmlFor="meta-description" className="text-sm font-semibold text-ink">Description</label>
+					<label htmlFor="meta-summary" className="text-sm font-semibold text-ink">
+						Summary <span className="font-normal text-muted">(shown on the homepage)</span>
+					</label>
+					<input
+						id="meta-summary"
+						maxLength={300}
+						value={module.summary}
+						onChange={(e) => setModule((m) => m && { ...m, summary: e.target.value })}
+						className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
+					/>
+					<p className="text-right text-xs text-muted">{module.summary.length}/300</p>
+				</div>
+				<div className="mt-4 flex flex-col gap-2">
+					<label htmlFor="meta-description" className="text-sm font-semibold text-ink">
+						Description (Markdown)
+					</label>
 					<textarea
 						id="meta-description"
-						rows={3}
+						rows={8}
 						value={module.description}
 						onChange={(e) => setModule((m) => m && { ...m, description: e.target.value })}
-						className="resize-none rounded-xl border border-gray-200 p-3 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
+						className="resize-y rounded-xl border border-gray-200 p-3 font-mono text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
 					/>
+					{module.description.trim() && (
+						<div className="rounded-xl border border-gray-100 bg-surface-muted p-3">
+							<p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Preview</p>
+							<div className="prose prose-neutral prose-sm max-w-none break-words">
+								<ReactMarkdown remarkPlugins={[remarkGfm]}>{module.description}</ReactMarkdown>
+							</div>
+						</div>
+					)}
 				</div>
 				<label className="mt-4 flex items-center gap-2 text-sm font-semibold text-ink">
 					<input
@@ -400,23 +441,46 @@ export default function AdminModuleEditorPage() {
 					</p>
 				)}
 
-				{module.content_items.map((item) =>
+				{module.content_items.map((item, index) =>
 					editingItem?.id === item.id ? (
 						<ContentItemForm
 							key={item.id}
-							initial={{ title: item.title, type: item.type, provider: item.provider, embed_url: item.embed_url, body: item.body }}
+							initial={{ title: item.title, type: item.type, provider: item.provider, embed_url: item.embed_url, day_offset: item.day_offset }}
 							onSubmit={handleEditItem}
 							onCancel={() => setEditingItem(null)}
 						/>
 					) : (
-						<div key={item.id} className="flex items-center justify-between rounded-2xl border border-gray-200 bg-white p-4">
-							<div className="flex items-center gap-3">
+						<div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-4">
+							<div className="flex min-w-0 items-center gap-3">
 								<span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-semibold uppercase text-muted">
 									{item.type}
 								</span>
-								<span className="text-sm font-semibold text-ink">{item.title}</span>
+								<span className="min-w-0 wrap-anywhere text-sm font-semibold text-ink">{item.title}</span>
+								{item.type === "audio" && (
+									<span className="text-xs text-muted">
+										{item.day_offset === null ? "No reminder" : `Reminder: Day ${item.day_offset + 1}`}
+									</span>
+								)}
 							</div>
-							<div className="flex gap-3">
+							<div className="flex items-center gap-3">
+								<button
+									type="button"
+									onClick={() => handleMoveItem(index, -1)}
+									disabled={index === 0}
+									aria-label="Move content item up"
+									className="disabled:opacity-30"
+								>
+									<ChevronUpIcon className="size-4 text-muted hover:text-brand-blue" />
+								</button>
+								<button
+									type="button"
+									onClick={() => handleMoveItem(index, 1)}
+									disabled={index === module.content_items.length - 1}
+									aria-label="Move content item down"
+									className="disabled:opacity-30"
+								>
+									<ChevronDownIcon className="size-4 text-muted hover:text-brand-blue" />
+								</button>
 								<button type="button" onClick={() => setEditingItem(item)} aria-label="Edit content item">
 									<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
 								</button>

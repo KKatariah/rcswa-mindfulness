@@ -4,10 +4,13 @@ import { useEffect, useState } from "react";
 import AppShell from "@/components/main/AppShell";
 import NextSession from "@/components/modules/NextSession";
 import { BookOpenIcon, VideoIcon, GlobeIcon, ExternalLinkIcon } from "@/components/ui/icons";
+import { useAuth } from "@/context/AuthContext";
 import { listAdditionalResources } from "@/lib/api";
+import { safeUrl } from "@/lib/safeUrl";
 import type { AdminAdditionalResource } from "@/types/admin";
 
 type Resource = {
+  id: number;
   title: string;
   author?: string;
   href?: string;
@@ -17,10 +20,11 @@ type Resource = {
 
 function toResource(r: AdminAdditionalResource): Resource {
   return {
+    id: r.id,
     title: r.title,
     author: r.author || undefined,
-    href: r.url || undefined,
-    cover: r.cover_image ?? undefined,
+    href: safeUrl(r.url),
+    cover: safeUrl(r.cover_image),
   };
 }
 
@@ -100,14 +104,26 @@ function LogoThumb({ resource, iconBg, Icon }: { resource: Resource; iconBg: str
 }
 
 export default function ResourcesPage() {
+  const { user, isLoading: authLoading } = useAuth();
   const [resources, setResources] = useState<AdminAdditionalResource[]>([]);
 
   useEffect(() => {
+    if (authLoading || !user) return;
     const token = localStorage.getItem("token") ?? "";
     listAdditionalResources(token)
       .then(setResources)
       .catch(() => setResources([]));
-  }, []);
+  }, [user, authLoading]);
+
+  if (!authLoading && !user) {
+    return (
+      <div className="flex min-h-screen items-center justify-center p-6">
+        <p className="text-ink-soft">
+          Please <Link href="/" className="text-brand-blue underline">log in</Link> to view resources.
+        </p>
+      </div>
+    );
+  }
 
   const BOOKS = resources.filter((r) => r.category === "book").map(toResource);
   const DOCUMENTARIES = resources.filter((r) => r.category === "documentary").map(toResource);
@@ -156,10 +172,10 @@ export default function ResourcesPage() {
               </div>
               <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
                 {BOOKS.map((book) => (
-                  <div key={book.title}>
+                  <div key={book.id} className="min-w-0">
                     <BookCover resource={book} />
-                    <p className="mt-2 text-sm font-semibold leading-tight text-ink">{book.title}</p>
-                    {book.author && <p className="mt-0.5 text-xs text-muted">{book.author}</p>}
+                    <p className="mt-2 wrap-anywhere text-sm font-semibold leading-tight text-ink">{book.title}</p>
+                    {book.author && <p className="mt-0.5 wrap-anywhere text-xs text-muted">{book.author}</p>}
                   </div>
                 ))}
               </div>
@@ -172,11 +188,11 @@ export default function ResourcesPage() {
               </div>
               <ul className="mt-4 divide-y divide-gray-100">
                 {DOCUMENTARIES.map((doc) => (
-                  <li key={doc.title} className="flex items-center gap-4 py-4 first:pt-0 last:pb-0">
+                  <li key={doc.id} className="flex items-center gap-4 py-4 first:pt-0 last:pb-0">
                     <PosterPlaceholder resource={doc} iconBg="bg-purple-500" Icon={VideoIcon} />
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-ink">{doc.title}</p>
-                      {doc.author && <p className="mt-0.5 text-sm text-muted">{doc.author}</p>}
+                      <p className="wrap-anywhere font-semibold text-ink">{doc.title}</p>
+                      {doc.author && <p className="mt-0.5 wrap-anywhere text-sm text-muted">{doc.author}</p>}
                     </div>
                     {doc.href && (
                       <a
@@ -201,10 +217,10 @@ export default function ResourcesPage() {
               </div>
               <ul className="mt-4 divide-y divide-gray-100">
                 {ONLINE_PROGRAMS.map((program) => (
-                  <li key={program.title} className="flex items-center gap-4 py-4 first:pt-0 last:pb-0">
+                  <li key={program.id} className="flex items-center gap-4 py-4 first:pt-0 last:pb-0">
                     <LogoThumb resource={program} iconBg="bg-green-600" Icon={GlobeIcon} />
                     <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-ink">{program.title}</p>
+                      <p className="wrap-anywhere font-semibold text-ink">{program.title}</p>
                     </div>
                     {program.href && (
                       <a
