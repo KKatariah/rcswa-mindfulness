@@ -622,6 +622,7 @@ type ThreadRowProps = {
   onSelect: (id: number) => void;
   onEdit: (id: number, body: string) => Promise<void>;
   onDelete: (id: number) => void;
+  onPin: (id: number, is_pinned: boolean) => Promise<void>;
 };
 
 function ThreadRow({
@@ -633,10 +634,13 @@ function ThreadRow({
   onSelect,
   onEdit,
   onDelete,
+  onPin,
 }: ThreadRowProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(thread.body);
   const [saving, setSaving] = useState(false);
+  const [pinning, setPinning] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   async function handleSave() {
     if (!draft.trim()) return;
@@ -646,6 +650,18 @@ function ThreadRow({
       setEditing(false);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handlePin() {
+    setPinError(null);
+    setPinning(true);
+    try {
+      await onPin(thread.id, !thread.is_pinned);
+    } catch (err) {
+      setPinError(err instanceof Error ? err.message : "Failed to update pin");
+    } finally {
+      setPinning(false);
     }
   }
 
@@ -735,6 +751,12 @@ function ThreadRow({
               </p>
             )}
 
+            {pinError && (
+              <p className="mt-2 text-xs font-medium text-red-600">
+                {pinError}
+              </p>
+            )}
+
             <div className="mt-3 flex items-center gap-1 text-[#9CA3AF]">
               <MessageIcon className="h-3.5 w-3.5" />
               <span className="text-xs font-medium">
@@ -750,6 +772,14 @@ function ThreadRow({
             className="flex shrink-0 items-center gap-3"
             onClick={(e) => e.stopPropagation()}
           >
+            <button
+              type="button"
+              onClick={handlePin}
+              disabled={pinning}
+              className="text-xs font-semibold text-amber-600 hover:underline disabled:opacity-50"
+            >
+              {thread.is_pinned ? "Unpin" : "Pin"}
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -782,6 +812,7 @@ type FeedViewProps = {
   onCreateThread: (body: string) => Promise<void>;
   onEditThread: (id: number, body: string) => Promise<void>;
   onDeleteThread: (id: number) => void;
+  onPinThread: (id: number, is_pinned: boolean) => Promise<void>;
   isActive: boolean;
   user: ForumUser | null;
 };
@@ -792,6 +823,7 @@ function FeedView({
   onCreateThread,
   onEditThread,
   onDeleteThread,
+  onPinThread,
   isActive,
   user,
 }: FeedViewProps) {
@@ -823,6 +855,7 @@ function FeedView({
               onSelect={onSelect}
               onEdit={onEditThread}
               onDelete={onDeleteThread}
+              onPin={onPinThread}
             />
           ))
         )}
@@ -1105,6 +1138,7 @@ export default function ForumPage() {
                     onCreateThread={handleCreateThread}
                     onEditThread={handleEditThreadFromFeed}
                     onDeleteThread={handleDeleteThreadFromFeed}
+                    onPinThread={handlePinThread}
                     isActive={isActive}
                     user={user}
                   />

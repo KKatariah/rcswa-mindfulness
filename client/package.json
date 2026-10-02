@@ -7,12 +7,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "generate-icons": "node scripts/generate-icons.mjs"
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",
     "@tailwindcss/typography": "^0.5.20",
-    "next": "16.3.3",
+    "next": "^16.3.8",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-markdown": "^10.1.0",
@@ -27,6 +28,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "fast-check": "^4.10.2",
+    "sharp": "^0.35.5",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

@@ -1424,6 +1424,37 @@ class AuthRoleTests(APITestCase):
         self.assertEqual(resp.data["user"]["role"], "student")
 
 
+class RoleStaffSyncTests(TestCase):
+    """User.save() keeps is_staff in step with role."""
+
+    def test_promoting_to_admin_sets_is_staff(self):
+        user = User.objects.create_user(email="promote@test.local", password="testpass")
+        self.assertFalse(user.is_staff)
+        user.role = User.Role.ADMIN
+        user.save()
+        user.refresh_from_db()
+        self.assertTrue(user.is_staff)
+
+    def test_demoting_admin_clears_is_staff(self):
+        user = User.objects.create_user(
+            email="demote@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.assertTrue(user.is_staff)
+        user.role = User.Role.STUDENT
+        user.save()
+        user.refresh_from_db()
+        self.assertFalse(user.is_staff)
+
+    def test_superuser_is_always_admin(self):
+        user = User.objects.create_superuser(email="super@test.local", password="testpass")
+        self.assertEqual(user.role, User.Role.ADMIN)
+        user.role = User.Role.STUDENT
+        user.save()
+        user.refresh_from_db()
+        self.assertEqual(user.role, User.Role.ADMIN)
+        self.assertTrue(user.is_staff)
+
+
 # ── Admin portal: Cohort CRUD permissions ────────────────────────────────────────
 
 class CohortAdminTests(APITestCase):
@@ -2312,7 +2343,11 @@ class LastAdminTests(APITestCase):
     def setUp(self):
         self.a = User.objects.create_user(email="a@test.local", password="testpass", role=User.Role.ADMIN)
         self.b = User.objects.create_user(email="b@test.local", password="testpass", role=User.Role.ADMIN)
-        self.staff = User.objects.create_user(email="staff@test.local", password="testpass", is_staff=True)
+        self.staff = User.objects.create_user(email="staff@test.local", password="testpass")
+        # save() now derives is_staff from role, so write it directly: this mimics a
+        # pre-existing staff-but-not-admin row that hasn't been re-saved since.
+        User.objects.filter(pk=self.staff.pk).update(is_staff=True)
+        self.staff.refresh_from_db()
 
     def test_admin_can_demote_another_admin_while_one_remains(self):
         self.client.force_login(self.a)

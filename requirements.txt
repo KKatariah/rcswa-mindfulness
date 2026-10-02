@@ -17,4 +17,4 @@ requests==2.34.2
 rsa==4.9.1
 sqlparse==0.6.0
 tzdata==2026.3
-urllib3==2.7.0
+urllib3==2.8.0
