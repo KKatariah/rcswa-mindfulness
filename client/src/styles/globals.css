@@ -24,21 +24,17 @@ body {
 
 .modal-scroll-content {
   overflow-y: auto;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
+  /* Thin grey native scrollbar. */
+  scrollbar-width: thin;
+  scrollbar-color: #9ca3af transparent;
 }
 
+/* Fallback for browsers without scrollbar-width / scrollbar-color (older Safari). */
 .modal-scroll-content::-webkit-scrollbar {
-  display: none;
-  width: 0;
-  height: 0;
+  width: 8px;
 }
 
-.modal-scroll-thumb {
-  cursor: grab;
-  touch-action: none;
-}
-
-.modal-scroll-thumb:active {
-  cursor: grabbing;
+.modal-scroll-content::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background-color: #9ca3af;
 }

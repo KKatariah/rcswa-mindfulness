@@ -111,19 +111,28 @@ export default function SurveyPage() {
 			);
 
 			console.log("Survey submitted:", result);
+			setSurvey((current) => current && { ...current, has_responded: true });
 			setSubmissionFeedback({
 				title: "Response recorded",
 				message: "Your survey responses have been recorded.",
 			});
 		} catch (err) {
 			const message = err instanceof Error ? err.message : "Please try again.";
-			const alreadySubmitted = message.toLowerCase().includes("already submitted");
-			setSubmissionFeedback({
-				title: alreadySubmitted ? "Already submitted" : "Submission error",
-				message: alreadySubmitted
-					? "You have already submitted a response to this survey."
-					: `We couldn't record your responses. ${message}`,
-			});
+			// Validation errors are also 400s, so ask the server whether a response
+			// now exists (e.g. submitted from another tab) instead of parsing the message.
+			const latest = await getSurvey(String(surveyId), token).catch(() => null);
+			if (latest?.has_responded) {
+				setSurvey(latest);
+				setSubmissionFeedback({
+					title: "Already submitted",
+					message: "You have already submitted a response to this survey.",
+				});
+			} else {
+				setSubmissionFeedback({
+					title: "Submission error",
+					message: `We couldn't record your responses. ${message}`,
+				});
+			}
 		}
 	};
 
@@ -178,11 +187,21 @@ export default function SurveyPage() {
 					className="flex min-w-0 flex-col gap-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 				>
 					<SurveyHeader title={title} />
-					<SurveyQuestions
-						formalQuestions={formalQuestions}
-						informalQuestions={informalQuestions}
-						onSubmit={handleSubmit}
-					/>
+					{survey.has_responded ? (
+						<section className="rounded-[10px] border border-gray-200 bg-white p-6 text-center shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10">
+							<p className="text-base font-bold text-ink">You&apos;ve completed this survey.</p>
+							<p className="mt-2 text-sm text-ink-soft">Thanks for your responses.</p>
+							<Link href="/modules" className="mt-4 inline-block text-sm font-semibold text-brand-blue hover:underline">
+								Back to modules
+							</Link>
+						</section>
+					) : (
+						<SurveyQuestions
+							formalQuestions={formalQuestions}
+							informalQuestions={informalQuestions}
+							onSubmit={handleSubmit}
+						/>
+					)}
 				</main>
 			</AppShell>
 		</>
