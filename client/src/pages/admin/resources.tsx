@@ -1,15 +1,16 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
 import { safeUrl } from "@/lib/safeUrl";
 import Head from "next/head";
 import AdminLayout from "@/components/admin/AdminLayout";
 import Modal from "@/components/main/Modal";
 import Select from "@/components/ui/Select";
-import { PlusIcon, PencilIcon, TrashIcon } from "@/components/ui/icons";
+import { GripIcon, PlusIcon, PencilIcon, TrashIcon } from "@/components/ui/icons";
 import {
 	listAdditionalResources,
 	createAdditionalResource,
 	updateAdditionalResource,
 	deleteAdditionalResource,
+	reorderAdditionalResources,
 } from "@/lib/api";
 import type { AdditionalResourceCategory, AdminAdditionalResource } from "@/types/admin";
 
@@ -19,18 +20,26 @@ const CATEGORY_OPTIONS: { value: AdditionalResourceCategory; label: string }[] =
 	{ value: "online_program", label: "Online Program" },
 ];
 
-const CATEGORY_LABELS: Record<AdditionalResourceCategory, string> = {
-	book: "Book",
-	documentary: "Documentary",
-	online_program: "Online Program",
-};
+const SECTIONS: { category: AdditionalResourceCategory; heading: string }[] = [
+	{ category: "book", heading: "Books" },
+	{ category: "documentary", heading: "Documentaries" },
+	{ category: "online_program", heading: "Online Programs" },
+];
+
+function byOrder(a: AdminAdditionalResource, b: AdminAdditionalResource) {
+	return a.display_order - b.display_order || a.id - b.id;
+}
+
+// Rewrites one category's display_order to match `ids`, leaving other categories alone.
+function withOrder(resources: AdminAdditionalResource[], category: AdditionalResourceCategory, ids: number[]) {
+	return resources.map((r) => (r.category === category ? { ...r, display_order: ids.indexOf(r.id) + 1 } : r));
+}
 
 type ResourceFormState = {
 	category: AdditionalResourceCategory;
 	title: string;
 	author: string;
 	url: string;
-	display_order: string;
 	cover_image: File | null;
 	existing_cover_url: string | null;
 };
@@ -40,7 +49,6 @@ const EMPTY_FORM: ResourceFormState = {
 	title: "",
 	author: "",
 	url: "",
-	display_order: "0",
 	cover_image: null,
 	existing_cover_url: null,
 };
@@ -146,17 +154,6 @@ function ResourceForm({
 			</div>
 
 			<div className="flex flex-col gap-2">
-				<label htmlFor="resource-order" className="text-sm font-semibold text-ink">Display order</label>
-				<input
-					id="resource-order"
-					type="number"
-					value={form.display_order}
-					onChange={(e) => setForm((f) => ({ ...f, display_order: e.target.value }))}
-					className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-				/>
-			</div>
-
-			<div className="flex flex-col gap-2">
 				<label htmlFor="resource-cover" className="text-sm font-semibold text-ink">Cover image</label>
 				{coverPreview && (
 					// eslint-disable-next-line @next/next/no-img-element -- local blob preview / API-hosted image, not a next/image candidate
@@ -198,6 +195,17 @@ export default function AdminResourcesPage() {
 	const [modalOpen, setModalOpen] = useState(false);
 	const [editing, setEditing] = useState<AdminAdditionalResource | null>(null);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
+	const [newCategory, setNewCategory] = useState<AdditionalResourceCategory>("book");
+	const [draggingId, setDraggingId] = useState<number | null>(null);
+	// The list as it was when the drag started: what to compare against on drop, and to restore on failure.
+	const dragStart = useRef<AdminAdditionalResource[] | null>(null);
+	// The dragged category's order so far, updated on every move so the drop sees the last one.
+	const dragIds = useRef<number[]>([]);
+
+	const sections = useMemo(
+		() => SECTIONS.map((s) => ({ ...s, items: resources.filter((r) => r.category === s.category).sort(byOrder) })),
+		[resources],
+	);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -215,9 +223,91 @@ export default function AdminResourcesPage() {
 		return () => { cancelled = true; };
 	}, []);
 
-	function openCreate() {
+	function openCreate(category: AdditionalResourceCategory = "book") {
 		setEditing(null);
+		setNewCategory(category);
 		setModalOpen(true);
+	}
+
+	async function saveOrder(
+		category: AdditionalResourceCategory,
+		ids: number[],
+		previous: AdminAdditionalResource[],
+	) {
+		setDeleteError(null);
+		try {
+			await reorderAdditionalResources(category, ids, localStorage.getItem("token") ?? "");
+		} catch (err) {
+			setResources(previous);
+			setDeleteError(err instanceof Error ? err.message : "Failed to reorder resources");
+		}
+	}
+
+	function idsOf(category: AdditionalResourceCategory, list: AdminAdditionalResource[]) {
+		return list.filter((r) => r.category === category).sort(byOrder).map((r) => r.id);
+	}
+
+	// Dragging uses pointer events (not HTML5 drag and drop) so it works the same for mouse,
+	// touch and pen; `touch-none` on the handle stops the page scrolling instead. The rest of
+	// the gesture is followed on `window` because re-rendering moves the dragged row's DOM node,
+	// which drops any pointer capture the handle had.
+	function handlePointerDown(e: PointerEvent<HTMLButtonElement>, dragged: AdminAdditionalResource) {
+		if (dragStart.current || (e.pointerType === "mouse" && e.button !== 0)) return;
+		e.preventDefault();
+		const { pointerId } = e;
+		const previous = resources;
+		dragStart.current = previous;
+		dragIds.current = idsOf(dragged.category, previous);
+		setDraggingId(dragged.id);
+
+		function onMove(ev: globalThis.PointerEvent) {
+			if (ev.pointerId !== pointerId) return;
+			const row = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("tr[data-resource-id]");
+			const overId = Number(row?.dataset.resourceId);
+			const current = dragIds.current;
+			// Only reorder within a category; rows in other sections are not targets.
+			if (overId === dragged.id || !current.includes(overId)) return;
+			const ids = current.filter((id) => id !== dragged.id);
+			// Moving down lands after the hovered row, moving up lands before it.
+			const after = current.indexOf(dragged.id) < current.indexOf(overId);
+			ids.splice(ids.indexOf(overId) + (after ? 1 : 0), 0, dragged.id);
+			dragIds.current = ids;
+			setResources((prev) => withOrder(prev, dragged.category, ids));
+		}
+
+		function onEnd(ev: globalThis.PointerEvent) {
+			if (ev.pointerId !== pointerId) return;
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onEnd);
+			window.removeEventListener("pointercancel", onEnd);
+			dragStart.current = null;
+			setDraggingId(null);
+			const ids = dragIds.current;
+			if (ev.type === "pointercancel") {
+				setResources(previous);
+			} else if (ids.join() !== idsOf(dragged.category, previous).join()) {
+				void saveOrder(dragged.category, ids, previous);
+			}
+		}
+
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onEnd);
+		window.addEventListener("pointercancel", onEnd);
+	}
+
+	// Keyboard alternative to dragging: arrow keys on the handle move the row one place.
+	function handleHandleKey(e: KeyboardEvent, resource: AdminAdditionalResource) {
+		const step = e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0;
+		if (!step) return;
+		e.preventDefault();
+		const ids = idsOf(resource.category, resources);
+		const from = ids.indexOf(resource.id);
+		const to = from + step;
+		if (to < 0 || to >= ids.length) return;
+		[ids[from], ids[to]] = [ids[to], ids[from]];
+		const previous = resources;
+		setResources(withOrder(resources, resource.category, ids));
+		void saveOrder(resource.category, ids, previous);
 	}
 
 	function openEdit(resource: AdminAdditionalResource) {
@@ -232,7 +322,6 @@ export default function AdminResourcesPage() {
 			title: form.title,
 			author: form.author,
 			url: form.url,
-			display_order: Number(form.display_order) || 0,
 			// Only send a new file when one was picked, so editing text fields
 			// never wipes an existing cover.
 			...(form.cover_image ? { cover_image: form.cover_image } : {}),
@@ -242,7 +331,7 @@ export default function AdminResourcesPage() {
 			setResources((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
 		} else {
 			const created = await createAdditionalResource(payload, token);
-			setResources((prev) => [created, ...prev]);
+			setResources((prev) => [...prev, created]);
 		}
 		setModalOpen(false);
 	}
@@ -269,7 +358,7 @@ export default function AdminResourcesPage() {
 				<h1 className="text-2xl font-extrabold text-ink">Resources</h1>
 				<button
 					type="button"
-					onClick={openCreate}
+					onClick={() => openCreate()}
 					className="flex h-11 items-center gap-2 rounded-xl bg-brand-blue px-4 text-[14px] font-bold text-white"
 				>
 					<PlusIcon className="size-4" />
@@ -283,58 +372,95 @@ export default function AdminResourcesPage() {
 				</p>
 			)}
 
-			<div className="mt-6 overflow-x-auto rounded-2xl border border-gray-200 bg-white">
-				{loading ? (
-					<div className="flex justify-center py-16">
-						<span className="text-sm text-muted">Loading…</span>
-					</div>
-				) : error ? (
-					<p className="p-6 text-sm text-red-600">{error}</p>
-				) : resources.length === 0 ? (
-					<p className="p-6 text-sm text-muted">No resources yet. Add one to get started.</p>
-				) : (
-					<table className="w-full text-left text-sm">
-						<thead>
-							<tr className="border-b border-gray-200 text-xs font-semibold uppercase tracking-wide text-muted">
-								<th className="px-5 py-3">Cover</th>
-								<th className="px-5 py-3">Category</th>
-								<th className="px-5 py-3">Title</th>
-								<th className="px-5 py-3">Author</th>
-								<th className="px-5 py-3">Order</th>
-								<th className="px-5 py-3" />
-							</tr>
-						</thead>
-						<tbody>
-							{resources.map((resource) => (
-								<tr key={resource.id} className="border-b border-gray-100 last:border-0">
-									<td className="px-5 py-3">
-										{resource.cover_image ? (
-											// eslint-disable-next-line @next/next/no-img-element -- API-hosted thumbnail, not a next/image candidate
-											<img src={safeUrl(resource.cover_image)} alt="" className="size-10 rounded-lg object-cover" />
-										) : (
-											<div className="size-10 rounded-lg bg-surface-muted" />
-										)}
-									</td>
-									<td className="px-5 py-3 text-ink-soft">{CATEGORY_LABELS[resource.category]}</td>
-									<td className="px-5 py-3 font-semibold text-ink">{resource.title}</td>
-									<td className="px-5 py-3 text-ink-soft">{resource.author || "—"}</td>
-									<td className="px-5 py-3 text-ink-soft">{resource.display_order}</td>
-									<td className="px-5 py-3">
-										<div className="flex justify-end gap-3">
-											<button type="button" onClick={() => openEdit(resource)} aria-label="Edit resource">
-												<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
-											</button>
-											<button type="button" onClick={() => handleDelete(resource)} aria-label="Delete resource">
-												<TrashIcon className="size-4 text-muted hover:text-red-500" />
-											</button>
-										</div>
-									</td>
-								</tr>
-							))}
-						</tbody>
-					</table>
-				)}
-			</div>
+			{loading ? (
+				<div className="mt-6 flex justify-center rounded-2xl border border-gray-200 bg-white py-16">
+					<span className="text-sm text-muted">Loading…</span>
+				</div>
+			) : error ? (
+				<p className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 text-sm text-red-600">{error}</p>
+			) : (
+				sections.map(({ category, heading, items }) => (
+					<section key={category} aria-labelledby={`resources-${category}`} className="mt-8">
+						<div className="flex items-center justify-between">
+							<h2 id={`resources-${category}`} className="text-lg font-bold text-ink">
+								{heading} <span className="text-sm font-semibold text-muted">({items.length})</span>
+							</h2>
+							<button
+								type="button"
+								onClick={() => openCreate(category)}
+								className="flex items-center gap-1 text-[14px] font-semibold text-brand-blue"
+							>
+								<PlusIcon className="size-4" />
+								Add
+							</button>
+						</div>
+						<div className="mt-3 overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+							{items.length === 0 ? (
+								<p className="p-6 text-sm text-muted">Nothing here yet.</p>
+							) : (
+								<table className="w-full text-left text-sm">
+									<thead>
+										<tr className="border-b border-gray-200 text-xs font-semibold uppercase tracking-wide text-muted">
+											<th className="w-10 px-3 py-3"><span className="sr-only">Reorder</span></th>
+											<th className="px-5 py-3">Cover</th>
+											<th className="px-5 py-3">Title</th>
+											{category === "book" && <th className="px-5 py-3">Author</th>}
+											<th className="px-5 py-3" />
+										</tr>
+									</thead>
+									<tbody>
+										{items.map((resource) => (
+											<tr
+												key={resource.id}
+												data-resource-id={resource.id}
+												className={`border-b border-gray-100 last:border-0 ${
+													draggingId === resource.id ? "bg-surface-muted opacity-50" : ""
+												}`}
+											>
+												<td className="px-3 py-3">
+													<button
+														type="button"
+														onKeyDown={(e) => handleHandleKey(e, resource)}
+														onPointerDown={(e) => handlePointerDown(e, resource)}
+														aria-label={`Reorder ${resource.title}`}
+														aria-describedby="reorder-help"
+														className="flex cursor-grab touch-none select-none items-center rounded p-2.5 text-muted hover:text-ink active:cursor-grabbing"
+													>
+														<GripIcon className="size-4" />
+													</button>
+												</td>
+												<td className="px-5 py-3">
+													{resource.cover_image ? (
+														// eslint-disable-next-line @next/next/no-img-element -- API-hosted thumbnail, not a next/image candidate
+														<img src={safeUrl(resource.cover_image)} alt="" className="size-10 rounded-lg object-cover" />
+													) : (
+														<div className="size-10 rounded-lg bg-surface-muted" />
+													)}
+												</td>
+												<td className="px-5 py-3 font-semibold text-ink">{resource.title}</td>
+												{category === "book" && (
+													<td className="px-5 py-3 text-ink-soft">{resource.author || "—"}</td>
+												)}
+												<td className="px-5 py-3">
+													<div className="flex justify-end gap-3">
+														<button type="button" onClick={() => openEdit(resource)} aria-label="Edit resource">
+															<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
+														</button>
+														<button type="button" onClick={() => handleDelete(resource)} aria-label="Delete resource">
+															<TrashIcon className="size-4 text-muted hover:text-red-500" />
+														</button>
+													</div>
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							)}
+						</div>
+					</section>
+				))
+			)}
+			<p id="reorder-help" className="sr-only">Drag this handle, or press the up and down arrow keys, to change the order.</p>
 
 			<Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? "Edit Resource" : "New Resource"}>
 				<ResourceForm
@@ -345,11 +471,10 @@ export default function AdminResourcesPage() {
 									title: editing.title,
 									author: editing.author,
 									url: editing.url,
-									display_order: String(editing.display_order),
 									cover_image: null,
 									existing_cover_url: editing.cover_image,
 								}
-							: EMPTY_FORM
+							: { ...EMPTY_FORM, category: newCategory }
 					}
 					onSubmit={handleSave}
 					onCancel={() => setModalOpen(false)}

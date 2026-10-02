@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { devices, expect, test } from "@playwright/test";
 import { ADMIN, API, apiToken, loginAs, STUDENT } from "./helpers";
 
 test("students are shown the no-access message on admin pages", async ({ page, request }) => {
@@ -68,4 +68,82 @@ test("admin searches users", async ({ page, request }) => {
 	// The page renders separate mobile and desktop layouts; only check what's on screen.
 	await expect(page.getByText("other@e2e.local").filter({ visible: true }).first()).toBeVisible();
 	await expect(page.getByText("student@e2e.local").filter({ visible: true })).toHaveCount(0);
+});
+
+test("admin reorders resources within a category by drag and keyboard", async ({ page, request }) => {
+	const token = await apiToken(request, ADMIN);
+	for (const title of ["Order A", "Order B", "Order C"]) {
+		const res = await request.post(`${API}/additional-resources/`, {
+			headers: { Authorization: `Token ${token}` },
+			multipart: { category: "online_program", title, url: "https://example.com" },
+		});
+		expect(res.ok()).toBe(true);
+	}
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/resources");
+	await expect(page.getByLabel("Display order")).toHaveCount(0);
+
+	const section = page.getByRole("region", { name: /Online Programs/ });
+	const titles = section.locator("tbody tr td:nth-child(3)");
+	const ours = async () => (await titles.allTextContents()).filter((t) => t.startsWith("Order "));
+	// New resources are appended, in creation order.
+	await expect.poll(ours).toEqual(["Order A", "Order B", "Order C"]);
+
+	await section.getByRole("button", { name: "Reorder Order C" }).dragTo(section.getByRole("row", { name: /Order A/ }));
+	await expect.poll(ours).toEqual(["Order C", "Order A", "Order B"]);
+
+	await section.getByRole("button", { name: "Reorder Order C" }).press("ArrowDown");
+	await expect.poll(ours).toEqual(["Order A", "Order C", "Order B"]);
+
+	await page.reload();
+	await expect.poll(ours).toEqual(["Order A", "Order C", "Order B"]);
+	// Other sections are untouched.
+	await expect(page.getByRole("region", { name: /Books/ }).getByText("Order A")).toHaveCount(0);
+});
+
+test.describe("on a phone", () => {
+	const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
+	test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
+
+	test("admin reorders resources by touch-dragging the handle", async ({ page, request }) => {
+		const token = await apiToken(request, ADMIN);
+		for (const title of ["Touch A", "Touch B", "Touch C"]) {
+			const res = await request.post(`${API}/additional-resources/`, {
+				headers: { Authorization: `Token ${token}` },
+				multipart: { category: "documentary", title, url: "https://example.com" },
+			});
+			expect(res.ok()).toBe(true);
+		}
+		await loginAs(page, request, ADMIN);
+		await page.goto("/admin/resources");
+		const section = page.getByRole("region", { name: /Documentaries/ });
+		const titles = section.locator("tbody tr td:nth-child(3)");
+		const ours = async () => (await titles.allTextContents()).filter((t) => t.startsWith("Touch "));
+		await expect.poll(ours).toEqual(["Touch A", "Touch B", "Touch C"]);
+
+		const handle = section.getByRole("button", { name: "Reorder Touch A" });
+		await handle.scrollIntoViewIfNeeded();
+		const from = (await handle.boundingBox())!;
+		const to = (await section.getByRole("row", { name: /Touch C/ }).boundingBox())!;
+		const scrollBefore = await page.evaluate(() => window.scrollY);
+
+		// Real touch input (not mouse), so this exercises touch-action and pointer capture.
+		const cdp = await page.context().newCDPSession(page);
+		const touch = (type: "touchStart" | "touchMove" | "touchEnd", y: number) =>
+			cdp.send("Input.dispatchTouchEvent", {
+				type,
+				touchPoints: type === "touchEnd" ? [] : [{ x: from.x + from.width / 2, y }],
+			});
+		const startY = from.y + from.height / 2;
+		const endY = to.y + to.height / 2;
+		await touch("touchStart", startY);
+		for (let i = 1; i <= 10; i++) await touch("touchMove", startY + ((endY - startY) * i) / 10);
+		await touch("touchEnd", endY);
+
+		await expect.poll(ours).toEqual(["Touch B", "Touch C", "Touch A"]);
+		// The drag moved the row rather than scrolling the page.
+		expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+		await page.reload();
+		await expect.poll(ours).toEqual(["Touch B", "Touch C", "Touch A"]);
+	});
 });

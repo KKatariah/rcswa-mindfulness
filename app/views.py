@@ -351,6 +351,24 @@ class AdditionalResourceViewSet(viewsets.ModelViewSet):
             qs = qs.filter(category=category)
         return qs
 
+    @action(detail=False, methods=["post"])
+    def reorder(self, request):
+        """Set a category's order in one go: {"category": c, "ids": [resource ids in display order]}."""
+        category = request.data.get("category")
+        ids = request.data.get("ids")
+        if category not in AdditionalResource.Category.values:
+            raise ValidationError({"category": "Unknown category."})
+        if not isinstance(ids, list) or not all(type(i) is int for i in ids):
+            raise ValidationError({"ids": "Expected a list of resource ids."})
+        resources = {r.id: r for r in AdditionalResource.objects.filter(category=category)}
+        if len(ids) != len(resources) or set(ids) != set(resources):
+            raise ValidationError({"ids": "Must list every resource in the category exactly once."})
+        with transaction.atomic():
+            for position, resource_id in enumerate(ids, start=1):
+                resources[resource_id].display_order = position
+            AdditionalResource.objects.bulk_update(resources.values(), ["display_order"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class EnrollmentViewSet(viewsets.ModelViewSet):
     serializer_class = EnrollmentSerializer

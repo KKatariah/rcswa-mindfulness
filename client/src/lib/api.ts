@@ -407,7 +407,6 @@ export type AdditionalResourceInput = {
 	title: string;
 	author?: string;
 	url?: string;
-	display_order?: number;
 	/** Omit entirely to leave the existing cover unchanged on update. */
 	cover_image?: File | null;
 };
@@ -418,7 +417,6 @@ function additionalResourceFormData(data: Partial<AdditionalResourceInput>): For
 	if (data.title !== undefined) form.append("title", data.title);
 	if (data.author !== undefined) form.append("author", data.author);
 	if (data.url !== undefined) form.append("url", data.url);
-	if (data.display_order !== undefined) form.append("display_order", String(data.display_order));
 	if (data.cover_image) form.append("cover_image", data.cover_image);
 	return form;
 }
@@ -462,6 +460,27 @@ export async function updateAdditionalResource(
 
 export async function deleteAdditionalResource(id: number, token: string): Promise<void> {
 	return deleteRequest(`${API_BASE_URL}/additional-resources/${id}/`, token);
+}
+
+// ids: every resource in the category, in the new display order.
+export async function reorderAdditionalResources(
+	category: AdditionalResourceCategory,
+	ids: number[],
+	token: string,
+): Promise<void> {
+	const res = await fetch(`${API_BASE_URL}/additional-resources/reorder/`, {
+		method: "POST",
+		headers: authHeader(token),
+		body: JSON.stringify({ category, ids }),
+	});
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({}));
+		const message =
+			typeof data === "object" && data !== null
+				? Object.values(data).flat().join(" ")
+				: "Something went wrong";
+		throw new Error(message || "Failed to reorder resources");
+	}
 }
 
 export async function listEnrollments(

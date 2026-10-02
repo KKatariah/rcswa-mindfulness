@@ -67,6 +67,20 @@ python manage.py migrate
 
 This also seeds the public Resources page (books/documentaries/online programs) with its default content via a data migration.
 
+Then load the weekly surveys:
+
+```bash
+python manage.py loaddata weekly_survey
+```
+
+`weekly_survey` adds the Week 1 and Week 2 MAQ surveys (`weekly-maq-w1`, `weekly-maq-w2`)
+as surveys 1 and 2, attached to modules 1 and 2, so those modules must exist first.
+On an empty database with no modules yet, load the placeholder modules with them:
+`python manage.py loaddata dev_seed weekly_survey`. Don't load `dev_seed` into a
+database that already has data: it uses fixed IDs and overwrites user 1, modules 1–2
+and content items 1–4. After that, admins create surveys for later weeks from
+**Admin → Surveys → New Survey**, which copies an existing survey's questions.
+
 ### 4. Add the cron jobs
 
 Two commands need to run on a schedule. Both are idempotent: a notification that

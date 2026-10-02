@@ -4,7 +4,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
@@ -141,7 +141,24 @@ class AdditionalResourceSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        # Order is set by appending to the category and changed only via the reorder action,
+        # so two resources can't be given the same slot.
+        read_only_fields = ["id", "display_order", "created_at", "updated_at"]
+
+    @staticmethod
+    def _end_of(category):
+        last = AdditionalResource.objects.filter(category=category).aggregate(Max("display_order"))
+        return (last["display_order__max"] or 0) + 1
+
+    def create(self, validated_data):
+        validated_data["display_order"] = self._end_of(validated_data["category"])
+        return super().create(validated_data)
+
+    def update(self, instance, validated_data):
+        category = validated_data.get("category", instance.category)
+        if category != instance.category:
+            validated_data["display_order"] = self._end_of(category)
+        return super().update(instance, validated_data)
 
 
 class ContentItemSerializer(serializers.ModelSerializer):

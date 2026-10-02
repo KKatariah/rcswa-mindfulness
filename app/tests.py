@@ -1643,6 +1643,8 @@ class ApprovalsAdminTests(APITestCase):
 
 class AdditionalResourceAdminTests(APITestCase):
     def setUp(self):
+        # Start without the rows the seed migration adds, so ordering assertions are exact.
+        AdditionalResource.objects.all().delete()
         self.student = User.objects.create_user(email="student@test.local", password="testpass")
         self.admin = User.objects.create_user(
             email="admin@test.local", password="testpass", role=User.Role.ADMIN,
@@ -1671,6 +1673,65 @@ class AdditionalResourceAdminTests(APITestCase):
     def test_invalid_category_rejected(self):
         self.client.force_login(self.admin)
         self.assertEqual(self._create(category="podcast").status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_new_resources_go_to_the_end_of_their_category(self):
+        self.client.force_login(self.admin)
+        AdditionalResource.objects.create(category="book", title="Old", display_order=4)
+        AdditionalResource.objects.create(category="documentary", title="Doc", display_order=9)
+        # A client-supplied order is ignored, so it can't collide with an existing slot.
+        first = self._create(display_order=0).data
+        second = self._create(title="Second").data
+        self.assertEqual((first["display_order"], second["display_order"]), (5, 6))
+        self.assertEqual(self._create(category="online_program").data["display_order"], 1)
+
+    def test_changing_category_moves_to_the_end_of_the_new_one(self):
+        self.client.force_login(self.admin)
+        AdditionalResource.objects.create(category="documentary", title="Doc", display_order=3)
+        rid = self._create().data["id"]
+        resp = self.client.patch(
+            f"/api/additional-resources/{rid}/", {"category": "documentary"}, content_type="application/json",
+        )
+        self.assertEqual(resp.data["display_order"], 4)
+
+    def test_reorder_sets_positions_within_a_category(self):
+        a = AdditionalResource.objects.create(category="book", title="A")
+        b = AdditionalResource.objects.create(category="book", title="B")
+        c = AdditionalResource.objects.create(category="book", title="C")
+        doc = AdditionalResource.objects.create(category="documentary", title="Doc", display_order=7)
+        self.client.force_login(self.admin)
+        resp = self.client.post(
+            "/api/additional-resources/reorder/", {"category": "book", "ids": [c.pk, a.pk, b.pk]}, format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        books = AdditionalResource.objects.filter(category="book")
+        self.assertEqual([r.title for r in books], ["C", "A", "B"])
+        self.assertEqual([r.display_order for r in books], [1, 2, 3])
+        doc.refresh_from_db()
+        self.assertEqual(doc.display_order, 7)
+
+    def test_reorder_rejects_incomplete_or_foreign_ids(self):
+        a = AdditionalResource.objects.create(category="book", title="A")
+        b = AdditionalResource.objects.create(category="book", title="B")
+        doc = AdditionalResource.objects.create(category="documentary", title="Doc")
+        self.client.force_login(self.admin)
+        bad = [
+            {"category": "book", "ids": [a.pk]},
+            {"category": "book", "ids": [a.pk, a.pk]},
+            {"category": "book", "ids": [a.pk, b.pk, doc.pk]},
+            {"category": "book", "ids": [a.pk, {"x": 1}]},
+            {"category": "book", "ids": "1,2"},
+            {"category": "podcast", "ids": []},
+        ]
+        for data in bad:
+            with self.subTest(data=data):
+                resp = self.client.post("/api/additional-resources/reorder/", data, format="json")
+                self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_student_cannot_reorder(self):
+        a = AdditionalResource.objects.create(category="book", title="A")
+        self.client.force_login(self.student)
+        resp = self.client.post("/api/additional-resources/reorder/", {"category": "book", "ids": [a.pk]}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_logged_out_visitor_cannot_list_resources(self):
         resp = self.client.get("/api/additional-resources/")

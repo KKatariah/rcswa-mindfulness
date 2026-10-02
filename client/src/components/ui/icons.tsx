@@ -175,6 +175,14 @@ export function PlusIcon(props: IconProps) {
   );
 }
 
+export function GripIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 18 18" {...base} {...props}>
+      <path d="M6.75 4.5h.01M11.25 4.5h.01M6.75 9h.01M11.25 9h.01M6.75 13.5h.01M11.25 13.5h.01" strokeWidth={2.5} />
+    </svg>
+  );
+}
+
 export function PencilIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 18 18" {...base} {...props}>
