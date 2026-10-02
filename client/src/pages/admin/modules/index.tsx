@@ -1,11 +1,13 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import AdminLayout from "@/components/admin/AdminLayout";
 import Modal from "@/components/main/Modal";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import DragHandle, { ReorderHelp } from "@/components/ui/DragHandle";
 import { PlusIcon, TrashIcon } from "@/components/ui/icons";
-import { listModulesAdmin, createModule, deleteModule } from "@/lib/api";
+import { useDragReorder, type ReorderHandlers } from "@/hooks/useDragReorder";
+import { listModulesAdmin, createModule, deleteModule, reorderModules } from "@/lib/api";
 import type { AdminModule } from "@/types/admin";
 
 type ModuleFormState = { week_number: string; title: string; description: string; is_published: boolean };
@@ -23,6 +25,41 @@ export default function AdminModulesPage() {
 	const [submitting, setSubmitting] = useState(false);
 	const [deleting, setDeleting] = useState<AdminModule | null>(null);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
+	// A dragged order waiting to be saved. Week numbers drive unlock dates, so moves are only
+	// applied when the admin confirms with "Save order".
+	const [pendingOrder, setPendingOrder] = useState<number[] | null>(null);
+	const [savingOrder, setSavingOrder] = useState(false);
+	const { draggingId, startDrag, handleKey } = useDragReorder<number>();
+
+	const savedIds = modules.map((m) => m.id);
+	const shown = useMemo(() => {
+		if (!pendingOrder) return modules;
+		const byId = new Map(modules.map((m) => [m.id, m]));
+		return pendingOrder.map((id) => byId.get(id)!);
+	}, [modules, pendingOrder]);
+	// Positions keep the existing set of week numbers; dragging only changes who gets which.
+	const weeks = useMemo(() => modules.map((m) => m.week_number).sort((a, b) => a - b), [modules]);
+
+	const reorder: ReorderHandlers<number> = {
+		onMove: (ids) => setPendingOrder(ids.join() === savedIds.join() ? null : ids),
+		onDrop: () => {},
+		onCancel: (before) => setPendingOrder(before.join() === savedIds.join() ? null : before),
+	};
+
+	async function saveOrder() {
+		if (!pendingOrder) return;
+		setSavingOrder(true);
+		setDeleteError(null);
+		try {
+			await reorderModules(pendingOrder, localStorage.getItem("token") ?? "");
+			setModules(shown.map((m, i) => ({ ...m, week_number: weeks[i] })));
+			setPendingOrder(null);
+		} catch (err) {
+			setDeleteError(err instanceof Error ? err.message : "Failed to reorder modules");
+		} finally {
+			setSavingOrder(false);
+		}
+	}
 
 	useEffect(() => {
 		let cancelled = false;
@@ -56,6 +93,8 @@ export default function AdminModulesPage() {
 				token,
 			);
 			setModules((prev) => [...prev, created].sort((a, b) => a.week_number - b.week_number));
+			// An unsaved drag order no longer covers every module.
+			setPendingOrder(null);
 			setModalOpen(false);
 			setForm(EMPTY_FORM);
 		} catch (err) {
@@ -74,6 +113,7 @@ export default function AdminModulesPage() {
 			const token = localStorage.getItem("token") ?? "";
 			await deleteModule(target.id, token);
 			setModules((prev) => prev.filter((m) => m.id !== target.id));
+			setPendingOrder(null);
 		} catch (err) {
 			setDeleteError(err instanceof Error ? err.message : "Failed to delete module");
 		}
@@ -103,6 +143,36 @@ export default function AdminModulesPage() {
 				</p>
 			)}
 
+			{pendingOrder && (
+				<div
+					role="status"
+					className="mt-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between"
+				>
+					<p>
+						Week order changed. Each module unlocks by its week number, so saving changes when these
+						modules open for every cohort, including ones already running.
+					</p>
+					<div className="flex shrink-0 gap-2">
+						<button
+							type="button"
+							onClick={() => setPendingOrder(null)}
+							disabled={savingOrder}
+							className="h-10 rounded-xl border border-amber-300 bg-white px-4 font-semibold text-ink disabled:opacity-50"
+						>
+							Discard
+						</button>
+						<button
+							type="button"
+							onClick={saveOrder}
+							disabled={savingOrder}
+							className="h-10 rounded-xl bg-brand-blue px-4 font-bold text-white disabled:opacity-50"
+						>
+							{savingOrder ? "Saving…" : "Save order"}
+						</button>
+					</div>
+				</div>
+			)}
+
 			<div className="mt-6 overflow-x-auto rounded-2xl border border-gray-200 bg-white">
 				{loading ? (
 					<div className="flex justify-center py-16">
@@ -116,6 +186,7 @@ export default function AdminModulesPage() {
 					<table className="w-full text-left text-sm">
 						<thead>
 							<tr className="border-b border-gray-200 text-xs font-semibold uppercase tracking-wide text-muted">
+								<th className="w-10 px-3 py-3"><span className="sr-only">Reorder</span></th>
 								<th className="px-5 py-3">Week</th>
 								<th className="px-5 py-3">Title</th>
 								<th className="px-5 py-3">Published</th>
@@ -124,13 +195,29 @@ export default function AdminModulesPage() {
 							</tr>
 						</thead>
 						<tbody>
-							{modules.map((m) => (
+							{shown.map((m, index) => (
 								<tr
 									key={m.id}
+									data-reorder-id={m.id}
 									onClick={() => router.push(`/admin/modules/${m.id}`)}
-									className="cursor-pointer border-b border-gray-100 last:border-0 hover:bg-surface-muted"
+									className={`cursor-pointer border-b border-gray-100 last:border-0 hover:bg-surface-muted ${
+										draggingId === m.id ? "bg-surface-muted opacity-50" : ""
+									}`}
 								>
-									<td className="px-5 py-3 font-semibold text-ink">Week {m.week_number}</td>
+									<td className="px-3 py-3">
+										<DragHandle
+											label={`Reorder ${m.title}`}
+											onPointerDown={(e) => startDrag(e, m.id, shown.map((x) => x.id), reorder)}
+											onKeyDown={(e) => handleKey(e, m.id, shown.map((x) => x.id), reorder)}
+											disabled={savingOrder}
+										/>
+									</td>
+									<td className="px-5 py-3 font-semibold text-ink">
+										Week {weeks[index]}
+										{weeks[index] !== m.week_number && (
+											<span className="ml-1 text-xs font-normal text-amber-700">(was {m.week_number})</span>
+										)}
+									</td>
 									<td className="px-5 py-3 text-ink-soft">{m.title}</td>
 									<td className="px-5 py-3">
 										<span
@@ -160,6 +247,8 @@ export default function AdminModulesPage() {
 					</table>
 				)}
 			</div>
+
+			<ReorderHelp />
 
 			<Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title="New Module">
 				<form onSubmit={handleCreate} className="flex flex-col gap-4">

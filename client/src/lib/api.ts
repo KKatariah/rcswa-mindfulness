@@ -633,6 +633,23 @@ export async function deleteContentItem(
 	return deleteRequest(`${API_BASE_URL}/content-items/${id}/`, token);
 }
 
+// ids: every module, in the new week order. The server reassigns the existing week numbers.
+export async function reorderModules(ids: number[], token: string): Promise<void> {
+	const res = await fetch(`${API_BASE_URL}/modules/reorder/`, {
+		method: "POST",
+		headers: authHeader(token),
+		body: JSON.stringify({ ids }),
+	});
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({}));
+		const message =
+			typeof data === "object" && data !== null
+				? Object.values(data).flat().join(" ")
+				: "Something went wrong";
+		throw new Error(message || "Failed to reorder modules");
+	}
+}
+
 // ids: every content item in the module, in the new display order.
 export async function reorderContentItems(moduleId: number, ids: number[], token: string): Promise<void> {
 	const res = await fetch(`${API_BASE_URL}/content-items/reorder/`, {

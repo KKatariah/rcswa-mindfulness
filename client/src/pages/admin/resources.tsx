@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent, type PointerEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { safeUrl } from "@/lib/safeUrl";
 import Head from "next/head";
 import AdminLayout from "@/components/admin/AdminLayout";
 import Modal from "@/components/main/Modal";
 import Select from "@/components/ui/Select";
-import { GripIcon, PlusIcon, PencilIcon, TrashIcon } from "@/components/ui/icons";
+import { PlusIcon, PencilIcon, TrashIcon } from "@/components/ui/icons";
+import DragHandle, { ReorderHelp } from "@/components/ui/DragHandle";
+import { useDragReorder, type ReorderHandlers } from "@/hooks/useDragReorder";
 import {
 	listAdditionalResources,
 	createAdditionalResource,
@@ -196,11 +198,7 @@ export default function AdminResourcesPage() {
 	const [editing, setEditing] = useState<AdminAdditionalResource | null>(null);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const [newCategory, setNewCategory] = useState<AdditionalResourceCategory>("book");
-	const [draggingId, setDraggingId] = useState<number | null>(null);
-	// The list as it was when the drag started: what to compare against on drop, and to restore on failure.
-	const dragStart = useRef<AdminAdditionalResource[] | null>(null);
-	// The dragged category's order so far, updated on every move so the drop sees the last one.
-	const dragIds = useRef<number[]>([]);
+	const { draggingId, startDrag, handleKey } = useDragReorder<number>();
 
 	const sections = useMemo(
 		() => SECTIONS.map((s) => ({ ...s, items: resources.filter((r) => r.category === s.category).sort(byOrder) })),
@@ -229,85 +227,22 @@ export default function AdminResourcesPage() {
 		setModalOpen(true);
 	}
 
-	async function saveOrder(
-		category: AdditionalResourceCategory,
-		ids: number[],
-		previous: AdminAdditionalResource[],
-	) {
-		setDeleteError(null);
-		try {
-			await reorderAdditionalResources(category, ids, localStorage.getItem("token") ?? "");
-		} catch (err) {
-			setResources(previous);
-			setDeleteError(err instanceof Error ? err.message : "Failed to reorder resources");
-		}
-	}
-
-	function idsOf(category: AdditionalResourceCategory, list: AdminAdditionalResource[]) {
-		return list.filter((r) => r.category === category).sort(byOrder).map((r) => r.id);
-	}
-
-	// Dragging uses pointer events (not HTML5 drag and drop) so it works the same for mouse,
-	// touch and pen; `touch-none` on the handle stops the page scrolling instead. The rest of
-	// the gesture is followed on `window` because re-rendering moves the dragged row's DOM node,
-	// which drops any pointer capture the handle had.
-	function handlePointerDown(e: PointerEvent<HTMLButtonElement>, dragged: AdminAdditionalResource) {
-		if (dragStart.current || (e.pointerType === "mouse" && e.button !== 0)) return;
-		e.preventDefault();
-		const { pointerId } = e;
-		const previous = resources;
-		dragStart.current = previous;
-		dragIds.current = idsOf(dragged.category, previous);
-		setDraggingId(dragged.id);
-
-		function onMove(ev: globalThis.PointerEvent) {
-			if (ev.pointerId !== pointerId) return;
-			const row = document.elementFromPoint(ev.clientX, ev.clientY)?.closest<HTMLElement>("tr[data-resource-id]");
-			const overId = Number(row?.dataset.resourceId);
-			const current = dragIds.current;
-			// Only reorder within a category; rows in other sections are not targets.
-			if (overId === dragged.id || !current.includes(overId)) return;
-			const ids = current.filter((id) => id !== dragged.id);
-			// Moving down lands after the hovered row, moving up lands before it.
-			const after = current.indexOf(dragged.id) < current.indexOf(overId);
-			ids.splice(ids.indexOf(overId) + (after ? 1 : 0), 0, dragged.id);
-			dragIds.current = ids;
-			setResources((prev) => withOrder(prev, dragged.category, ids));
-		}
-
-		function onEnd(ev: globalThis.PointerEvent) {
-			if (ev.pointerId !== pointerId) return;
-			window.removeEventListener("pointermove", onMove);
-			window.removeEventListener("pointerup", onEnd);
-			window.removeEventListener("pointercancel", onEnd);
-			dragStart.current = null;
-			setDraggingId(null);
-			const ids = dragIds.current;
-			if (ev.type === "pointercancel") {
-				setResources(previous);
-			} else if (ids.join() !== idsOf(dragged.category, previous).join()) {
-				void saveOrder(dragged.category, ids, previous);
-			}
-		}
-
-		window.addEventListener("pointermove", onMove);
-		window.addEventListener("pointerup", onEnd);
-		window.addEventListener("pointercancel", onEnd);
-	}
-
-	// Keyboard alternative to dragging: arrow keys on the handle move the row one place.
-	function handleHandleKey(e: KeyboardEvent, resource: AdminAdditionalResource) {
-		const step = e.key === "ArrowUp" ? -1 : e.key === "ArrowDown" ? 1 : 0;
-		if (!step) return;
-		e.preventDefault();
-		const ids = idsOf(resource.category, resources);
-		const from = ids.indexOf(resource.id);
-		const to = from + step;
-		if (to < 0 || to >= ids.length) return;
-		[ids[from], ids[to]] = [ids[to], ids[from]];
-		const previous = resources;
-		setResources(withOrder(resources, resource.category, ids));
-		void saveOrder(resource.category, ids, previous);
+	// Drags are local to one category; the server stores each category's order separately.
+	function reorderHandlers(category: AdditionalResourceCategory): ReorderHandlers<number> {
+		const snapshot = resources;
+		return {
+			onMove: (ids) => setResources((prev) => withOrder(prev, category, ids)),
+			onCancel: () => setResources(snapshot),
+			onDrop: async (ids) => {
+				setDeleteError(null);
+				try {
+					await reorderAdditionalResources(category, ids, localStorage.getItem("token") ?? "");
+				} catch (err) {
+					setResources(snapshot);
+					setDeleteError(err instanceof Error ? err.message : "Failed to reorder resources");
+				}
+			},
+		};
 	}
 
 	function openEdit(resource: AdminAdditionalResource) {
@@ -412,22 +347,17 @@ export default function AdminResourcesPage() {
 										{items.map((resource) => (
 											<tr
 												key={resource.id}
-												data-resource-id={resource.id}
+												data-reorder-id={resource.id}
 												className={`border-b border-gray-100 last:border-0 ${
 													draggingId === resource.id ? "bg-surface-muted opacity-50" : ""
 												}`}
 											>
 												<td className="px-3 py-3">
-													<button
-														type="button"
-														onKeyDown={(e) => handleHandleKey(e, resource)}
-														onPointerDown={(e) => handlePointerDown(e, resource)}
-														aria-label={`Reorder ${resource.title}`}
-														aria-describedby="reorder-help"
-														className="flex cursor-grab touch-none select-none items-center rounded p-2.5 text-muted hover:text-ink active:cursor-grabbing"
-													>
-														<GripIcon className="size-4" />
-													</button>
+													<DragHandle
+														label={`Reorder ${resource.title}`}
+														onPointerDown={(e) => startDrag(e, resource.id, items.map((r) => r.id), reorderHandlers(category))}
+														onKeyDown={(e) => handleKey(e, resource.id, items.map((r) => r.id), reorderHandlers(category))}
+													/>
 												</td>
 												<td className="px-5 py-3">
 													{resource.cover_image ? (
@@ -460,7 +390,7 @@ export default function AdminResourcesPage() {
 					</section>
 				))
 			)}
-			<p id="reorder-help" className="sr-only">Drag this handle, or press the up and down arrow keys, to change the order.</p>
+			<ReorderHelp />
 
 			<Modal isOpen={modalOpen} onClose={() => setModalOpen(false)} title={editing ? "Edit Resource" : "New Resource"}>
 				<ResourceForm

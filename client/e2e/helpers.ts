@@ -28,3 +28,10 @@ export async function loginAs(page: Page, request: APIRequestContext, email: str
 	}, token);
 	return token;
 }
+
+/** On phone-sized screens the header links live behind a menu button; open it if it's there. */
+export async function openNavMenu(page: Page): Promise<void> {
+	await page.getByRole("navigation").first().waitFor();
+	const menu = page.getByRole("button", { name: "Open menu" });
+	if (await menu.isVisible()) await menu.click();
+}

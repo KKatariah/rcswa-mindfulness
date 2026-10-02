@@ -258,9 +258,14 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 														type="button"
 														onClick={() => setExpanded((id) => (id === r.id ? null : r.id))}
 														aria-expanded={expanded === r.id}
-														className={`text-left whitespace-pre-wrap wrap-anywhere ${expanded === r.id ? "max-h-80 overflow-y-auto" : "line-clamp-2"}`}
+														className="block w-full text-left"
 													>
-														{formatAnswer(r.answers[q.id])}
+														{/* Clamp an inner span: Safari ignores line-clamp on a <button> itself. */}
+														<span
+															className={`whitespace-pre-wrap wrap-anywhere ${expanded === r.id ? "block max-h-80 overflow-y-auto" : "line-clamp-2"}`}
+														>
+															{formatAnswer(r.answers[q.id])}
+														</span>
 													</button>
 												</td>
 											) : (
@@ -353,7 +358,7 @@ export default function AdminSurveyPage() {
 				<ChevronLeftIcon className="size-4" />
 				All surveys
 			</Link>
-			<h1 className="mt-2 text-2xl font-extrabold text-ink">{survey.title}</h1>
+			<h1 className="mt-2 text-2xl font-extrabold wrap-anywhere text-ink">{survey.title}</h1>
 			<p className="mt-1 text-sm text-muted">
 				{SURVEY_TYPE_LABELS[survey.type]} survey · <span className="font-mono">{survey.code}</span>
 			</p>

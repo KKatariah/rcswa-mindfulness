@@ -1868,6 +1868,33 @@ class ModuleAdminTests(APITestCase):
         ordered = list(self.published.content_items.order_by("display_order").values_list("id", flat=True))
         self.assertEqual(ordered, [b, a])
 
+    def test_admin_reorders_modules_by_renumbering_weeks(self):
+        third = Module.objects.create(week_number=5, title="Week 5", is_published=True)
+        self.client.force_login(self.admin)
+        order = [third.pk, self.published.pk, self.unpublished.pk]
+        resp = self.client.post("/api/modules/reorder/", {"ids": order}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        # The same week numbers (1, 2, 5) are reassigned in the new order.
+        self.assertEqual(list(Module.objects.values_list("pk", "week_number")), list(zip(order, [1, 2, 5])))
+
+    def test_module_reorder_rejects_bad_ids_and_students(self):
+        self.client.force_login(self.admin)
+        both = [self.published.pk, self.unpublished.pk]
+        for ids in ([self.published.pk], both + [both[0]], both + [999], [both[0], "x"], "1,2"):
+            with self.subTest(ids=ids):
+                resp = self.client.post("/api/modules/reorder/", {"ids": ids}, format="json")
+                self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(Module.objects.get(pk=self.published.pk).week_number, 1)
+        self.client.force_login(self.student)
+        resp = self.client.post("/api/modules/reorder/", {"ids": both[::-1]}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_logged_out_visitor_can_read_published_summaries(self):
+        resp = self.client.get("/api/modules/summary/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual([m["week_number"] for m in resp.data], [1])
+        self.assertEqual(set(resp.data[0]), {"id", "week_number", "title", "summary"})
+
     def test_admin_can_set_summary_and_reminder_day(self):
         self.client.force_login(self.admin)
         resp = self.client.patch(

@@ -105,7 +105,8 @@ test.describe("on a phone", () => {
 	const { viewport, userAgent, deviceScaleFactor, isMobile, hasTouch } = devices["Pixel 7"];
 	test.use({ viewport, userAgent, deviceScaleFactor, isMobile, hasTouch });
 
-	test("admin reorders resources by touch-dragging the handle", async ({ page, request }) => {
+	test("admin reorders resources by touch-dragging the handle", async ({ browserName, page, request }) => {
+		test.skip(browserName !== "chromium", "drives touch input through the Chrome DevTools Protocol");
 		const token = await apiToken(request, ADMIN);
 		for (const title of ["Touch A", "Touch B", "Touch C"]) {
 			const res = await request.post(`${API}/additional-resources/`, {
@@ -146,4 +147,56 @@ test.describe("on a phone", () => {
 		await page.reload();
 		await expect.poll(ours).toEqual(["Touch B", "Touch C", "Touch A"]);
 	});
+});
+
+test("admin drags modules into a new week order and saves it", async ({ page, request }) => {
+	const token = await apiToken(request, ADMIN);
+	const headers = { Authorization: `Token ${token}` };
+	const original: { id: number }[] = await (await request.get(`${API}/modules/`, { headers })).json();
+	try {
+		await loginAs(page, request, ADMIN);
+		await page.goto("/admin/modules");
+		const row = (title: string) => page.getByRole("row", { name: new RegExp(title) });
+		await expect(row("Week 3 \\(locked\\)")).toContainText("Week 3");
+
+		// Dragging only previews the new numbering until it's saved.
+		await page.getByRole("button", { name: "Reorder Week 3 (locked)" }).dragTo(row("Introduction to Mindfulness"));
+		await expect(row("Week 3 \\(locked\\)")).toContainText("Week 1(was 3)");
+		await expect(page.getByRole("status")).toContainText("Week order changed");
+		await page.getByRole("button", { name: "Discard" }).click();
+		await expect(row("Week 3 \\(locked\\)")).toContainText("Week 3");
+		await expect(page.getByRole("status")).toHaveCount(0);
+
+		await page.getByRole("button", { name: "Reorder Week 3 (locked)" }).focus();
+		await page.keyboard.press("ArrowUp");
+		await expect(row("Week 3 \\(locked\\)")).toContainText("Week 2(was 3)");
+		await page.getByRole("button", { name: "Save order" }).click();
+		await expect(page.getByRole("status")).toHaveCount(0);
+		await page.reload();
+		await expect(row("Week 3 \\(locked\\)")).toContainText("Week 2");
+		await expect(row("Body Scan Meditation")).toContainText("Week 3");
+	} finally {
+		const res = await request.post(`${API}/modules/reorder/`, { headers, data: { ids: original.map((m) => m.id) } });
+		expect(res.ok()).toBe(true);
+	}
+});
+
+test("admin drags content items within a module", async ({ page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/modules/1");
+	const handles = page.getByRole("button", { name: /^Reorder / });
+	await expect(handles).toHaveCount(2);
+	const names = async () => (await handles.evaluateAll((els) => els.map((el) => el.getAttribute("aria-label"))));
+	const [first, second] = await names();
+
+	await handles.nth(1).dragTo(page.locator("[data-reorder-id]").first());
+	await expect.poll(names).toEqual([second, first]);
+	await page.reload();
+	await expect.poll(names).toEqual([second, first]);
+
+	// Put it back with the keyboard.
+	await page.getByRole("button", { name: first! }).press("ArrowUp");
+	await expect.poll(names).toEqual([first, second]);
+	await page.reload();
+	await expect.poll(names).toEqual([first, second]);
 });
