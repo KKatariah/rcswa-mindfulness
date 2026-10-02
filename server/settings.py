@@ -33,10 +33,16 @@ SECRET_KEY = 'REMOVED#'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-# Add extra hosts via EXTRA_ALLOWED_HOSTS env var (comma-separated hostnames, no protocol).
-# Use this for tunnel domains or staging hosts without committing them.
-_extra_hosts = [h.strip() for h in os.environ.get("EXTRA_ALLOWED_HOSTS", "").split(",") if h.strip()]
-ALLOWED_HOSTS = ["localhost", "127.0.0.1"] + _extra_hosts
+
+def _env_list(name, default=""):
+    """Comma-separated env var -> list, ignoring blanks and stray spaces. Unset or empty uses default."""
+    return [v.strip() for v in (os.environ.get(name) or default).split(",") if v.strip()]
+
+
+# Hosts, CORS and CSRF origins come from env vars of the same name (comma-separated).
+# Setting one REPLACES its defaults, so list localhost too if you still need it, e.g.
+#   ALLOWED_HOSTS=localhost,127.0.0.1,xxx.trycloudflare.com
+ALLOWED_HOSTS = _env_list("ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]")
 
 
 # Application definition
@@ -69,19 +75,11 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-# Add extra CORS origins via EXTRA_CORS_ORIGINS env var (comma-separated, with protocol).
-# e.g. EXTRA_CORS_ORIGINS=https://xxx.trycloudflare.com
-_extra_cors = [o.strip() for o in os.environ.get("EXTRA_CORS_ORIGINS", "").split(",") if o.strip()]
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-] + _extra_cors
+# Origins include the protocol, e.g. http://localhost:3000,https://xxx.trycloudflare.com
+CORS_ALLOWED_ORIGINS = _env_list("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
 
-# CSRF trusted origins for requests arriving over HTTPS (tunnels, staging, production).
-# Comma-separated full origins with protocol: https://xxx.trycloudflare.com
-_csrf_origins = [o.strip() for o in os.environ.get("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()]
-if _csrf_origins:
-    CSRF_TRUSTED_ORIGINS = _csrf_origins
+# Needed for HTTPS requests from tunnels, staging or production.
+CSRF_TRUSTED_ORIGINS = _env_list("CSRF_TRUSTED_ORIGINS")
 
 ROOT_URLCONF = 'server.urls'
 
