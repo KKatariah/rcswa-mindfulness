@@ -82,11 +82,15 @@ export async function enableNotifications(): Promise<string> {
       throw new Error("Could not update notification preferences.");
     }
 
-    return "Notifications were denied.";
+    throw new Error(
+      "Notifications are blocked in your browser. Follow the 'notifications are blocked' step above to allow them, then try again."
+    );
   }
 
   if (permission !== "granted") {
-    return "Notification permission was not granted.";
+    throw new Error(
+      "No choice was made. Click 'Enable notifications' again and choose 'Allow'."
+    );
   }
 
   const registration = await navigator.serviceWorker.register("/sw.js");

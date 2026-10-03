@@ -1,7 +1,16 @@
+export type StepVisualKey =
+	| "ios-share"
+	| "ios-add-to-home"
+	| "ios-home-icon"
+	| "allow-prompt"
+	| "site-settings"
+	| "android-menu"
+	| "desktop-prompt";
+
 export type SetupStep = {
 	instruction: string;
-	/** If provided, renders a labelled image placeholder slot below the instruction text. */
-	imagePlaceholder?: string;
+	/** If provided, renders a step illustration below the instruction text. */
+	visual?: StepVisualKey;
 };
 
 export type PlatformContent = {
@@ -11,9 +20,7 @@ export type PlatformContent = {
 
 export type Platform = "ios" | "android" | "desktop";
 
-// ---------------------------------------------------------------------------
-// Placeholder copy — Ari to replace all [PLACEHOLDER] strings with final text
-// ---------------------------------------------------------------------------
+// Setup instructions shown in NotificationSetupModal, one entry per platform tab.
 
 export const NOTIFICATION_SETUP_CONTENT: Record<Platform, PlatformContent> = {
 	ios: {
@@ -21,25 +28,31 @@ export const NOTIFICATION_SETUP_CONTENT: Record<Platform, PlatformContent> = {
 		steps: [
 			{
 				instruction:
-					"[PLACEHOLDER – Ari to write: Step 1 — open the website in Safari (push notifications require Safari on iOS; Chrome and Firefox on iOS do not support them).]",
-				imagePlaceholder:
-					"[PLACEHOLDER – screenshot: Safari address bar showing the site URL]",
+					"Open this website in Safari. On iPhone and iPad, reminders only work once the site has been added to your Home Screen, and you need iOS 16.4 or later.",
 			},
 			{
 				instruction:
-					"[PLACEHOLDER – Ari to write: Step 2 — tap the Share icon (the box with an arrow pointing upward) at the bottom of the screen.]",
-				imagePlaceholder:
-					"[PLACEHOLDER – screenshot: Safari bottom toolbar with Share icon highlighted]",
+					"Tap the Share button (the square with an arrow pointing up) in the Safari toolbar.",
+				visual: "ios-share",
 			},
 			{
 				instruction:
-					"[PLACEHOLDER – Ari to write: Step 3 — scroll down in the Share sheet and tap 'Add to Home Screen', then tap 'Add' in the top-right corner.]",
-				imagePlaceholder:
-					"[PLACEHOLDER – screenshot: iOS Share sheet with 'Add to Home Screen' option visible]",
+					"Scroll down the list, tap 'Add to Home Screen', then tap 'Add' in the top-right corner.",
+				visual: "ios-add-to-home",
 			},
 			{
 				instruction:
-					"[PLACEHOLDER – Ari to write: Step 4 — open the app from your Home Screen (it must be launched from the Home Screen icon, not Safari), then tap 'Enable notifications' below.]",
+					"Close Safari and open the app from its new icon on your Home Screen. Log in, go to your Profile, and tap 'Set up notifications' to come back to this screen.",
+				visual: "ios-home-icon",
+			},
+			{
+				instruction:
+					"Tap 'Enable notifications' below, then tap 'Allow' when your device asks. If you see a message that notifications are not supported, the app was opened in Safari rather than from the Home Screen icon.",
+				visual: "allow-prompt",
+			},
+			{
+				instruction:
+					"If you see a message that notifications are blocked, they were blocked earlier. Open the Settings app, tap 'Notifications', find this app in the list, turn on 'Allow Notifications', then come back and try again.",
 			},
 		],
 	},
@@ -48,21 +61,22 @@ export const NOTIFICATION_SETUP_CONTENT: Record<Platform, PlatformContent> = {
 		steps: [
 			{
 				instruction:
-					"[PLACEHOLDER – Ari to write: Step 1 — open the website in Chrome on your Android device.]",
-				imagePlaceholder:
-					"[PLACEHOLDER – screenshot: Chrome address bar on Android showing the site URL]",
+					"Open this website in Chrome on your Android device and log in.",
 			},
 			{
 				instruction:
-					"[PLACEHOLDER – Ari to write: Step 2 — tap the three-dot menu in the top-right corner and select 'Add to Home screen', or tap 'Install' if a banner appears at the bottom of the screen.]",
-				imagePlaceholder:
-					"[PLACEHOLDER – screenshot: Chrome menu open with 'Add to Home screen' highlighted]",
+					"Tap 'Enable notifications' below, then tap 'Allow' when Chrome asks for permission. Reminders will arrive even when Chrome is closed.",
+				visual: "allow-prompt",
 			},
 			{
 				instruction:
-					"[PLACEHOLDER – Ari to write: Step 3 — tap 'Enable notifications' below and tap 'Allow' when Chrome asks for notification permission.]",
-				imagePlaceholder:
-					"[PLACEHOLDER – screenshot: Android browser notification permission prompt]",
+					"If you see a message that notifications are blocked, they were blocked earlier. Tap the small icon at the left end of the address bar (two sliders or a padlock), tap 'Permissions', set 'Notifications' to 'Allow', then reload this page and try again.",
+				visual: "site-settings",
+			},
+			{
+				instruction:
+					"Optional: for one-tap access, open the three-dot menu in Chrome and choose 'Add to Home screen'.",
+				visual: "android-menu",
 			},
 		],
 	},
@@ -71,17 +85,29 @@ export const NOTIFICATION_SETUP_CONTENT: Record<Platform, PlatformContent> = {
 		steps: [
 			{
 				instruction:
-					"[PLACEHOLDER – Ari to write: Step 1 — open the website in Chrome, Edge, or Safari on your computer.]",
+					"Open this website in Chrome, Edge, Firefox or Safari on your computer and log in.",
 			},
 			{
 				instruction:
-					"[PLACEHOLDER – Ari to write: Step 2 — tap 'Enable notifications' below. A permission prompt will appear in your browser.]",
-				imagePlaceholder:
-					"[PLACEHOLDER – screenshot: browser notification permission prompt bar]",
+					"Click 'Enable notifications' below. A permission prompt will appear near the address bar.",
+				visual: "desktop-prompt",
 			},
 			{
 				instruction:
-					"[PLACEHOLDER – Ari to write: Step 3 — click 'Allow' to confirm. You will receive a confirmation message once notifications are set up.]",
+					"Click 'Allow'. A confirmation message will appear here once reminders are set up. If you allowed notifications before, the prompt is skipped and you go straight to the confirmation. Reminders arrive while your browser is running, even if this site is closed.",
+			},
+			{
+				instruction:
+					"If you see a message that notifications are blocked, they were blocked earlier. In Chrome, Edge or Firefox, click the small icon at the left end of the address bar (a circle with an 'i', a padlock, or two sliders), set 'Notifications' to 'Allow', then reload this page and try again.",
+				visual: "site-settings",
+			},
+			{
+				instruction:
+					"In Safari on a Mac there is no icon for this. Open the Safari menu, choose 'Settings', then 'Websites', then 'Notifications', set this site to 'Allow', then reload this page and try again.",
+			},
+			{
+				instruction:
+					"Reminders are set up separately on each device and browser. Repeat these steps on your phone if you want them there too.",
 			},
 		],
 	},
