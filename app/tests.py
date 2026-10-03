@@ -116,6 +116,19 @@ class ModuleListTests(APITestCase):
         self.assertEqual(items[1]["title"], "Second item")
 
 
+class ModuleSummaryPublicTests(APITestCase):
+    def setUp(self):
+        Module.objects.create(week_number=1, title="Week 1", is_published=True)
+
+    def test_anonymous_summary_returns_200(self):
+        resp = self.client.get("/api/modules/summary/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_anonymous_module_list_returns_401(self):
+        resp = self.client.get("/api/modules/")
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
 # ── Embed URL normalization ───────────────────────────────────────────────────────
 
 class EmbedUrlNormalizationTests(TestCase):

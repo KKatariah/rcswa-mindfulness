@@ -290,6 +290,8 @@ class ModuleViewSet(viewsets.ModelViewSet):
         return Response(ModuleSummarySerializer(modules, many=True).data)
 
     def get_permissions(self):
+        if self.action == "summary":
+            return [AllowAny()]
         if self.action in ("create", "update", "partial_update", "destroy"):
             return [IsAuthenticated(), IsAdminOrStaff()]
         return [IsAuthenticated()]
