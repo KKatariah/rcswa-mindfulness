@@ -30,6 +30,30 @@ test("a student posts a thread that another student can read but not edit", asyn
 	expect(res.status()).toBe(403);
 });
 
+test("a student must agree to the forum rules before the forum loads", async ({ page, request }) => {
+	const email = "rules@e2e.local";
+	const token = await apiToken(request, email);
+	const blocked = await request.get(`${API}/forum/threads/`, { headers: { Authorization: `Token ${token}` } });
+	expect(blocked.status()).toBe(403);
+
+	await loginAs(page, request, email);
+	await page.goto("/forum");
+	const dialog = page.getByRole("dialog");
+	await expect(dialog).toContainText("Forum Rules");
+	const accept = dialog.getByRole("button", { name: "Continue to forum" });
+	await expect(accept).toBeDisabled();
+	await dialog.getByLabel("I agree to follow the forum rules").check();
+	await accept.click();
+
+	await expect(page.getByRole("dialog")).toHaveCount(0);
+	await expect(page.getByPlaceholder(/share your thoughts/i)).toBeVisible();
+
+	// Saved server-side, so it doesn't come back on reload.
+	await page.reload();
+	await expect(page.getByPlaceholder(/share your thoughts/i)).toBeVisible();
+	await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
 test("the notification setup modal opens from the profile page", async ({ page, request }) => {
 	await loginAs(page, request, STUDENT);
 	await page.goto("/profile");

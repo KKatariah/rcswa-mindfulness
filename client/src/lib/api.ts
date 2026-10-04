@@ -311,6 +311,16 @@ export async function deleteForumPost(
 	return deleteRequest(`${API_BASE_URL}/forum/posts/${id}/`, token);
 }
 
+export async function acceptForumRules(
+	token: string,
+): Promise<{ user: AuthUser }> {
+	const res = await fetch(`${API_BASE_URL}/forum/accept-rules/`, {
+		method: "POST",
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<{ user: AuthUser }>(res);
+}
+
 export async function getProgramStatus(
 	token: string,
 ): Promise<{ is_active: boolean }> {
