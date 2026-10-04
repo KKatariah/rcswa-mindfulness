@@ -10,6 +10,18 @@ const WEB_URL = `http://localhost:${WEB_PORT}`;
 const VENV_PYTHON = resolve(__dirname, "../.venv/bin/python");
 const PYTHON = process.env.PYTHON ?? (existsSync(VENV_PYTHON) ? VENV_PYTHON : "python3");
 
+// One device per run. Tests consume seeded data (approvals, survey submissions), so each
+// device needs its own fresh database; `npm run test:e2e:all` runs them one after another.
+const DEVICES = {
+	desktop: { name: "desktop-chrome", use: devices["Desktop Chrome"] },
+	android: { name: "android-chrome", use: devices["Pixel 7"] },
+	ios: { name: "ios-safari", use: devices["iPhone 14"] },
+} as const;
+const DEVICE = (process.env.E2E_DEVICE ?? "desktop") as keyof typeof DEVICES;
+if (!(DEVICE in DEVICES)) {
+	throw new Error(`E2E_DEVICE must be one of: ${Object.keys(DEVICES).join(", ")}`);
+}
+
 export default defineConfig({
 	testDir: "./e2e",
 	fullyParallel: false,
@@ -20,7 +32,7 @@ export default defineConfig({
 		baseURL: WEB_URL,
 		trace: "retain-on-failure",
 	},
-	projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+	projects: [DEVICES[DEVICE]],
 	webServer: [
 		{
 			// Fresh database on every run.

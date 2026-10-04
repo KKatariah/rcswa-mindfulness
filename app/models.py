@@ -461,12 +461,16 @@ class PushSubscription(models.Model):
 
 # Surveys
 
+class SurveyType(models.TextChoices):
+    INTAKE = "intake", "Intake"
+    WEEKLY = "weekly", "Weekly"
+    END = "end", "End"
+    FOLLOWUP = "followup", "Follow-up"
+
+
 class Survey(models.Model):
-    class SurveyType(models.TextChoices):
-        INTAKE = "intake", "Intake"
-        WEEKLY = "weekly", "Weekly"
-        END = "end", "End"
-        FOLLOWUP = "followup", "Follow-up"
+    # Backward-compat alias: Survey.SurveyType.WEEKLY continues to work everywhere.
+    SurveyType = SurveyType
 
     # SET_NULL: surveys may be global (not tied to any module).
     module = models.ForeignKey(
@@ -482,11 +486,21 @@ class Survey(models.Model):
     questions = models.JSONField(default=list)
 
     def clean(self):
-        if self.type == self.SurveyType.WEEKLY and self.module_id is None:
+        if self.type == SurveyType.WEEKLY and self.module_id is None:
             raise ValidationError({"module": "A weekly survey must be linked to a module."})
 
     def __str__(self):
         return f"{self.title} ({self.code})"
+
+    class Meta:
+        ordering = ["module__week_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["module"],
+                condition=Q(type=SurveyType.WEEKLY),
+                name="unique_weekly_survey_per_module",
+            ),
+        ]
 
 
 class SurveyResponse(models.Model):

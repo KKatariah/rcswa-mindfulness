@@ -17,7 +17,7 @@ export default function SurveyHeader({
 					: "rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_4px_4px_-6px_rgba(0,0,0,0.05)]"
 			}
 		>
-			<h1 className="text-2xl font-extrabold text-ink sm:text-3xl">{title}</h1>
+			<h1 className="text-2xl font-extrabold wrap-anywhere text-ink sm:text-3xl">{title}</h1>
 			<p className="mt-2 text-sm text-muted sm:text-base">{description}</p>
 		</header>
 	);

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { loginAs, OTHER, STUDENT } from "./helpers";
+import { loginAs, openNavMenu, OTHER, STUDENT } from "./helpers";
 
 test("survey submits with no meditation (q1 = 0) and the follow-ups left blank", async ({ page, request }) => {
 	await loginAs(page, request, OTHER);
@@ -24,7 +24,8 @@ test("an expired session returns to the home page instead of a broken page", asy
 	await page.evaluate(() => window.localStorage.setItem("token", "not-a-real-token"));
 	await page.goto("/forum");
 	await expect(page).toHaveURL(/\/$/);
-	await expect(page.getByRole("button", { name: "Log In" })).toBeVisible();
+	await openNavMenu(page);
+	await expect(page.getByRole("button", { name: "Log In" }).filter({ visible: true })).toBeVisible();
 	expect(await page.evaluate(() => window.localStorage.getItem("token"))).toBeNull();
 });
 

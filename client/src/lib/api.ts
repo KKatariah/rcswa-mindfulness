@@ -331,6 +331,8 @@ import type {
 	DashboardStats,
 	AdditionalResourceCategory,
 	AdminAdditionalResource,
+	AdminSurvey,
+	AdminSurveyResponse,
 } from "@/types/admin";
 
 export async function listUsers(token: string): Promise<AdminUser[]> {
@@ -405,7 +407,6 @@ export type AdditionalResourceInput = {
 	title: string;
 	author?: string;
 	url?: string;
-	display_order?: number;
 	/** Omit entirely to leave the existing cover unchanged on update. */
 	cover_image?: File | null;
 };
@@ -416,7 +417,6 @@ function additionalResourceFormData(data: Partial<AdditionalResourceInput>): For
 	if (data.title !== undefined) form.append("title", data.title);
 	if (data.author !== undefined) form.append("author", data.author);
 	if (data.url !== undefined) form.append("url", data.url);
-	if (data.display_order !== undefined) form.append("display_order", String(data.display_order));
 	if (data.cover_image) form.append("cover_image", data.cover_image);
 	return form;
 }
@@ -460,6 +460,27 @@ export async function updateAdditionalResource(
 
 export async function deleteAdditionalResource(id: number, token: string): Promise<void> {
 	return deleteRequest(`${API_BASE_URL}/additional-resources/${id}/`, token);
+}
+
+// ids: every resource in the category, in the new display order.
+export async function reorderAdditionalResources(
+	category: AdditionalResourceCategory,
+	ids: number[],
+	token: string,
+): Promise<void> {
+	const res = await fetch(`${API_BASE_URL}/additional-resources/reorder/`, {
+		method: "POST",
+		headers: authHeader(token),
+		body: JSON.stringify({ category, ids }),
+	});
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({}));
+		const message =
+			typeof data === "object" && data !== null
+				? Object.values(data).flat().join(" ")
+				: "Something went wrong";
+		throw new Error(message || "Failed to reorder resources");
+	}
 }
 
 export async function listEnrollments(
@@ -612,6 +633,23 @@ export async function deleteContentItem(
 	return deleteRequest(`${API_BASE_URL}/content-items/${id}/`, token);
 }
 
+// ids: every module, in the new week order. The server reassigns the existing week numbers.
+export async function reorderModules(ids: number[], token: string): Promise<void> {
+	const res = await fetch(`${API_BASE_URL}/modules/reorder/`, {
+		method: "POST",
+		headers: authHeader(token),
+		body: JSON.stringify({ ids }),
+	});
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({}));
+		const message =
+			typeof data === "object" && data !== null
+				? Object.values(data).flat().join(" ")
+				: "Something went wrong";
+		throw new Error(message || "Failed to reorder modules");
+	}
+}
+
 // ids: every content item in the module, in the new display order.
 export async function reorderContentItems(moduleId: number, ids: number[], token: string): Promise<void> {
 	const res = await fetch(`${API_BASE_URL}/content-items/reorder/`, {
@@ -638,6 +676,61 @@ export async function getDashboardStats(
 		headers: { Authorization: `Token ${token}` },
 	});
 	return handleResponse<DashboardStats>(res);
+}
+
+// ── Admin: Surveys ────────────────────────────────────────────────────────────
+
+export async function listSurveysAdmin(token: string): Promise<AdminSurvey[]> {
+	const res = await fetch(`${API_BASE_URL}/surveys/manage/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<AdminSurvey[]>(res);
+}
+
+export async function getSurveyAdmin(
+	id: number,
+	token: string,
+): Promise<Omit<AdminSurvey, "response_count">> {
+	const res = await fetch(`${API_BASE_URL}/surveys/${id}/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<Omit<AdminSurvey, "response_count">>(res);
+}
+
+export async function createSurvey(
+	data: Omit<AdminSurvey, "id" | "response_count">,
+	token: string,
+): Promise<AdminSurvey> {
+	const res = await fetch(`${API_BASE_URL}/surveys/`, {
+		method: "POST",
+		headers: authHeader(token),
+		body: JSON.stringify(data),
+	});
+	return handleResponse<AdminSurvey>(res);
+}
+
+export async function updateSurvey(
+	id: number,
+	data: Partial<Omit<AdminSurvey, "id" | "response_count">>,
+	token: string,
+): Promise<AdminSurvey> {
+	const res = await fetch(`${API_BASE_URL}/surveys/${id}/`, {
+		method: "PATCH",
+		headers: authHeader(token),
+		body: JSON.stringify(data),
+	});
+	return handleResponse<AdminSurvey>(res);
+}
+
+export async function deleteSurvey(id: number, token: string): Promise<void> {
+	return deleteRequest(`${API_BASE_URL}/surveys/${id}/`, token);
+}
+
+export async function listSurveyResponses(id: number, token: string): Promise<AdminSurveyResponse[]> {
+	const res = await fetch(`${API_BASE_URL}/surveys/${id}/responses/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<AdminSurveyResponse[]>(res);
 }
 
 /** Download survey responses as CSV (admin only). Omit surveyId for all surveys. */

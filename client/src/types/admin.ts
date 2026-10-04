@@ -99,3 +99,37 @@ export type DashboardStats = {
 	};
 	enrollment_status_breakdown: Record<string, number>;
 };
+
+export type SurveyType = "intake" | "weekly" | "end" | "followup";
+
+export type SurveyQuestion = {
+	id: string;
+	type: "integer" | "likert" | "longtext";
+	text: string;
+	section?: string;
+	unit?: string;
+	min?: number;
+	max?: number;
+	scale_labels?: Record<string, string>;
+	skip_if?: { question_id: string; value: number };
+};
+
+export type AdminSurvey = {
+	id: number;
+	code: string;
+	title: string;
+	type: SurveyType;
+	module: number | null;
+	questions: SurveyQuestion[];
+	response_count: number;
+};
+
+export type AdminSurveyResponse = {
+	id: number;
+	participant_id: number;
+	full_name: string;
+	email: string;
+	cohort: string;
+	submitted_at: string;
+	answers: Record<string, number | string>;
+};

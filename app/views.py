@@ -1,3 +1,4 @@
+import re
 import unicodedata
 
 from django.conf import settings as django_settings
@@ -5,7 +6,7 @@ from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.db import transaction
-from django.db.models import Prefetch
+from django.db.models import Count, Prefetch, ProtectedError
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -38,7 +39,7 @@ from .models import (
 from .notifications import notify_survey_unlocked
 from .permissions import IsAdminOrStaff, IsAdminOrSelf
 from .throttles import AuthRateThrottle
-from .exports import survey_responses_csv
+from .exports import cohort_names, survey_responses_csv
 
 
 from google.oauth2 import id_token
@@ -62,6 +63,7 @@ from .serializers import (
     NotificationPreferenceSerializer,
     PushSubscriptionSerializer,
     RegisterSerializer,
+    SurveyAdminSerializer,
     SurveyDetailSerializer,
     SurveyResponseAdminSerializer,
     SurveyResponseSerializer,
@@ -289,11 +291,36 @@ class ModuleViewSet(viewsets.ModelViewSet):
         modules = Module.objects.filter(is_published=True).order_by("week_number")
         return Response(ModuleSummarySerializer(modules, many=True).data)
 
+    @action(detail=False, methods=["post"])
+    def reorder(self, request):
+        """Renumber weeks to match a new order: {"ids": [every module id, first week first]}.
+
+        The modules keep the same set of week numbers, just reassigned, so gaps survive.
+        """
+        ids = request.data.get("ids")
+        if not isinstance(ids, list) or not all(type(i) is int for i in ids):
+            raise ValidationError({"ids": "Expected a list of module ids."})
+        modules = {m.id: m for m in Module.objects.all()}
+        if len(ids) != len(modules) or set(ids) != set(modules):
+            raise ValidationError({"ids": "Must list every module exactly once."})
+        weeks = sorted(m.week_number for m in modules.values())
+        with transaction.atomic():
+            # week_number is unique, so park everything on unused numbers before the real swap.
+            for offset, module_id in enumerate(ids):
+                Module.objects.filter(pk=module_id).update(week_number=30000 + offset)
+            for week, module_id in zip(weeks, ids):
+                Module.objects.filter(pk=module_id).update(week_number=week)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     def get_permissions(self):
         if self.action == "summary":
             return [AllowAny()]
-        if self.action in ("create", "update", "partial_update", "destroy"):
+        if self.action in ("create", "update", "partial_update", "destroy", "reorder"):
             return [IsAuthenticated(), IsAdminOrStaff()]
+        # The home page lists the programme for logged-out visitors. This override replaces
+        # the action's own permission_classes, so it has to allow it here.
+        if self.action == "summary":
+            return [AllowAny()]
         return [IsAuthenticated()]
 
 
@@ -350,6 +377,24 @@ class AdditionalResourceViewSet(viewsets.ModelViewSet):
         if category:
             qs = qs.filter(category=category)
         return qs
+
+    @action(detail=False, methods=["post"])
+    def reorder(self, request):
+        """Set a category's order in one go: {"category": c, "ids": [resource ids in display order]}."""
+        category = request.data.get("category")
+        ids = request.data.get("ids")
+        if category not in AdditionalResource.Category.values:
+            raise ValidationError({"category": "Unknown category."})
+        if not isinstance(ids, list) or not all(type(i) is int for i in ids):
+            raise ValidationError({"ids": "Expected a list of resource ids."})
+        resources = {r.id: r for r in AdditionalResource.objects.filter(category=category)}
+        if len(ids) != len(resources) or set(ids) != set(resources):
+            raise ValidationError({"ids": "Must list every resource in the category exactly once."})
+        with transaction.atomic():
+            for position, resource_id in enumerate(ids, start=1):
+                resources[resource_id].display_order = position
+            AdditionalResource.objects.bulk_update(resources.values(), ["display_order"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class EnrollmentViewSet(viewsets.ModelViewSet):
@@ -671,20 +716,72 @@ class UserProfileViewSet(
 
 # ── Surveys ────────────────────────────────────────────────────────────────────
 
-class SurveyViewSet(viewsets.ReadOnlyModelViewSet):
+class SurveyViewSet(viewsets.ModelViewSet):
+    """Participants list and read surveys; admins also create, edit and delete them.
+
+    GET /surveys/manage/            admin list with questions and response counts
+    GET /surveys/{id}/responses/    admin view of one survey's responses
+    """
     permission_classes = [IsAuthenticated]
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    _ADMIN_ACTIONS = ("create", "partial_update", "destroy", "manage", "responses")
+
+    def get_permissions(self):
+        if self.action in self._ADMIN_ACTIONS:
+            return [IsAuthenticated(), IsAdminOrStaff()]
+        # Falls back to permission_classes, which @action(permission_classes=...) overrides (e.g. export).
+        return super().get_permissions()
 
     def get_queryset(self):
-        return (
+        qs = (
             Survey.objects
             .select_related("module")
             .prefetch_related("module__content_items")
         )
+        if self.action in self._ADMIN_ACTIONS:
+            qs = qs.annotate(response_count=Count("responses")).order_by("module__week_number", "code")
+        u = self.request.user
+        if not (getattr(u, "role", None) == "admin" or u.is_staff):
+            # Hide weekly surveys with a null module (orphaned) from students.
+            qs = qs.exclude(type=Survey.SurveyType.WEEKLY, module__isnull=True)
+        return qs
 
     def get_serializer_class(self):
+        if self.action in self._ADMIN_ACTIONS:
+            return SurveyAdminSerializer
         if self.action == "retrieve":
             return SurveyDetailSerializer
         return SurveySerializer
+
+    def perform_destroy(self, instance):
+        try:
+            instance.delete()
+        except ProtectedError:
+            raise ValidationError({"detail": "This survey has responses, so it can't be deleted."})
+
+    @action(detail=False, methods=["get"])
+    def manage(self, request):
+        return Response(self.get_serializer(self.get_queryset(), many=True).data)
+
+    @action(detail=True, methods=["get"])
+    def responses(self, request, pk=None):
+        survey = self.get_object()
+        responses = list(
+            survey.responses.select_related("user").order_by("submitted_at")
+        )
+        cohorts = cohort_names({r.user_id for r in responses})
+        return Response([
+            {
+                "id": r.pk,
+                "participant_id": r.user_id,
+                "full_name": r.user.full_name,
+                "email": r.user.email,
+                "cohort": cohorts.get(r.user_id, ""),
+                "submitted_at": r.submitted_at,
+                "answers": r.answers,
+            }
+            for r in responses
+        ])
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
@@ -711,7 +808,8 @@ class SurveyViewSet(viewsets.ReadOnlyModelViewSet):
                 return Response({"detail": "Survey not found."}, status=status.HTTP_404_NOT_FOUND)
         include_identity = request.query_params.get("identify") in ("1", "true")
 
-        label = surveys.first().code if survey_id else "all"
+        # Codes set before codes were validated may hold characters unsafe in a header.
+        label = re.sub(r"[^A-Za-z0-9_-]", "_", surveys.first().code) if survey_id else "all"
         filename = f"survey-responses-{label}-{timezone.localdate().isoformat()}.csv"
         response = HttpResponse(
             survey_responses_csv(surveys, include_identity=include_identity),

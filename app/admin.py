@@ -3,6 +3,7 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.db import transaction
+from rest_framework import serializers
 
 from .models import (
     User,
@@ -22,6 +23,7 @@ from .models import (
     ForumThread,
     ForumPost,
 )
+from .serializers import validate_survey_questions
 
 
 @admin.register(User)
@@ -55,6 +57,18 @@ class ContentItemInline(admin.TabularInline):
     extra = 0
     fields = ("title", "type", "provider", "embed_url", "display_order", "day_offset")
     ordering = ("display_order",)
+
+
+class SurveyInline(admin.TabularInline):
+    model = Survey
+    extra = 0
+    fields = ("code", "title", "type", "question_count")
+    readonly_fields = ("code", "type", "question_count")
+    show_change_link = True
+
+    @admin.display(description="Questions")
+    def question_count(self, obj):
+        return len(obj.questions) if obj.questions else 0
 
 
 class ForumThreadAdminForm(forms.ModelForm):
@@ -122,7 +136,7 @@ class ModuleAdmin(admin.ModelAdmin):
     list_display = ("week_number", "title", "is_published", "created_at")
     list_filter = ("is_published",)
     search_fields = ("title",)
-    inlines = [ContentItemInline]
+    inlines = [ContentItemInline, SurveyInline]
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
@@ -201,8 +215,37 @@ admin.site.register(AdditionalResource)
 admin.site.register(ContentCompletion)
 admin.site.register(ContentView)
 admin.site.register(NotificationLog)
-admin.site.register(Survey)
 admin.site.register(SurveyResponse)
+
+
+# ── Survey admin ──────────────────────────────────────────────────────────────
+
+class SurveyAdminForm(forms.ModelForm):
+    class Meta:
+        model = Survey
+        fields = ["module", "code", "title", "type", "questions"]
+
+    def clean_questions(self):
+        # Same rules as the admin API, so questions can't be saved here in a shape the app rejects.
+        questions = self.cleaned_data.get("questions")
+        try:
+            validate_survey_questions(questions)
+        except serializers.ValidationError as exc:
+            raise forms.ValidationError(exc.detail)
+        return questions
+
+
+@admin.register(Survey)
+class SurveyAdmin(admin.ModelAdmin):
+    form = SurveyAdminForm
+    list_display = ("code", "title", "module", "type", "question_count")
+    list_filter = ("type", "module")
+    search_fields = ("code", "title")
+    ordering = ("module__week_number", "type")
+
+    @admin.display(description="Questions")
+    def question_count(self, obj):
+        return len(obj.questions) if obj.questions else 0
 
 
 @admin.register(ForumPost)

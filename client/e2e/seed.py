@@ -37,6 +37,12 @@ for item in ContentItem.objects.filter(module__week_number=1):
     ContentCompletion.objects.create(user=student, content_item=item)
     ContentCompletion.objects.create(user=other, content_item=item)
 
+# Sees the week 1 survey's wording after the admin edits it (never submits).
+reader = User.objects.create_user(email="reader@e2e.local", password=PASSWORD, full_name="Rhea Reader")
+Enrollment.objects.create(user=reader, cohort=cohort, status=Enrollment.Status.ACTIVE)
+for item in ContentItem.objects.filter(module__week_number=1):
+    ContentCompletion.objects.create(user=reader, content_item=item)
+
 # A submitted week 2 survey for the admin export test.
 responder = User.objects.create_user(email="responder@e2e.local", password=PASSWORD, full_name="Rae Responder")
 Enrollment.objects.create(user=responder, cohort=cohort, status=Enrollment.Status.WITHDRAWN)
