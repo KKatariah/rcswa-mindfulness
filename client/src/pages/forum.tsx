@@ -119,6 +119,7 @@ function Avatar({
   );
 }
 
+// Keep in step with the "forum_post" throttle rate in server/settings.py (6/min).
 const POST_WINDOW_MS = 30_000;
 const POST_LIMIT = 3;
 const TIMEOUT_SECONDS = 30;
@@ -289,8 +290,8 @@ function PostCard({ post, onEdit, onDelete }: PostCardProps) {
         <Avatar name={post.author_name} avatarUrl={post.author_avatar_url} />
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm font-semibold text-ink">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="min-w-0 truncate text-sm font-semibold text-ink">
                 {post.author_name}
               </span>
               <TimestampWithEdit
@@ -349,7 +350,7 @@ function PostCard({ post, onEdit, onDelete }: PostCardProps) {
             </div>
           ) : (
             <>
-              <p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
+              <p className="mt-2 whitespace-pre-wrap wrap-anywhere text-sm text-[#4B5563]">
                 {post.body}
               </p>
             </>
@@ -458,8 +459,8 @@ function ThreadDetailView({
           />
           <div className="min-w-0 flex-1">
             <div className="flex items-start justify-between gap-2">
-              <div className="flex items-baseline gap-2">
-                <span className="text-sm font-semibold text-ink">
+              <div className="flex min-w-0 items-baseline gap-2">
+                <span className="min-w-0 truncate text-sm font-semibold text-ink">
                   {thread.author_name}
                 </span>
                 <TimestampWithEdit
@@ -531,7 +532,7 @@ function ThreadDetailView({
               </div>
             ) : (
               <>
-                <p className="mt-2 whitespace-pre-wrap text-sm text-[#4B5563]">
+                <p className="mt-2 whitespace-pre-wrap wrap-anywhere text-sm text-[#4B5563]">
                   {thread.body}
                 </p>
                 {pinError && (
@@ -621,6 +622,7 @@ type ThreadRowProps = {
   onSelect: (id: number) => void;
   onEdit: (id: number, body: string) => Promise<void>;
   onDelete: (id: number) => void;
+  onPin: (id: number, is_pinned: boolean) => Promise<void>;
 };
 
 function ThreadRow({
@@ -632,10 +634,13 @@ function ThreadRow({
   onSelect,
   onEdit,
   onDelete,
+  onPin,
 }: ThreadRowProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(thread.body);
   const [saving, setSaving] = useState(false);
+  const [pinning, setPinning] = useState(false);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   async function handleSave() {
     if (!draft.trim()) return;
@@ -645,6 +650,18 @@ function ThreadRow({
       setEditing(false);
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handlePin() {
+    setPinError(null);
+    setPinning(true);
+    try {
+      await onPin(thread.id, !thread.is_pinned);
+    } catch (err) {
+      setPinError(err instanceof Error ? err.message : "Failed to update pin");
+    } finally {
+      setPinning(false);
     }
   }
 
@@ -686,8 +703,8 @@ function ThreadRow({
             avatarUrl={thread.author_avatar_url}
           />
           <div className="min-w-0 flex-1">
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm font-semibold text-ink">
+            <div className="flex min-w-0 items-baseline gap-2">
+              <span className="min-w-0 truncate text-sm font-semibold text-ink">
                 {thread.author_name}
               </span>
               <TimestampWithEdit
@@ -729,8 +746,14 @@ function ThreadRow({
                 </div>
               </div>
             ) : (
-              <p className="mt-1 line-clamp-2 text-sm text-[#4B5563]">
+              <p className="mt-1 line-clamp-2 wrap-anywhere text-sm text-[#4B5563]">
                 {thread.body}
+              </p>
+            )}
+
+            {pinError && (
+              <p className="mt-2 text-xs font-medium text-red-600">
+                {pinError}
               </p>
             )}
 
@@ -749,6 +772,14 @@ function ThreadRow({
             className="flex shrink-0 items-center gap-3"
             onClick={(e) => e.stopPropagation()}
           >
+            <button
+              type="button"
+              onClick={handlePin}
+              disabled={pinning}
+              className="text-xs font-semibold text-amber-600 hover:underline disabled:opacity-50"
+            >
+              {thread.is_pinned ? "Unpin" : "Pin"}
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -781,6 +812,7 @@ type FeedViewProps = {
   onCreateThread: (body: string) => Promise<void>;
   onEditThread: (id: number, body: string) => Promise<void>;
   onDeleteThread: (id: number) => void;
+  onPinThread: (id: number, is_pinned: boolean) => Promise<void>;
   isActive: boolean;
   user: ForumUser | null;
 };
@@ -791,6 +823,7 @@ function FeedView({
   onCreateThread,
   onEditThread,
   onDeleteThread,
+  onPinThread,
   isActive,
   user,
 }: FeedViewProps) {
@@ -822,6 +855,7 @@ function FeedView({
               onSelect={onSelect}
               onEdit={onEditThread}
               onDelete={onDeleteThread}
+              onPin={onPinThread}
             />
           ))
         )}
@@ -1104,6 +1138,7 @@ export default function ForumPage() {
                     onCreateThread={handleCreateThread}
                     onEditThread={handleEditThreadFromFeed}
                     onDeleteThread={handleDeleteThreadFromFeed}
+                    onPinThread={handlePinThread}
                     isActive={isActive}
                     user={user}
                   />

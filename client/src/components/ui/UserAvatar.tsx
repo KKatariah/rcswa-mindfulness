@@ -1,3 +1,5 @@
+import { safeUrl } from "@/lib/safeUrl";
+
 type UserAvatarProps = {
   avatarUrl?: string | null;
   fullName?: string | null;
@@ -13,7 +15,7 @@ export function UserAvatar({
 }: UserAvatarProps) {
   return (
     <img
-      src={avatarUrl ?? undefined}
+      src={safeUrl(avatarUrl)}
       alt={fullName ? `${fullName} profile picture` : "Profile picture"}
       className={`rounded-full object-cover ${className}`}
       style={{ width: size, height: size }}

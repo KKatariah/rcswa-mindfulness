@@ -102,7 +102,7 @@ export default function ProgressPage() {
                 return (
                   <li key={week.number}>
                     {locked ? (
-                      <div title={week.unlockAt ? `Available ${new Date(week.unlockAt).toLocaleString()}` : undefined} aria-disabled="true" className="flex min-h-14 items-center gap-3 px-4 py-3 text-muted sm:px-5">{content}</div>
+                      <div title={week.unlockAt ? `Available ${new Date(`${week.unlockAt}T00:00`).toLocaleDateString()}` : undefined} aria-disabled="true" className="flex min-h-14 items-center gap-3 px-4 py-3 text-muted sm:px-5">{content}</div>
                     ) : (
                       <Link href={`/modules/${week.id}`} className="flex min-h-14 items-center gap-3 px-4 py-3 text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-blue-dark sm:px-5">{content}</Link>
                     )}

@@ -78,7 +78,7 @@ export default function Navbar() {
 							<>
 								<Link
 									href="/profile"
-									className="text-[15px] font-semibold text-white hover:underline"
+									className="block max-w-64 truncate text-[15px] font-semibold text-white hover:underline"
 								>
 									Hi, {user.full_name}
 								</Link>
@@ -143,7 +143,7 @@ export default function Navbar() {
 								<Link
 									href="/profile"
 									onClick={() => setIsOpen(false)}
-									className="rounded-lg px-3 py-2.5 text-left text-[15px] font-semibold text-ink"
+									className="truncate rounded-lg px-3 py-2.5 text-left text-[15px] font-semibold text-ink"
 								>
 									Hi, {user.full_name}
 								</Link>
