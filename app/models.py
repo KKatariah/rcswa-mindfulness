@@ -118,6 +118,8 @@ class User(AbstractUser):
     provider_uid = models.CharField(max_length=255, blank=True, null=True)  # noqa: DJ01 (so flake8 linting ignores null=True)
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.STUDENT)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Set once the user ticks "I agree" on the forum rules; null blocks forum access.
+    forum_rules_accepted_at = models.DateTimeField(null=True, blank=True)
 
     def save(self, *args, **kwargs):
         # Superusers are always app admins.

@@ -4,7 +4,9 @@ import Head from "next/head";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
 import { useAuth } from "@/context/AuthContext";
+import ForumRulesModal, { ForumRulesList } from "@/components/forum/ForumRulesModal";
 import {
+  acceptForumRules,
   createForumPost,
   createForumThread,
   deleteForumPost,
@@ -886,6 +888,10 @@ function ForumSidebar({
           />
         </div>
       </div>
+      <div className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+        <p className="mb-3 text-sm font-bold text-ink">Forum rules</p>
+        <ForumRulesList />
+      </div>
     </div>
   );
 }
@@ -894,8 +900,12 @@ function ForumSidebar({
 
 export default function ForumPage() {
   const router = useRouter();
-  const { user, isLoading: authLoading } = useAuth();
+  const { user, isLoading: authLoading, updateUser } = useAuth();
   const [threads, setThreads] = useState<ForumThread[]>([]);
+  // Students must agree to the rules once (saved server-side) before the
+  // forum loads; the API rejects forum requests until they have.
+  const needsRules =
+    !!user && !isAdminUser(user) && !user.forum_rules_accepted;
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -924,11 +934,12 @@ export default function ForumPage() {
     let cancelled = false;
 
     (async () => {
-      if (!user) {
+      if (!user || needsRules) {
         if (!cancelled) setLoading(false);
         return;
       }
 
+      setLoading(true);
       const token = localStorage.getItem("token") ?? "";
       try {
         const [data, status] = await Promise.all([
@@ -950,7 +961,13 @@ export default function ForumPage() {
     return () => {
       cancelled = true;
     };
-  }, [user, authLoading]);
+  }, [user, authLoading, needsRules]);
+
+  async function handleAcceptRules() {
+    const token = localStorage.getItem("token") ?? "";
+    const { user: updated } = await acceptForumRules(token);
+    updateUser({ forum_rules_accepted: updated.forum_rules_accepted });
+  }
 
   const filteredThreads = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -1084,6 +1101,17 @@ export default function ForumPage() {
               <p className="mt-2 text-sm text-[#9CA3AF]">
                 Log in from the home page to continue.
               </p>
+            </div>
+          ) : needsRules ? (
+            <div className="mx-auto max-w-md rounded-[10px] border border-gray-200 bg-white p-8 text-center shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+              <p className="font-semibold text-ink">
+                Please agree to the forum rules to continue.
+              </p>
+              <ForumRulesModal
+                isOpen
+                onAccept={handleAcceptRules}
+                onDecline={() => router.push("/modules")}
+              />
             </div>
           ) : error ? (
             <div className="mx-auto max-w-md rounded-[10px] border border-red-200 bg-red-50 p-8 text-center">

@@ -60,4 +60,9 @@ thread.opened_by = opening
 thread.save(update_fields=["opened_by"])
 ForumPost.objects.create(thread=thread, author=student, body="Seeded reply")
 
+# Everyone above has already agreed to the forum rules; this user hasn't, so the rules modal shows.
+User.objects.update(forum_rules_accepted_at=timezone.now())
+rules_user = User.objects.create_user(email="rules@e2e.local", password=PASSWORD, full_name="Rory Rules")
+Enrollment.objects.create(user=rules_user, cohort=cohort, status=Enrollment.Status.ACTIVE)
+
 print("e2e seed complete")

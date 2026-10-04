@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.cache import cache
 from django.test import TestCase as DjangoTestCase, override_settings
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase as DRFAPITestCase
 from rest_framework.authtoken.models import Token
@@ -307,6 +308,11 @@ class ForumTests(APITestCase):
             email="admin@test.local", password="testpass",
             full_name="Admin User", role=User.Role.ADMIN,
         )
+        User.objects.filter(pk__in=[self.student.pk, self.other.pk]).update(
+            forum_rules_accepted_at=timezone.now()
+        )
+        self.student.refresh_from_db()
+        self.other.refresh_from_db()
         self.module = Module.objects.create(
             week_number=1, title="Week 1", is_published=True
         )
@@ -2049,6 +2055,7 @@ class ForumArchiveTests(APITestCase):
     def setUp(self):
         self.student = User.objects.create_user(
             email="student@test.local", password="testpass",
+            forum_rules_accepted_at=timezone.now(),
         )
         self.module = Module.objects.create(week_number=1, title="Week 1", is_published=True)
         self.thread = ForumThread.objects.create(
@@ -2110,6 +2117,56 @@ class ForumArchiveTests(APITestCase):
 
 
 # ── Admin portal: dashboard stats ────────────────────────────────────────────────
+
+class ForumRulesTests(APITestCase):
+    def setUp(self):
+        self.student = User.objects.create_user(
+            email="student@test.local", password="testpass", full_name="Student One"
+        )
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass",
+            full_name="Admin User", role=User.Role.ADMIN,
+        )
+
+    def test_forum_blocked_until_rules_accepted(self):
+        self.client.force_login(self.student)
+        self.assertEqual(
+            self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/forum/threads/", {"body": "Hi"}, content_type="application/json"
+            ).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertFalse(self.client.get("/api/user/").data["user"]["forum_rules_accepted"])
+
+        resp = self.client.post("/api/forum/accept-rules/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(resp.data["user"]["forum_rules_accepted"])
+        self.student.refresh_from_db()
+        self.assertIsNotNone(self.student.forum_rules_accepted_at)
+        self.assertEqual(self.client.get("/api/forum/threads/").status_code, status.HTTP_200_OK)
+
+    def test_accepting_again_keeps_original_timestamp(self):
+        self.client.force_login(self.student)
+        self.client.post("/api/forum/accept-rules/")
+        self.student.refresh_from_db()
+        first = self.student.forum_rules_accepted_at
+        self.client.post("/api/forum/accept-rules/")
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.forum_rules_accepted_at, first)
+
+    def test_admin_not_required_to_accept(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get("/api/forum/threads/").status_code, status.HTTP_200_OK)
+
+    def test_accept_requires_login(self):
+        self.assertIn(
+            self.client.post("/api/forum/accept-rules/").status_code,
+            (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )
+
 
 class DashboardStatsTests(APITestCase):
     def setUp(self):
@@ -2657,8 +2714,12 @@ class SurveyEdgeCaseTests(APITestCase):
 class ForumEdgeCaseTests(APITestCase):
     def test_pinned_thread_survives_author_deletion(self):
         admin = User.objects.create_user(email="admin@test.local", password="testpass", role=User.Role.ADMIN)
-        author = User.objects.create_user(email="author@test.local", password="testpass")
-        reader = User.objects.create_user(email="reader@test.local", password="testpass")
+        author = User.objects.create_user(
+            email="author@test.local", password="testpass", forum_rules_accepted_at=timezone.now()
+        )
+        reader = User.objects.create_user(
+            email="reader@test.local", password="testpass", forum_rules_accepted_at=timezone.now()
+        )
         self.client.force_login(author)
         tid = self.client.post("/api/forum/threads/", {"body": "Pinned by admin"}, format="json").data["id"]
         self.client.force_login(admin)

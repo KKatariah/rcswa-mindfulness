@@ -9,4 +9,5 @@ export type AuthUser = {
   auth_provider?: string;
   cohort_start_date?: string | null;
   avatar_url?: string | null;
+  forum_rules_accepted?: boolean;
 };
