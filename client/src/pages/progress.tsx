@@ -6,6 +6,7 @@ import AppShell from "@/components/main/AppShell";
 import NextSession from "@/components/modules/NextSession";
 import UpcomingSession, { findUpcomingModule } from "@/components/modules/UpcomingSession";
 import { CheckIcon, PlayIcon, LockIcon } from "@/components/ui/icons";
+import { weekLabel } from "@/lib/weeks";
 
 export default function ProgressPage() {
   const { user, loading, error, modules, completions, reload } = useProgramme();
@@ -39,7 +40,7 @@ export default function ProgressPage() {
         rightRail={
           next ? (
             <Link href={`/modules/${next.id}`} className="block rounded-[10px] focus-visible:outline-2 focus-visible:outline-brand-blue-dark">
-              <NextSession compactOnMobile moduleTitle={`Week ${next.number}: ${next.title}`} />
+              <NextSession compactOnMobile moduleTitle={`${weekLabel(next.number)}: ${next.title}`} />
             </Link>
           ) : hasUpcoming ? (
             <UpcomingSession modules={modules} />
@@ -89,7 +90,7 @@ export default function ProgressPage() {
                     <span className={`flex size-7 shrink-0 items-center justify-center rounded-full ${week.status === "completed" ? "bg-brand-blue text-white" : locked ? "bg-surface-muted text-muted" : "bg-surface-muted text-brand-blue-dark"}`}>
                       <Icon className="size-4" aria-hidden="true" />
                     </span>
-                    <span className="text-sm font-semibold">Week {week.number}<span className="sr-only">: {week.title}</span></span>
+                    <span className="text-sm font-semibold">{weekLabel(week.number)}<span className="sr-only">: {week.title}</span></span>
                     <span className="sr-only">{locked ? ", locked" : week.status === "completed" ? ", completed" : ", in progress"}</span>
                     {!locked && (
                       <span className="ml-auto h-1.5 w-24 overflow-hidden rounded-full bg-gray-200 sm:w-36" aria-hidden="true">

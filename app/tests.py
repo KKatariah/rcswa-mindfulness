@@ -2028,6 +2028,14 @@ class ModuleUnlockTests(APITestCase):
         self.client.force_login(self.student)
         self.assertTrue(self._modules_by_week()[3]["is_unlocked"])
 
+    def test_week0_intro_opens_with_week1(self):
+        Module.objects.create(week_number=0, title="Module 0 - Introduction", is_published=True)
+        self.client.force_login(self.student)
+        modules = self._modules_by_week()
+        self.assertTrue(modules[0]["is_unlocked"])
+        self.assertEqual(modules[0]["unlock_at"], modules[1]["unlock_at"])
+        self.assertEqual(list(modules)[0], 0)
+
     def test_locked_module_detail_returns_403(self):
         self.client.force_login(self.student)
         resp = self.client.get(f"/api/modules/{self.week3.pk}/")
@@ -3200,6 +3208,10 @@ class SurveyAutoCreationTests(TestCase):
         self.assertEqual(
             Survey.objects.filter(module=module, type=SurveyType.WEEKLY).count(), 1
         )
+
+    def test_no_survey_for_week0_introduction(self):
+        module = Module.objects.create(week_number=0, title="Module 0 - Introduction")
+        self.assertFalse(Survey.objects.filter(module=module).exists())
 
     def test_signal_skips_when_raw(self):
         """Signal handler must do nothing when raw=True (fixture loading path)."""

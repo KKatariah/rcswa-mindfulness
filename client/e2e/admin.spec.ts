@@ -162,7 +162,7 @@ test("admin drags modules into a new week order and saves it", async ({ page, re
 		await expect(row("Week 3 \\(locked\\)")).toContainText("Week 3");
 
 		// Dragging only previews the new numbering until it's saved.
-		await page.getByRole("button", { name: "Reorder Week 3 (locked)" }).dragTo(row("Introduction to Mindfulness"));
+		await page.getByRole("button", { name: "Reorder Week 3 (locked)" }).dragTo(row("Mindful Breathing"));
 		await expect(row("Week 3 \\(locked\\)")).toContainText("Week 1(was 3)");
 		await expect(page.getByRole("status")).toContainText("Week order changed");
 		await page.getByRole("button", { name: "Discard" }).click();
@@ -185,7 +185,7 @@ test("admin drags modules into a new week order and saves it", async ({ page, re
 
 test("admin drags content items within a module", async ({ page, request }) => {
 	await loginAs(page, request, ADMIN);
-	await page.goto("/admin/modules/1");
+	await page.goto("/admin/modules/2");
 	const handles = page.getByRole("button", { name: /^Reorder / });
 	await expect(handles).toHaveCount(2);
 	const names = async () => (await handles.evaluateAll((els) => els.map((el) => el.getAttribute("aria-label"))));

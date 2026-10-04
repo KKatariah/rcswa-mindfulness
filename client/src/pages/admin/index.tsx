@@ -5,6 +5,7 @@ import AdminLayout from "@/components/admin/AdminLayout";
 import SurveyExport from "@/components/admin/SurveyExport";
 import { getDashboardStats } from "@/lib/api";
 import type { DashboardStats } from "@/types/admin";
+import { weekLabel } from "@/lib/weeks";
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
 	return (
@@ -91,7 +92,7 @@ export default function AdminDashboardPage() {
 								stats.modules.map((m) => (
 									<ProgressBar
 										key={m.id}
-										label={`Week ${m.week_number}: ${m.title}`}
+										label={`${weekLabel(m.week_number)}: ${m.title}`}
 										pct={m.completion_pct}
 										detail={`${m.completed_count}/${m.eligible_count} (${m.completion_pct}%)`}
 										href={`/admin/modules/${m.id}#progress`}

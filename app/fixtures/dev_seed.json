@@ -26,9 +26,9 @@
     "pk": 1,
     "fields": {
       "week_number": 1,
-      "title": "Introduction to Mindfulness",
-      "description": "An overview of mindfulness practice and its evidence base.",
-      "summary": "An overview of mindfulness practice and its evidence base.",
+      "title": "Mindful Breathing",
+      "description": "Guided breathing practice to settle attention on the breath.",
+      "summary": "Guided breathing practice to settle attention on the breath.",
       "is_published": true,
       "created_at": "2026-01-01T00:00:00Z",
       "updated_at": "2026-01-01T00:00:00Z"
@@ -48,14 +48,27 @@
     }
   },
   {
+    "model": "app.module",
+    "pk": 3,
+    "fields": {
+      "week_number": 0,
+      "title": "Module 0 - Introduction",
+      "description": "An overview of mindfulness practice and its evidence base. Watch this before starting Week 1.",
+      "summary": "An overview of mindfulness practice and its evidence base.",
+      "is_published": true,
+      "created_at": "2026-01-01T00:00:00Z",
+      "updated_at": "2026-01-01T00:00:00Z"
+    }
+  },
+  {
     "model": "app.contentitem",
     "pk": 1,
     "fields": {
-      "module": 1,
-      "title": "What is Mindfulness? (Introduction)",
+      "module": 3,
+      "title": "Introduction to the RCSWA Online Mindfulness Training Program",
       "type": "video",
       "provider": "youtube",
-      "embed_url": "https://www.youtube.com/embed/ZToicYcHIOU",
+      "embed_url": "https://www.youtube.com/embed/uaRFzaBehB4",
       "display_order": 1,
       "created_at": "2026-01-01T00:00:00Z",
       "updated_at": "2026-01-01T00:00:00Z"
@@ -107,7 +120,7 @@
     "model": "app.resource",
     "pk": 1,
     "fields": {
-      "module": 1,
+      "module": 3,
       "title": "MBSR Overview — Oxford Mindfulness Centre",
       "url": "https://www.oxfordmindfulness.org/learn/resources/",
       "resource_type": "article",

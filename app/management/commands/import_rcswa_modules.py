@@ -18,7 +18,7 @@ PLACEHOLDERS = {
 
 
 class Command(BaseCommand):
-    help = "Import eight RCSWA modules; preserve existing publication flags and learner records."
+    help = "Import the RCSWA introduction and eight weekly modules; preserve existing publication flags and learner records."
 
     def add_arguments(self, parser):
         parser.add_argument("--publish", action="store_true", help="Publish the imported modules.")
@@ -27,8 +27,8 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         path = Path(__file__).resolve().parents[2] / "content" / "rcswa_modules.json"
         data = json.loads(path.read_text(encoding="utf-8"))
-        if [row["week_number"] for row in data["modules"]] != list(range(1, 9)):
-            raise CommandError("Expected exactly weeks 1–8.")
+        if [row["week_number"] for row in data["modules"]] != list(range(0, 9)):
+            raise CommandError("Expected exactly weeks 0–8.")
 
         with transaction.atomic():
             for row in data["modules"]:
@@ -63,10 +63,13 @@ class Command(BaseCommand):
                     item.display_order = order
                     item.full_clean()
                     item.save()
-                self.stdout.write(f"Week {module.week_number}: {module.title} (2 media items)")
+                self.stdout.write(f"{module.week_label}: {module.title} ({len(row['content_items'])} media items)")
 
             if options["dry_run"]:
                 transaction.set_rollback(True)
                 self.stdout.write("Dry run: no changes saved.")
             else:
-                self.stdout.write(self.style.SUCCESS("Imported 8 modules and 16 media items."))
+                self.stdout.write(self.style.SUCCESS(
+                    f"Imported {len(data['modules'])} modules and "
+                    f"{sum(len(row['content_items']) for row in data['modules'])} media items."
+                ))
