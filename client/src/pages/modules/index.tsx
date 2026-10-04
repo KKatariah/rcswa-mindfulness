@@ -5,7 +5,7 @@ import Link from "next/link";
 import Navbar from "@/components/main/Navbar";
 import Footer from "@/components/main/Footer";
 import Sidebar from "@/components/main/Sidebar";
-import NextSession from "@/components/modules/NextSession";
+import UpcomingSession from "@/components/modules/UpcomingSession";
 import { CheckIcon, LockIcon, PlayIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { listModules, listProgress, type ApiModule } from "@/lib/api";
@@ -222,8 +222,7 @@ export default function ModulesIndexPage() {
 						</div>
 
 						<div className="min-w-0 md:col-start-2 xl:col-start-3 md:sticky md:top-20 lg:top-24">
-							{/* Sample schedule until session data is connected. */}
-							<NextSession moduleTitle="Module Week 3" startsAt="2028-10-24T10:00:00+08:00" dateLabel="Tue, Oct 24" timeLabel="10:00 AM" />
+							{!loading && !authLoading && !error && <UpcomingSession modules={modules} />}
 						</div>
 					</div>
 				</div>

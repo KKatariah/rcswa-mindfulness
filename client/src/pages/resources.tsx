@@ -2,7 +2,6 @@ import Head from "next/head";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import AppShell from "@/components/main/AppShell";
-import NextSession from "@/components/modules/NextSession";
 import { BookOpenIcon, VideoIcon, GlobeIcon, ExternalLinkIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { listAdditionalResources } from "@/lib/api";
@@ -135,11 +134,7 @@ export default function ResourcesPage() {
         <title>Resources | Wellbeing Course</title>
         <meta name="description" content="Books, documentaries, and online programmes to support your mindfulness journey." />
       </Head>
-      <AppShell
-        rightRail={
-          <NextSession moduleTitle="Module Week 3" startsAt="2028-10-24T10:00:00+08:00" dateLabel="Tue, Oct 24" timeLabel="10:00 AM" />
-        }
-      >
+      <AppShell>
         <div className="min-w-0 space-y-4">
             <header className="rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_4px_4px_-6px_rgba(0,0,0,0.05)]">
               <h1 className="text-2xl font-extrabold text-ink sm:text-3xl">Resources</h1>
