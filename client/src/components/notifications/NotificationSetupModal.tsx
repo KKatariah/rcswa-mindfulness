@@ -111,6 +111,7 @@ export default function NotificationSetupModal({ isOpen, onClose }: Props) {
 				</button>
 				{result && (
 					<p
+						role={result.isError ? "alert" : "status"}
 						className={[
 							"mt-3 text-center text-sm",
 							result.isError ? "text-red-600" : "text-green-600",

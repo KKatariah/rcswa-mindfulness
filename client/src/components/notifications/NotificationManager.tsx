@@ -66,30 +66,24 @@ export async function enableNotifications(): Promise<string> {
   const permission = await Notification.requestPermission();
 
   if (permission === "denied") {
-    const preferenceResponse = await fetch(
-      `${API_BASE_URL}/notifications/preferences/me/`,
-      {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Token ${token}`,
-        },
-        body: JSON.stringify({ push_denied: true }),
-      }
-    );
-
-    if (!preferenceResponse.ok) {
-      throw new Error("Could not update notification preferences.");
-    }
+    // Best-effort: recording the denial must not hide the blocked message below.
+    await fetch(`${API_BASE_URL}/notifications/preferences/me/`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Token ${token}`,
+      },
+      body: JSON.stringify({ push_denied: true }),
+    }).catch(() => undefined);
 
     throw new Error(
-      "Notifications are blocked in your browser. Follow the 'notifications are blocked' step above to allow them, then try again."
+      "Notifications are blocked for this site. Allow them in your browser or device settings, then try again."
     );
   }
 
   if (permission !== "granted") {
     throw new Error(
-      "No choice was made. Click 'Enable notifications' again and choose 'Allow'."
+      "No choice was made. Try again and choose 'Allow' when asked."
     );
   }
 
