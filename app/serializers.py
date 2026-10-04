@@ -666,6 +666,9 @@ class SurveySerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return False
+        responded_ids = self.context.get("responded_ids")
+        if responded_ids is not None:
+            return obj.pk in responded_ids
         return SurveyResponse.objects.filter(user=request.user, survey=obj).exists()
 
 

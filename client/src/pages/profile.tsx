@@ -4,7 +4,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import Navbar from "@/components/main/Navbar";
 import Sidebar from "@/components/main/Sidebar";
 import NotificationSetupModal from "@/components/notifications/NotificationSetupModal";
-import NextSession from "@/components/modules/NextSession";
+import UpcomingSession from "@/components/modules/UpcomingSession";
 import { LockIcon } from "@/components/ui/icons";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAuth } from "@/context/AuthContext";
@@ -254,7 +254,7 @@ useEffect(() => {
         <div className="mx-auto grid max-w-[1920px] items-start gap-6 p-4 md:grid-cols-[240px_minmax(0,1fr)] md:p-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
           <Sidebar responsive />
 
-          <main className="flex min-w-0 flex-col gap-6">
+          <div className="flex min-w-0 flex-col gap-6">
             <div className="overflow-hidden rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
               <div className="flex items-center gap-4 border-b border-gray-100 p-6">
                 <UserAvatar
@@ -413,15 +413,10 @@ useEffect(() => {
                 )}
               </div>
             </div>
-          </main>
+          </div>
 
           <div className="w-full xl:pt-0">
-            <NextSession
-              moduleTitle="Module Week 3"
-              startsAt="2028-10-24T10:00:00+08:00"
-              dateLabel="Tue, Oct 24"
-              timeLabel="10:00 AM"
-            />
+            <UpcomingSession />
           </div>
         </div>
       </div>

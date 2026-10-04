@@ -65,7 +65,7 @@ class Command(BaseCommand):
                 payload = {
                     "title": f"Week {module.week_number} is now available",
                     "body": module.title,
-                    "url": f"/modules/{module.week_number}/",
+                    "url": f"/modules/{module.id}",
                 }
 
                 channel, success = deliver(

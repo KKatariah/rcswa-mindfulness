@@ -47,6 +47,7 @@ needs to exist on the server at runtime. This survives ephemeral filesystem rede
 | `EMAIL_HOST_USER`     | SMTP username                                                                  |
 | `EMAIL_HOST_PASSWORD` | SMTP password                                                                  |
 | `DEFAULT_FROM_EMAIL`  | Sender address shown to students                                               |
+| `FRONTEND_URL`        | Frontend URL for email links (default `http://localhost:3000`)                 |
 
 In development `EMAIL_BACKEND` defaults to the console backend (emails are printed to
 stdout, no SMTP needed) and `VAPID_*` default to empty strings (push is skipped with

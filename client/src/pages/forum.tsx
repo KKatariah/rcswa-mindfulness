@@ -1072,7 +1072,7 @@ export default function ForumPage() {
           ) : undefined
         }
       >
-        <main aria-label="Forum" className="flex min-w-0 flex-col gap-4">
+        <section aria-label="Forum" className="flex min-w-0 flex-col gap-4">
           {authLoading || loading ? (
             <div className="flex justify-center py-20">
               <span className="text-sm text-[#9CA3AF]">Loading…</span>
@@ -1146,7 +1146,7 @@ export default function ForumPage() {
               </div>
             </div>
           )}
-        </main>
+        </section>
       </AppShell>
 
       <Footer />

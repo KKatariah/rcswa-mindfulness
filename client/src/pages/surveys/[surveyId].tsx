@@ -203,8 +203,7 @@ export default function SurveyPage() {
 				</div>
 			</Modal>
 			<AppShell>
-				<main
-					role="region"
+				<section
 					aria-label={`${title} content`}
 					tabIndex={0}
 					className="flex min-w-0 flex-col gap-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
@@ -230,7 +229,7 @@ export default function SurveyPage() {
 							isSubmitting={submitting}
 						/>
 					)}
-				</main>
+				</section>
 			</AppShell>
 		</>
 	);

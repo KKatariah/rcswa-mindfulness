@@ -157,7 +157,7 @@ async function checkPage(page: Page, problems: Problems, label: string) {
 
 const openFirstThread = async (page: Page) => {
 	// Short timeout: some runs generate an empty thread list.
-	await page.locator('main[aria-label="Forum"] [role="button"]').first().click({ timeout: 3000 });
+	await page.locator('section[aria-label="Forum"] [role="button"]').first().click({ timeout: 3000 });
 };
 
 const PAGES: { path: string; as: string; interact?: (page: Page) => Promise<void> }[] = [

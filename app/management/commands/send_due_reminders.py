@@ -464,7 +464,7 @@ class Command(BaseCommand):
         payload = json.dumps({
             "title": "Time for your daily meditation",
             "body": item.title,
-            "url": f"/modules/{item.module.week_number}/",
+            "url": f"/modules/{item.module_id}",
         })
 
         sent_any = False
@@ -499,7 +499,7 @@ class Command(BaseCommand):
         try:
             body = render_to_string(
                 "app/reminder_email.txt",
-                {"user": user, "item": item, "module": item.module},
+                {"user": user, "item": item, "module": item.module, "frontend_url": settings.FRONTEND_URL},
             )
             send_mail(
                 subject=f"Your daily meditation: {item.title}",

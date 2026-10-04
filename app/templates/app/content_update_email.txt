@@ -5,7 +5,7 @@ New content has been added to your mindfulness program:
     Week {{ module.week_number }}: {{ module.title }}
 
 Log in to check it out:
-    https://mindfulness.example.com/modules/{{ module.week_number }}/
+    {{ frontend_url }}/modules/{{ module.id }}
 
 Take care,
 The Mindfulness Team

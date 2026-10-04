@@ -171,6 +171,9 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     "DEFAULT_FROM_EMAIL", "noreply@mindfulness.example.com"
 )
 
+# Base URL of the Next.js frontend, used for links in notification emails.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+
 # ── Web Push (VAPID) ───────────────────────────────────────────────────────────
 # Generate a keypair: python -m pywebpush --info
 #   → prints VAPID_PRIVATE_KEY and VAPID_PUBLIC_KEY in base64url format.

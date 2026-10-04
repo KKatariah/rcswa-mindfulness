@@ -100,7 +100,7 @@ def send_email_notification(user, subject, template, context):
     Returns NotificationLog.Channel.EMAIL on success, None on failure.
     """
     try:
-        body = render_to_string(template, context)
+        body = render_to_string(template, {"frontend_url": settings.FRONTEND_URL, **context})
         send_mail(
             subject=subject,
             message=body,
@@ -217,7 +217,7 @@ def notify_content_update(module=None, content_item=None):
         payload = {
             "title": f"New content: Week {module.week_number}",
             "body": module.title,
-            "url": f"/modules/{module.week_number}/",
+            "url": f"/modules/{module.id}",
         }
         channel, success = deliver(
             user=user,

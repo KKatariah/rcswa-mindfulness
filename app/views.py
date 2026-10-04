@@ -313,14 +313,12 @@ class ModuleViewSet(viewsets.ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     def get_permissions(self):
-        if self.action == "summary":
-            return [AllowAny()]
-        if self.action in ("create", "update", "partial_update", "destroy", "reorder"):
-            return [IsAuthenticated(), IsAdminOrStaff()]
         # The home page lists the programme for logged-out visitors. This override replaces
         # the action's own permission_classes, so it has to allow it here.
         if self.action == "summary":
             return [AllowAny()]
+        if self.action in ("create", "update", "partial_update", "destroy", "reorder"):
+            return [IsAuthenticated(), IsAdminOrStaff()]
         return [IsAuthenticated()]
 
 
@@ -785,11 +783,17 @@ class SurveyViewSet(viewsets.ModelViewSet):
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
-        # Batch-fetch completions once per request so get_is_unlocked is O(1) per survey.
-        if self.request and self.request.user.is_authenticated:
+        # Batch-fetch completions and responses once per request so get_is_unlocked
+        # and get_has_responded are O(1) per survey. Admin actions use
+        # SurveyAdminSerializer, which needs neither.
+        if self.action not in self._ADMIN_ACTIONS and self.request and self.request.user.is_authenticated:
             ctx["completed_ids"] = set(
                 ContentCompletion.objects.filter(user=self.request.user)
                 .values_list("content_item_id", flat=True)
+            )
+            ctx["responded_ids"] = set(
+                SurveyResponse.objects.filter(user=self.request.user)
+                .values_list("survey_id", flat=True)
             )
         return ctx
 

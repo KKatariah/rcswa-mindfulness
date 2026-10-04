@@ -6,6 +6,8 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
 from django.core.cache import cache
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from django.test import TestCase as DjangoTestCase, override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase as DRFAPITestCase
@@ -1046,6 +1048,28 @@ class SurveyTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         survey_data = next(s for s in resp.data if s["id"] == self.survey.pk)
         self.assertFalse(survey_data["is_unlocked"])
+
+    def test_list_query_count_does_not_grow_with_surveys(self):
+        """has_responded and is_unlocked come from per-request sets, not a query per survey."""
+        self._complete_all(self.student)
+        SurveyResponse.objects.create(user=self.student, survey=self.survey, answers=self.VALID_ANSWERS)
+        self.client.force_login(self.student)
+
+        def add_modules(weeks):
+            for week in weeks:
+                with patch("app.signals._fire_async"):
+                    Module.objects.create(week_number=week, title=f"Week {week}", is_published=True)
+
+        def list_queries():
+            with CaptureQueriesContext(connection) as ctx:
+                self.assertEqual(self.client.get("/api/surveys/").status_code, status.HTTP_200_OK)
+            return len(ctx)
+
+        # Start with one unanswered survey too, so the one-off cohort lookup is in the baseline.
+        add_modules([2])
+        before = list_queries()
+        add_modules(range(3, 8))
+        self.assertEqual(list_queries(), before)
 
     def test_non_weekly_survey_without_module_always_unlocked(self):
         """Intake/end/followup surveys with no module are always unlocked."""
@@ -3145,5 +3169,5 @@ class SurveyAdminTests(APITestCase):
                 module = Module.objects.create(week_number=week, title=f"W{week}", is_published=True)
             _drop_auto_surveys(module)
             Survey.objects.create(module=module, code=f"wk{week}", title="x", type="weekly", questions=self.QUESTIONS)
-        with self.assertNumQueries(5):
+        with self.assertNumQueries(4):
             self.client.get("/api/surveys/manage/")

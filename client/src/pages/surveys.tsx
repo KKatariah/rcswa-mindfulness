@@ -67,7 +67,7 @@ export default function SurveysHomePage() {
 				<title>Weekly Surveys</title>
 			</Head>
 			<AppShell>
-				<main
+				<section
 					aria-label="Weekly surveys"
 					tabIndex={0}
 					className="flex min-w-0 flex-col gap-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
@@ -77,7 +77,7 @@ export default function SurveysHomePage() {
 						description="Complete each weekly survey to track your mindfulness practice"
 					/>
 					<SurveyLinks items={items} />
-				</main>
+				</section>
 			</AppShell>
 			<Footer />
 		</>
