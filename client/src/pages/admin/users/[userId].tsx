@@ -4,11 +4,12 @@ import Link from "next/link";
 import { useRouter } from "next/router";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { EnrollmentStatusBadge, ProgressStatusBadge, RoleBadge } from "@/components/admin/Badges";
+import EditUserModal from "@/components/admin/EditUserModal";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { CheckIcon, ChevronLeftIcon } from "@/components/ui/icons";
-import { getUserOverview } from "@/lib/api";
+import { CheckIcon, ChevronLeftIcon, PencilIcon } from "@/components/ui/icons";
+import { getUserOverview, listCohorts } from "@/lib/api";
 import { SURVEY_TYPE_LABELS } from "@/lib/surveys";
-import type { UserOverview } from "@/types/admin";
+import type { Cohort, UserOverview } from "@/types/admin";
 
 function formatDate(iso: string | null) {
 	if (!iso) return "—";
@@ -57,6 +58,8 @@ export default function AdminUserProfilePage() {
 	const userId = router.query.userId;
 	const [data, setData] = useState<UserOverview | null>(null);
 	const [error, setError] = useState<string | null>(null);
+	const [cohorts, setCohorts] = useState<Cohort[]>([]);
+	const [editing, setEditing] = useState(false);
 
 	useEffect(() => {
 		if (!userId || Array.isArray(userId)) return;
@@ -64,8 +67,11 @@ export default function AdminUserProfilePage() {
 		const token = localStorage.getItem("token") ?? "";
 		(async () => {
 			try {
-				const overview = await getUserOverview(Number(userId), token);
-				if (!cancelled) setData(overview);
+				const [overview, cohortList] = await Promise.all([getUserOverview(Number(userId), token), listCohorts(token)]);
+				if (!cancelled) {
+					setData(overview);
+					setCohorts(cohortList);
+				}
 			} catch (e) {
 				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load user");
 			}
@@ -94,6 +100,16 @@ export default function AdminUserProfilePage() {
 		);
 	}
 
+	// A role or cohort change affects most of the page (unlock dates, progress), so reload all of it.
+	async function handleSaved() {
+		setEditing(false);
+		try {
+			setData(await getUserOverview(data!.user.id, localStorage.getItem("token") ?? ""));
+		} catch (e) {
+			setError(e instanceof Error ? e.message : "Failed to reload user");
+		}
+	}
+
 	const { user, enrollments, modules, surveys, forum, notifications } = data;
 	const name = user.full_name || user.display_name || user.email;
 	const current = enrollments[0];
@@ -111,6 +127,13 @@ export default function AdminUserProfilePage() {
 			<div className="mt-4 flex flex-col gap-6">
 				<div className="flex flex-col gap-5 rounded-2xl border border-gray-200 bg-white p-5 sm:flex-row sm:items-start">
 					<UserAvatar avatarUrl={user.avatar_url} fullName={name} size={72} className="shrink-0" />
+					<button
+						type="button"
+						onClick={() => setEditing(true)}
+						className="order-last inline-flex h-10 shrink-0 items-center gap-1.5 self-start rounded-xl border border-gray-200 px-4 text-sm font-semibold text-ink hover:border-brand-blue hover:text-brand-blue"
+					>
+						<PencilIcon className="size-4" /> Edit
+					</button>
 					<div className="min-w-0 flex-1">
 						<div className="flex flex-wrap items-center gap-2">
 							<h1 className="wrap-anywhere text-2xl font-extrabold text-ink">{name}</h1>
@@ -285,6 +308,14 @@ export default function AdminUserProfilePage() {
 					</Section>
 				</div>
 			</div>
+
+			<EditUserModal
+				user={editing ? user : null}
+				enrollment={current ? { id: current.id, cohort: current.cohort_id } : null}
+				cohorts={cohorts}
+				onClose={() => setEditing(false)}
+				onSaved={handleSaved}
+			/>
 		</AdminLayout>
 	);
 }

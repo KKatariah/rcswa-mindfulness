@@ -265,8 +265,10 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 								{responses.map((r) => (
 									<tr key={r.id} className="border-b border-gray-100 align-top last:border-0">
 										<td className="px-4 py-3">
-											<p className="whitespace-nowrap font-semibold text-ink">{r.full_name || `#${r.participant_id}`}</p>
-											<p className="whitespace-nowrap text-xs text-muted">{r.email}</p>
+											<Link href={`/admin/users/${r.participant_id}`} className="group block">
+												<p className="whitespace-nowrap font-semibold text-ink group-hover:text-brand-blue group-hover:underline">{r.full_name || `#${r.participant_id}`}</p>
+												<p className="whitespace-nowrap text-xs text-muted">{r.email}</p>
+											</Link>
 										</td>
 										<td className="whitespace-nowrap px-4 py-3 text-ink-soft">{r.cohort || "—"}</td>
 										<td className="whitespace-nowrap px-4 py-3 text-ink-soft">

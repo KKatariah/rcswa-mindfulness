@@ -253,3 +253,41 @@ test("admin opens a person's profile from the users list and from module progres
 	await page.locator("#progress").getByRole("link", { name: /other@e2e\.local/ }).filter({ visible: true }).click();
 	await expect(page.getByRole("heading", { name: "E2E Other" })).toBeVisible();
 });
+
+test("admin edits a person from their profile page", async ({ page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/users");
+	await page.getByRole("link", { name: "other@e2e.local" }).filter({ visible: true }).first().click();
+	await expect(page.getByRole("heading", { name: "E2E Other" })).toBeVisible();
+
+	await page.getByRole("button", { name: "Edit" }).click();
+	await page.locator("#user-name").fill("E2E Other Renamed");
+	await page.getByRole("button", { name: "Save", exact: true }).click();
+	await expect(page.getByRole("heading", { name: "E2E Other Renamed" })).toBeVisible();
+
+	// Removing their cohort asks first; cancelling leaves the form open and nothing saved.
+	await page.getByRole("button", { name: "Edit" }).click();
+	await page.locator("#user-name").fill("E2E Other");
+	await page.locator("#user-cohort").click();
+	await page.getByRole("option", { name: "Not enrolled" }).click();
+	await page.getByRole("button", { name: "Save", exact: true }).click();
+	await expect(page.getByRole("alertdialog")).toContainText("be removed from E2E Cohort");
+	await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+
+	// Keep the cohort and just restore the name.
+	await page.locator("#user-cohort").click();
+	await page.getByRole("option", { name: "E2E Cohort" }).click();
+	await page.getByRole("button", { name: "Save", exact: true }).click();
+	await expect(page.getByRole("heading", { name: "E2E Other", exact: true })).toBeVisible();
+	await expect(page.getByText("E2E Cohort").first()).toBeVisible();
+});
+
+test("survey responses link to each participant's profile", async ({ page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/surveys/2");
+	await page.getByRole("tab", { name: /^Responses/ }).click();
+	await page.getByRole("link", { name: /Rae Responder/ }).click();
+	await expect(page).toHaveURL(/\/admin\/users\/\d+$/);
+	await expect(page.getByRole("heading", { name: "Rae Responder" })).toBeVisible();
+	await expect(page.getByText(/Submitted \d/).first()).toBeVisible();
+});
