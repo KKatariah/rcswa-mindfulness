@@ -33,7 +33,8 @@ function ItemDots({ items, student }: { items: AdminContentItem[]; student: Modu
 	const done = new Set(student.completed_item_ids);
 	return (
 		<div className="flex items-center gap-2">
-			<div className="flex gap-1">
+			{/* Wraps onto more rows for modules with lots of items instead of pushing past the cell. */}
+			<div className="flex max-w-40 flex-wrap gap-1">
 				{items.map((item) => (
 					<span
 						key={item.id}
@@ -42,7 +43,7 @@ function ItemDots({ items, student }: { items: AdminContentItem[]; student: Modu
 					/>
 				))}
 			</div>
-			<span className="text-xs text-muted">
+			<span className="shrink-0 text-xs text-muted">
 				{student.completed_item_ids.length}/{items.length}
 			</span>
 		</div>
