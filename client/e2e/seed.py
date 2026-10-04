@@ -64,5 +64,8 @@ ForumPost.objects.create(thread=thread, author=student, body="Seeded reply")
 User.objects.update(forum_rules_accepted_at=timezone.now())
 rules_user = User.objects.create_user(email="rules@e2e.local", password=PASSWORD, full_name="Rory Rules")
 Enrollment.objects.create(user=rules_user, cohort=cohort, status=Enrollment.Status.ACTIVE)
+# Never agrees: used by the bypass tests, which must leave it unaccepted.
+holdout = User.objects.create_user(email="holdout@e2e.local", password=PASSWORD, full_name="Hal Holdout")
+Enrollment.objects.create(user=holdout, cohort=cohort, status=Enrollment.Status.ACTIVE)
 
 print("e2e seed complete")

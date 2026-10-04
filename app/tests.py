@@ -2168,6 +2168,169 @@ class ForumRulesTests(APITestCase):
         )
 
 
+class ForumRulesBypassTests(APITestCase):
+    """Every route a student might use to reach the forum, or to mark the
+    rules as accepted without going through the accept endpoint."""
+
+    def setUp(self):
+        # A student who posted before the rules existed, so they own content
+        # they might try to edit or delete without having agreed.
+        self.student = User.objects.create_user(
+            email="student@test.local", password="testpass", full_name="Student One"
+        )
+        self.module = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+        self.thread = ForumThread.objects.create(
+            module=self.module, created_by=self.student, title="Old thread"
+        )
+        self.opening = ForumPost.objects.create(
+            thread=self.thread, author=self.student, body="Old opening", is_head_post=True
+        )
+        self.thread.opened_by = self.opening
+        self.thread.save(update_fields=["opened_by"])
+        self.reply = ForumPost.objects.create(
+            thread=self.thread, author=self.student, body="Old reply"
+        )
+
+    def _forum_requests(self):
+        t, op, r = self.thread.pk, self.opening.pk, self.reply.pk
+        return [
+            ("get", "/api/forum/threads/", None),
+            ("head", "/api/forum/threads/", None),
+            ("get", f"/api/forum/threads/{t}/", None),
+            ("get", f"/api/forum/threads/?module={self.module.pk}", None),
+            ("post", "/api/forum/threads/", {"body": "New"}),
+            ("patch", f"/api/forum/threads/{t}/", {"is_pinned": True}),
+            ("delete", f"/api/forum/threads/{t}/", None),
+            ("post", "/api/forum/posts/", {"thread": t, "body": "Reply"}),
+            ("patch", f"/api/forum/posts/{op}/", {"body": "Edited"}),
+            ("patch", f"/api/forum/posts/{r}/", {"body": "Edited"}),
+            ("delete", f"/api/forum/posts/{r}/", None),
+        ]
+
+    def _assert_all_blocked(self):
+        for method, url, data in self._forum_requests():
+            with self.subTest(method=method, url=url):
+                resp = getattr(self.client, method)(url, data, format="json")
+                self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+                if method != "head":
+                    self.assertIn("forum rules", str(resp.data["detail"]))
+        # Nothing was created, changed or deleted.
+        self.assertEqual(ForumThread.objects.count(), 1)
+        self.assertEqual(ForumPost.objects.filter(is_deleted=False).count(), 2)
+        self.opening.refresh_from_db()
+        self.reply.refresh_from_db()
+        self.thread.refresh_from_db()
+        self.assertEqual(self.opening.body, "Old opening")
+        self.assertEqual(self.reply.body, "Old reply")
+        self.assertFalse(self.thread.is_pinned)
+
+    def test_every_forum_endpoint_blocked_with_session_auth(self):
+        self.client.force_login(self.student)
+        self._assert_all_blocked()
+
+    def test_every_forum_endpoint_blocked_with_token_auth(self):
+        token = Token.objects.create(user=self.student)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        self._assert_all_blocked()
+
+    def test_anonymous_forum_access_blocked(self):
+        for method, url, data in self._forum_requests():
+            with self.subTest(method=method, url=url):
+                resp = getattr(self.client, method)(url, data, format="json")
+                self.assertIn(
+                    resp.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
+                )
+
+    def test_flag_cannot_be_set_through_profile_endpoints(self):
+        self.client.force_login(self.student)
+        payload = {
+            "display_name": "Sneaky",
+            "forum_rules_accepted_at": "2026-01-01T00:00:00Z",
+            "forum_rules_accepted": True,
+        }
+        self.client.patch("/api/profile/", payload, format="json")
+        self.client.patch(f"/api/users/{self.student.pk}/", payload, format="json")
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.display_name, "Sneaky")  # the request itself went through
+        self.assertIsNone(self.student.forum_rules_accepted_at)
+        self.assertEqual(
+            self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN
+        )
+
+    def test_flag_and_role_cannot_be_set_at_registration(self):
+        resp = self.client.post(
+            "/api/register/",
+            {
+                "email": "new@test.local", "full_name": "New", "password": "Calm-River-42!",
+                "forum_rules_accepted_at": "2026-01-01T00:00:00Z", "role": "admin",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        new = User.objects.get(email="new@test.local")
+        self.assertIsNone(new.forum_rules_accepted_at)
+        self.assertEqual(new.role, User.Role.STUDENT)
+
+    def test_student_cannot_promote_self_to_admin_to_skip_rules(self):
+        self.client.force_login(self.student)
+        self.client.patch(
+            f"/api/users/{self.student.pk}/", {"role": "admin", "is_staff": True}, format="json"
+        )
+        self.client.patch("/api/profile/", {"role": "admin", "is_staff": True}, format="json")
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.role, User.Role.STUDENT)
+        self.assertFalse(self.student.is_staff)
+        self.assertEqual(
+            self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN
+        )
+
+    def test_accept_endpoint_only_takes_post(self):
+        self.client.force_login(self.student)
+        for method in ("get", "put", "patch", "delete"):
+            with self.subTest(method=method):
+                resp = getattr(self.client, method)("/api/forum/accept-rules/")
+                self.assertEqual(resp.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        self.student.refresh_from_db()
+        self.assertIsNone(self.student.forum_rules_accepted_at)
+
+    def test_accept_endpoint_enforces_csrf_for_session_logins(self):
+        # Stops another site from silently accepting on a logged-in student's behalf.
+        from rest_framework.test import APIClient
+
+        client = APIClient(enforce_csrf_checks=True)
+        client.force_login(self.student)
+        resp = client.post("/api/forum/accept-rules/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.student.refresh_from_db()
+        self.assertIsNone(self.student.forum_rules_accepted_at)
+
+    def test_acceptance_is_per_user(self):
+        other = User.objects.create_user(email="other@test.local", password="testpass")
+        self.client.force_login(other)
+        self.client.post("/api/forum/accept-rules/")
+        self.client.force_login(self.student)
+        self.assertEqual(
+            self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN
+        )
+
+    def test_demoted_admin_must_accept(self):
+        admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN
+        )
+        admin.role = User.Role.STUDENT
+        admin.save()
+        self.client.force_login(admin)
+        self.assertEqual(
+            self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN
+        )
+
+    def test_unaccepted_student_cannot_see_forum_stats(self):
+        self.client.force_login(self.student)
+        self.assertEqual(
+            self.client.get("/api/dashboard/stats/").status_code, status.HTTP_403_FORBIDDEN
+        )
+
+
 class DashboardStatsTests(APITestCase):
     def setUp(self):
         self.student = User.objects.create_user(
