@@ -4,7 +4,7 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import AppShell from "@/components/main/AppShell";
 import Modal from "@/components/main/Modal";
-import SurveyHeader from "@/components/surveys/SurveyHeader";
+import PageHeader from "@/components/ui/PageHeader";
 import SurveyQuestions from "@/components/surveys/SurveyQuestions";
 import { useAuth } from "@/context/AuthContext";
 import { getSurvey, submitSurveyResponse, type ApiSurveyDetail } from "@/lib/api";
@@ -207,9 +207,9 @@ export default function SurveyPage() {
 					role="region"
 					aria-label={`${title} content`}
 					tabIndex={0}
-					className="flex min-w-0 flex-col gap-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
+					className="flex min-w-0 flex-col gap-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 				>
-					<SurveyHeader title={title} />
+					<PageHeader title={title} description="Mindfulness Adherence Questionnaire" />
 					{survey.has_responded ? (
 						<section
 							role="status"

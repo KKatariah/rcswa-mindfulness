@@ -24,6 +24,10 @@ body {
 
 .modal-scroll-content {
   overflow-y: auto;
+  /* overflow clips sideways too; this gutter keeps full-width inputs' focus rings visible
+     without shifting the layout. */
+  margin-inline: -4px;
+  padding-inline: 4px;
   /* Thin grey native scrollbar. */
   scrollbar-width: thin;
   scrollbar-color: #9ca3af transparent;

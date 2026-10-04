@@ -53,7 +53,8 @@ export default function Home() {
 		async function loadWeeks() {
 			try {
 				const modules = await listModuleSummaries();
-				if (!controller.signal.aborted) setProgrammeWeeks(modules);
+				// Week 0 is the introduction module, not one of the 8 programme weeks.
+				if (!controller.signal.aborted) setProgrammeWeeks(modules.filter((m) => m.week_number > 0));
 			} catch {
 				if (!controller.signal.aborted) setWeeksError("Unable to load the programme right now.");
 			} finally {

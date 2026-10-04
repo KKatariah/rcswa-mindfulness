@@ -3,7 +3,7 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
-import SurveyHeader from "@/components/surveys/SurveyHeader";
+import PageHeader from "@/components/ui/PageHeader";
 import SurveyLinks, {type SurveyLinkItem } from "@/components/surveys/SurveyLinks";
 import { useAuth } from "@/context/AuthContext";
 import { listSurveys } from "@/lib/api";
@@ -70,11 +70,11 @@ export default function SurveysHomePage() {
 				<main
 					aria-label="Weekly surveys"
 					tabIndex={0}
-					className="flex min-w-0 flex-col gap-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
+					className="flex min-w-0 flex-col gap-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 				>
-					<SurveyHeader
+					<PageHeader
 						title="Weekly Surveys"
-						description="Complete each weekly survey to track your mindfulness practice."
+						description="Complete each weekly survey to track your mindfulness practice"
 					/>
 					<SurveyLinks items={items} />
 				</main>

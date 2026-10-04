@@ -6,6 +6,7 @@ import Navbar from "@/components/main/Navbar";
 import Footer from "@/components/main/Footer";
 import Sidebar from "@/components/main/Sidebar";
 import UpcomingSession from "@/components/modules/UpcomingSession";
+import PageHeader from "@/components/ui/PageHeader";
 import { CheckIcon, LockIcon, PlayIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { listModules, listProgress, type ApiModule } from "@/lib/api";
@@ -140,11 +141,8 @@ export default function ModulesIndexPage() {
 				<div className="mx-auto grid max-w-[1920px] items-start gap-6 p-4 md:grid-cols-[240px_minmax(0,1fr)] lg:p-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
 					<Sidebar responsive />
 
-					<div className="flex min-w-0 flex-col gap-6">
-							<div className="rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)] sm:p-8">
-								<h1 className="text-2xl font-extrabold text-ink sm:text-3xl">Your Progress</h1>
-								<p className="mt-1 text-muted">Track your 8-week meditation journey</p>
-							</div>
+					<div className="flex min-w-0 flex-col gap-4">
+							<PageHeader title="Your Progress" description="Track your 8-week meditation journey" />
 
 							{(loading || authLoading) && (
 								<div className="rounded-[10px] border border-gray-200 bg-white p-8 text-center shadow-[0_6px_9px_rgba(0,0,0,0.05)]">

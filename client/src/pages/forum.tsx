@@ -18,6 +18,7 @@ import {
 import type { ForumPost, ForumThread, ForumThreadDetail } from "@/types/forum";
 
 import { UserAvatar } from "@/components/ui/UserAvatar";
+import PageHeader from "@/components/ui/PageHeader";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 // Small local icons so we don't need to touch the shared icon set for one page.
@@ -1106,12 +1107,11 @@ export default function ForumPage() {
                   </div>
                 )}
                 {!selectedThread && (
-                  <div className="mb-4 rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
-                    <h1 className="text-2xl font-extrabold text-ink">Forum</h1>
-                    <p className="mt-1 text-sm text-[#9CA3AF]">
-                      Connect, share, and support each other on your wellness
-                      journeys.
-                    </p>
+                  <div className="mb-4">
+                    <PageHeader
+                      title="Forum"
+                      description="Connect, share, and support each other on your wellness journeys"
+                    />
                   </div>
                 )}
 
