@@ -1,4 +1,5 @@
 import { useState } from "react";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 type ScaleQuestion = {
 	id: number;
@@ -136,13 +137,27 @@ export default function SurveyQuestions({
 		setAnswers((currentAnswers) => ({ ...currentAnswers, [questionId]: value }));
 	};
 
+	const [confirmingClear, setConfirmingClear] = useState(false);
+	const scaleQuestionIds = new Set([...formalQuestions, ...informalQuestions].map((question) => question.id));
+	const hasScaleAnswers = Object.keys(answers).some((questionId) => scaleQuestionIds.has(Number(questionId)));
+
+	const clearScaleSelections = () => {
+		setAnswers((currentAnswers) =>
+			Object.fromEntries(
+				Object.entries(currentAnswers).filter(([questionId]) => !scaleQuestionIds.has(Number(questionId))),
+			),
+		);
+		setConfirmingClear(false);
+	};
+
 	const submit = (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
+		if (isSubmitting) return;
 		onSubmit?.(answers);
 	};
 
 	return (
-		<form onSubmit={submit} className="grid gap-4 pb-[calc(var(--mobile-bottom-nav-height)+var(--mobile-bottom-nav-safe))] md:gap-5 md:pb-0">
+		<form onSubmit={submit} className="grid gap-4 pb-[calc(var(--mobile-bottom-nav-height)+var(--mobile-bottom-nav-safe)-1rem)] md:gap-5 md:pb-0">
 			<section className="rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10">
 				<h2 className="text-[13px] font-bold leading-5 text-ink md:text-base">
 					{sectionText[1] ?? <>Questions 1 to 6 ask about your <u>formal meditation practice</u> (e.g. sitting meditation).</>}
@@ -209,15 +224,34 @@ export default function SurveyQuestions({
 				</p>
 			</section>
 
-			<div className="flex justify-center pt-1 md:pt-2">
+			<div className="flex flex-nowrap items-center justify-center gap-3">
+				<button
+					type="button"
+					disabled={isSubmitting || !hasScaleAnswers}
+					onClick={() => setConfirmingClear(true)}
+					className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl border border-gray-300 bg-white px-5 text-[15px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-[11px]"
+				>
+					Clear selections
+				</button>
 				<button
 					type="submit"
 					disabled={isSubmitting}
-					className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50"
+					className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-[11px]"
 				>
 					{isSubmitting ? "Submitting..." : "Submit survey"}
 				</button>
 			</div>
+
+			{confirmingClear && (
+				<ConfirmDialog
+					title="Clear selections?"
+					message="This removes your answers to the rating questions. Your other answers and journal entry are kept."
+					confirmLabel="Clear"
+					danger
+					onConfirm={clearScaleSelections}
+					onCancel={() => setConfirmingClear(false)}
+				/>
+			)}
 		</form>
 	);
 }

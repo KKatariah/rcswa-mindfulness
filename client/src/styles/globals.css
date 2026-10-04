@@ -21,3 +21,20 @@ body {
   font-family: var(--font-sans);
   color: var(--color-ink);
 }
+
+.modal-scroll-content {
+  overflow-y: auto;
+  /* Thin grey native scrollbar. */
+  scrollbar-width: thin;
+  scrollbar-color: #9ca3af transparent;
+}
+
+/* Fallback for browsers without scrollbar-width / scrollbar-color (older Safari). */
+.modal-scroll-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-scroll-content::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background-color: #9ca3af;
+}

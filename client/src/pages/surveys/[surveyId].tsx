@@ -3,6 +3,7 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppShell from "@/components/main/AppShell";
+import Modal from "@/components/main/Modal";
 import SurveyHeader from "@/components/surveys/SurveyHeader";
 import SurveyQuestions from "@/components/surveys/SurveyQuestions";
 import { useAuth } from "@/context/AuthContext";
@@ -12,6 +13,11 @@ type NormalizedQuestion = {
 	id: number;
 	text: string;
 }
+
+type SubmissionFeedback = {
+	title: string;
+	message: string;
+};
 
 export default function SurveyPage() {
 	const router = useRouter();
@@ -28,8 +34,7 @@ export default function SurveyPage() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
-	const [submitError, setSubmitError] = useState<string | null>(null);
-	const [submitted, setSubmitted] = useState(false);
+	const [submissionFeedback, setSubmissionFeedback] = useState<SubmissionFeedback | null>(null);
 
 	useEffect(() => {
 		if (authLoading || !router.isReady || !user) return;
@@ -119,7 +124,6 @@ export default function SurveyPage() {
 		});
 
 		setSubmitting(true);
-		setSubmitError(null);
 		try {
 			await submitSurveyResponse(
 				{
@@ -128,9 +132,28 @@ export default function SurveyPage() {
 				},
 				token,
 			);
-			setSubmitted(true);
+			setSurvey((current) => current && { ...current, has_responded: true });
+			setSubmissionFeedback({
+				title: "Response recorded",
+				message: "Your survey responses have been recorded.",
+			});
 		} catch (err) {
-			setSubmitError(err instanceof Error ? err.message : "Failed to submit survey");
+			const message = err instanceof Error ? err.message : "Please try again.";
+			// Validation errors are also 400s, so ask the server whether a response
+			// now exists (e.g. submitted from another tab) instead of parsing the message.
+			const latest = await getSurvey(String(surveyId), token).catch(() => null);
+			if (latest?.has_responded) {
+				setSurvey(latest);
+				setSubmissionFeedback({
+					title: "Already submitted",
+					message: "You have already submitted a response to this survey.",
+				});
+			} else {
+				setSubmissionFeedback({
+					title: "Submission error",
+					message: `We couldn't record your responses. ${message}`,
+				});
+			}
 		} finally {
 			setSubmitting(false);
 		}
@@ -167,6 +190,18 @@ export default function SurveyPage() {
 			<Head>
 				<title>{title}</title>
 			</Head>
+			<Modal
+				isOpen={submissionFeedback !== null}
+				onClose={() => setSubmissionFeedback(null)}
+				title={submissionFeedback?.title}
+				closeButtonAboveTitle
+			>
+				<div className="text-center">
+					<p className="text-base leading-6 text-ink-soft">
+						{submissionFeedback?.message}
+					</p>
+				</div>
+			</Modal>
 			<AppShell>
 				<main
 					role="region"
@@ -175,7 +210,7 @@ export default function SurveyPage() {
 					className="flex min-w-0 flex-col gap-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 				>
 					<SurveyHeader title={title} />
-					{submitted || survey.has_responded ? (
+					{survey.has_responded ? (
 						<section
 							role="status"
 							className="rounded-[10px] border border-gray-200 bg-white p-6 text-center shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10"
@@ -186,21 +221,14 @@ export default function SurveyPage() {
 							</Link>
 						</section>
 					) : (
-						<>
-							{submitError && (
-								<p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
-									{submitError}
-								</p>
-							)}
-							<SurveyQuestions
-								formalQuestions={formalQuestions}
-								informalQuestions={informalQuestions}
-								questionText={questionText}
-								sectionText={sectionText}
-								onSubmit={handleSubmit}
-								isSubmitting={submitting}
-							/>
-						</>
+						<SurveyQuestions
+							formalQuestions={formalQuestions}
+							informalQuestions={informalQuestions}
+							questionText={questionText}
+							sectionText={sectionText}
+							onSubmit={handleSubmit}
+							isSubmitting={submitting}
+						/>
 					)}
 				</main>
 			</AppShell>
