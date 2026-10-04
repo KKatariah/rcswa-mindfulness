@@ -6,6 +6,7 @@ import {
 	detectPlatform,
 	type Platform,
 } from "@/components/notifications/notificationSetupContent";
+import StepVisual from "@/components/notifications/StepVisual";
 
 type Props = {
 	isOpen: boolean;
@@ -91,13 +92,7 @@ export default function NotificationSetupModal({ isOpen, onClose }: Props) {
 								<p className="text-sm leading-relaxed text-muted">
 									{step.instruction}
 								</p>
-								{step.imagePlaceholder && (
-									<div className="mt-3 flex min-h-[80px] items-center justify-center rounded-xl border-2 border-dashed border-gray-300 bg-gray-50 px-4 py-3">
-										<p className="text-center text-xs italic text-gray-400">
-											{step.imagePlaceholder}
-										</p>
-									</div>
-								)}
+								<StepVisual visual={step.visual} />
 							</div>
 						</li>
 					))}
@@ -116,6 +111,7 @@ export default function NotificationSetupModal({ isOpen, onClose }: Props) {
 				</button>
 				{result && (
 					<p
+						role={result.isError ? "alert" : "status"}
 						className={[
 							"mt-3 text-center text-sm",
 							result.isError ? "text-red-600" : "text-green-600",
