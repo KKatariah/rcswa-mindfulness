@@ -77,6 +77,8 @@ MIDDLEWARE = [
 
 # Origins include the protocol, e.g. http://localhost:3000,https://xxx.trycloudflare.com
 CORS_ALLOWED_ORIGINS = _env_list("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+# Lets the admin dashboard read the filename of CSV downloads.
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 
 # Needed for HTTPS requests from tunnels, staging or production.
 CSRF_TRUSTED_ORIGINS = _env_list("CSRF_TRUSTED_ORIGINS")
@@ -136,7 +138,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Australia/Perth'
 
 USE_I18N = True
 
@@ -191,6 +193,8 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "forum_post": "1/min",
+        # Matches the client cooldown in client/src/pages/forum.tsx (3 posts per 30s).
+        "forum_post": "6/min",
+        "auth": "10/min",
     },
 }

@@ -8,6 +8,8 @@ const devAllowedOrigins = process.env.DEV_ALLOWED_ORIGINS
   : [];
 
 const nextConfig: NextConfig = {
+  // Lets the Playwright run use its own build folder alongside a normal dev server.
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   allowedDevOrigins: devAllowedOrigins,
   images: {
     remotePatterns: [

@@ -1,27 +1,27 @@
+from datetime import datetime, time
+
 from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from app.models import Enrollment, Module, NotificationLog
 from app.notifications import deliver
+from app.serializers import module_unlock_date
 
 
 class Command(BaseCommand):
     help = (
-        "Send notifications for published modules whose unlock time has passed. "
+        "Notify active participants about published modules that unlock for them today. "
         "Safe to run repeatedly because successful notifications are not resent."
     )
 
     def handle(self, *args, **options):
         now = timezone.now()
+        today = timezone.localdate()
 
-        # Process scheduled modules that are already available.
-        # Modules with unlock_at=None are immediately available rather than
-        # scheduled unlock events, so they are not handled by this command.
-        modules = Module.objects.filter(
-            is_published=True,
-            unlock_at__isnull=False,
-            unlock_at__lte=now,
-        )
+        # Unlock dates are per user (cohort start + (week - 1) weeks), so each
+        # enrollment is checked individually. Only modules unlocking today are
+        # announced, so the first run does not notify about every past week.
+        modules = Module.objects.filter(is_published=True)
 
         sent = 0
         skipped = 0
@@ -40,6 +40,14 @@ class Command(BaseCommand):
         for module in modules:
             for enrollment in enrollments:
                 user = enrollment.user
+
+                unlock_date = module_unlock_date(module, user)
+                if unlock_date != today:
+                    continue
+
+                # Weeks that would open after the cohort has finished aren't announced.
+                if unlock_date > enrollment.cohort.end_date:
+                    continue
 
                 # A successful notification must never be sent twice.
                 # FAILED attempts remain retryable on the next command run.
@@ -76,7 +84,9 @@ class Command(BaseCommand):
                     type=NotificationLog.NotificationType.MODULE_ADDED,
                     module=module,
                     channel=channel or NotificationLog.Channel.PUSH,
-                    scheduled_for=module.unlock_at,
+                    scheduled_for=timezone.make_aware(
+                        datetime.combine(unlock_date, time.min)
+                    ),
                     sent_at=now if success else None,
                     status=(
                         NotificationLog.Status.SENT

@@ -5,7 +5,7 @@ import Link from "next/link";
 import Navbar from "@/components/main/Navbar";
 import Footer from "@/components/main/Footer";
 import Sidebar from "@/components/main/Sidebar";
-import NextSession from "@/components/modules/NextSession";
+import UpcomingSession from "@/components/modules/UpcomingSession";
 import { CheckIcon, LockIcon, PlayIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { listModules, listProgress, type ApiModule } from "@/lib/api";
@@ -19,24 +19,14 @@ type WeekRow = {
 	status: WeekStatus;
 };
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
-const DAYS_PER_WEEK = 7;
-
-function buildWeekRows(modules: ApiModule[], completedItemIds: Set<number>, cohortStartDate: string | null | undefined): WeekRow[] {
-	// Weeks unlock over time from the cohort's start date, not by finishing the previous week.
-	const daysSinceStart = cohortStartDate
-		? Math.floor((Date.now() - new Date(cohortStartDate).getTime()) / MS_PER_DAY)
-		: 0;
-
+function buildWeekRows(modules: ApiModule[], completedItemIds: Set<number>): WeekRow[] {
 	return modules.map((module) => {
 		const totalItems = module.content_items.length;
 		const completedItems = module.content_items.filter((item) => completedItemIds.has(item.id)).length;
 		const isComplete = totalItems > 0 && completedItems === totalItems;
 
-		const unlockDay = (module.week_number - 1) * DAYS_PER_WEEK;
-		const isUnlocked = daysSinceStart >= unlockDay;
-
-		const status: WeekStatus = !isUnlocked ? "locked" : isComplete ? "completed" : "current";
+		// The server decides locking from the cohort start date (week N opens N-1 weeks in).
+		const status: WeekStatus = !module.is_unlocked ? "locked" : isComplete ? "completed" : "current";
 		return { module, completedItems, totalItems, status };
 	});
 }
@@ -128,7 +118,7 @@ export default function ModulesIndexPage() {
 		);
 	}
 
-	const rows = buildWeekRows(modules, completedItemIds, user?.cohort_start_date);
+	const rows = buildWeekRows(modules, completedItemIds);
 	const completedWeeks = rows.filter((r) => r.status === "completed").length;
 	const totalItemsAll = rows.reduce((sum, r) => sum + r.totalItems, 0);
 	const completedItemsAll = rows.reduce((sum, r) => sum + r.completedItems, 0);
@@ -232,8 +222,7 @@ export default function ModulesIndexPage() {
 						</div>
 
 						<div className="min-w-0 md:col-start-2 xl:col-start-3 md:sticky md:top-20 lg:top-24">
-							{/* Sample schedule until session data is connected. */}
-							<NextSession moduleTitle="Module Week 3" startsAt="2028-10-24T10:00:00+08:00" dateLabel="Tue, Oct 24" timeLabel="10:00 AM" />
+							{!loading && !authLoading && !error && <UpcomingSession modules={modules} />}
 						</div>
 					</div>
 				</div>

@@ -7,7 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "generate-icons": "node scripts/generate-icons.mjs"
+    "test:e2e": "playwright test",
+    "generate-icons": "node scripts/generate-icons.mjs",
+    "test:e2e:android": "E2E_DEVICE=android playwright test",
+    "test:e2e:ios": "E2E_DEVICE=ios playwright test",
+    "test:e2e:all": "sh -c 'status=0; for d in desktop android ios; do E2E_DEVICE=$d playwright test || status=1; done; exit $status'"
   },
   "dependencies": {
     "@react-oauth/google": "^0.13.5",
@@ -19,12 +23,14 @@
     "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
+    "fast-check": "^4.10.2",
     "sharp": "^0.35.5",
     "tailwindcss": "^4",
     "typescript": "^5"

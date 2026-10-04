@@ -67,16 +67,42 @@ python manage.py migrate
 
 This also seeds the public Resources page (books/documentaries/online programs) with its default content via a data migration.
 
-### 4. Add the cron job
+Then load the weekly surveys:
 
-The reminder command must run **every hour** — it filters each user by their
-`reminder_time` preference (Perth timezone) so a user who chose 8 am receives their
-reminder at the cron run that corresponds to 8 am Perth time.
+```bash
+python manage.py loaddata weekly_survey
+```
+
+`weekly_survey` adds the Week 1 and Week 2 MAQ surveys (`weekly-maq-w1`, `weekly-maq-w2`)
+as surveys 1 and 2, attached to modules 1 and 2, so those modules must exist first.
+On an empty database with no modules yet, load the placeholder modules with them:
+`python manage.py loaddata dev_seed weekly_survey`. Don't load `dev_seed` into a
+database that already has data: it uses fixed IDs and overwrites user 1, modules 1–2
+and content items 1–4. After that, admins create surveys for later weeks from
+**Admin → Surveys → New Survey**, which copies an existing survey's questions.
+
+### 4. Add the cron jobs
+
+Two commands need to run on a schedule. Both are idempotent: a notification that
+was sent successfully is never sent again, and failed sends are retried on the
+next run.
+
+- `send_due_reminders` must run **every hour** — it filters each user by their
+  `reminder_time` preference (Perth timezone) so a user who chose 8 am receives their
+  reminder at the cron run that corresponds to 8 am Perth time.
+- `send_module_unlock_notifications` tells each participant "Week N is now
+  available" on the day that week unlocks for their cohort (cohort start date +
+  (N − 1) weeks, Perth time). It only looks at weeks unlocking *today*, so it runs
+  hourly during the day: the 7 am run sends the notices, later runs retry failures.
 
 ```cron
-# Run every hour; the command filters by each user's preferred reminder hour.
 # Server is UTC; Australia/Perth is UTC+8 with no DST.
+
+# Every hour; the command filters by each user's preferred reminder hour.
 0 * * * * /path/to/venv/bin/python /path/to/manage.py send_due_reminders >> /var/log/mindfulness/reminders.log 2>&1
+
+# Hourly from 7 am to 8 pm Perth (23:00–12:00 UTC).
+5 23,0-12 * * * /path/to/venv/bin/python /path/to/manage.py send_module_unlock_notifications >> /var/log/mindfulness/unlocks.log 2>&1
 ```
 
 ### 5. Content setup workflow
@@ -90,9 +116,10 @@ reminder at the cron run that corresponds to 8 am Perth time.
    ```
    This exits non-zero and prints any gaps (unscheduled items, missing days,
    duplicate offsets). Fix all issues before going live.
-3. Publish the module. Students in currently active cohorts receive a single S21
-   content-update notification. Students in cohorts that have not started yet are
-   excluded.
+3. Publish the module. Students in currently active cohorts who can already open
+   that week receive a single S21 content-update notification. Students in cohorts
+   that have not started yet, or for whom the week is still locked, are excluded;
+   they hear about it from `send_module_unlock_notifications` when it opens.
 
 ### 6. Operational commands
 

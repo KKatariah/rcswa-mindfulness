@@ -8,7 +8,12 @@ type ScaleQuestion = {
 type SurveyQuestionsProps = {
 	formalQuestions?: ScaleQuestion[];
 	informalQuestions?: ScaleQuestion[];
-	onSubmit?: (answers: Record<number, number | string>) => void | Promise<void>;
+	// Admin-editable wording from the survey definition, keyed by question number.
+	// Falls back to the built-in copy below when missing.
+	questionText?: Partial<Record<number, string>>;
+	sectionText?: Partial<Record<number, string>>;
+	onSubmit?: (answers: Record<number, number | string>) => void;
+	isSubmitting?: boolean;
 };
 
 const DEFAULT_FORMAL_QUESTIONS: ScaleQuestion[] = [
@@ -109,13 +114,23 @@ function ScaleQuestionGroup({
 	);
 }
 
+// Matches LONGTEXT_MAX_CHARS in app/serializers.py.
+const JOURNAL_MAX_CHARS = 5000;
+
 export default function SurveyQuestions({
 	formalQuestions = DEFAULT_FORMAL_QUESTIONS,
 	informalQuestions = DEFAULT_INFORMAL_QUESTIONS,
+	questionText = {},
+	sectionText = {},
 	onSubmit,
+	isSubmitting = false,
 }: SurveyQuestionsProps) {
 	const [answers, setAnswers] = useState<Record<number, number | string>>({});
-	const [submitting, setSubmitting] = useState(false);
+	// Each question in the journal prompt becomes its own list item.
+	const journalPrompts = questionText[13]
+		? (questionText[13].match(/[^?]+\?|[^?]+$/g) ?? []).map((part) => part.trim()).filter(Boolean)
+		: ["How are you feeling this week?", "What has been your experience with the mindfulness intervention this week?"];
+	const journalWords = String(answers[13] ?? "").trim().split(/\s+/).filter(Boolean).length;
 
 	const updateAnswer = (questionId: number, value: number | string) => {
 		setAnswers((currentAnswers) => ({ ...currentAnswers, [questionId]: value }));
@@ -132,27 +147,21 @@ export default function SurveyQuestions({
 		);
 	};
 
-	const submit = async (event: React.FormEvent<HTMLFormElement>) => {
+	const submit = (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
-		if (submitting) return;
-
-		setSubmitting(true);
-		try {
-			await onSubmit?.(answers);
-		} finally {
-			setSubmitting(false);
-		}
+		if (isSubmitting) return;
+		onSubmit?.(answers);
 	};
 
 	return (
 		<form onSubmit={submit} className="grid gap-4 pb-[calc(var(--mobile-bottom-nav-height)+var(--mobile-bottom-nav-safe)-1rem)] md:gap-5 md:pb-0">
 			<section className="rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10">
 				<h2 className="text-[13px] font-bold leading-5 text-ink md:text-base">
-					Questions 1 to 6 ask about your <u>formal meditation practice</u> (e.g. sitting meditation).
+					{sectionText[1] ?? <>Questions 1 to 6 ask about your <u>formal meditation practice</u> (e.g. sitting meditation).</>}
 				</h2>
 				<div className="mt-4 grid gap-3 md:mt-5 md:max-w-[900px] md:gap-4">
 					<label className="grid gap-2 text-sm leading-5 text-ink md:grid-cols-[minmax(0,1fr)_170px] md:items-center md:text-base">
-						<span>1. How many times did you do formal meditation practice in the <u>past week</u>?</span>
+						<span>1. {questionText[1] ?? <>How many times did you do formal meditation practice in the <u>past week</u>?</>}</span>
 						<input
 							type="number"
 							min="0"
@@ -162,7 +171,7 @@ export default function SurveyQuestions({
 						/>
 					</label>
 					<label className="grid gap-2 text-sm leading-5 text-ink md:grid-cols-[minmax(0,1fr)_170px] md:items-center md:text-base">
-						<span>2. What was the average duration of each meditation session (estimate in minutes)?</span>
+						<span>2. {questionText[2] ?? "What was the average duration of each meditation session (estimate in minutes)?"}</span>
 						<input
 							type="number"
 							min="0"
@@ -183,7 +192,7 @@ export default function SurveyQuestions({
 
 			<section className="rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10">
 				<h2 className="text-sm font-bold leading-5 text-ink md:text-base">
-					Questions 7 to 12 ask about your informal practice (being mindful in everyday life, outside of meditation sessions).
+					{sectionText[7] ?? "Questions 7 to 12 ask about your informal practice (being mindful in everyday life, outside of meditation sessions)."}
 				</h2>
 				<p className="mt-3 text-sm font-bold leading-5 text-ink md:mt-4 md:text-base">
 					Again, please select the appropriate number to indicate how much each of the following were true for you over the <u>past week</u>.
@@ -197,21 +206,25 @@ export default function SurveyQuestions({
 					Please write 100-250 words (4-5 sentences) reflecting on the following questions:
 				</p>
 				<ol className="mt-2 list-decimal pl-5 text-sm leading-5 text-ink md:pl-6 md:text-base">
-					<li>How are you feeling this week?</li>
-					<li>What has been your experience with the mindfulness intervention this week?</li>
+					{journalPrompts.map((prompt) => <li key={prompt}>{prompt}</li>)}
 				</ol>
 				<textarea
 					rows={4}
 					placeholder="Enter reflection..."
+					maxLength={JOURNAL_MAX_CHARS}
+					aria-describedby="journal-word-count"
 					className="mt-5 w-full resize-y rounded-xl border border-[#5b5a5a] bg-white px-3 py-3 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30 md:mt-6"
 					onChange={(event) => updateAnswer(13, event.target.value)}
 				/>
+				<p id="journal-word-count" className="mt-2 text-xs text-muted">
+					{journalWords} {journalWords === 1 ? "word" : "words"} (aim for 100-250)
+				</p>
 			</section>
 
 			<div className="flex flex-nowrap items-center justify-center gap-3">
 				<button
 					type="button"
-					disabled={submitting}
+					disabled={isSubmitting}
 					onClick={clearScaleSelections}
 					className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-orange-700 px-5 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-orange-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-700 disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-[11px]"
 				>
@@ -219,10 +232,10 @@ export default function SurveyQuestions({
 				</button>
 				<button
 					type="submit"
-					disabled={submitting}
+					disabled={isSubmitting}
 					className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-[11px]"
 				>
-					{submitting ? "Submitting..." : "Submit survey"}
+					{isSubmitting ? "Submitting..." : "Submit survey"}
 				</button>
 			</div>
 		</form>

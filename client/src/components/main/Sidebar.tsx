@@ -106,7 +106,7 @@ export default function Sidebar({
             size={32}
             className="shrink-0"
           />
-          <span className="text-[14px] font-semibold text-[#111827]">
+          <span className="min-w-0 truncate text-[14px] font-semibold text-[#111827]">
             {fullName}
           </span>
         </Link>

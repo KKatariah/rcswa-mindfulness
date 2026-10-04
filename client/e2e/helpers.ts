@@ -1,0 +1,37 @@
+import type { APIRequestContext, Page } from "@playwright/test";
+
+export const API = "http://127.0.0.1:8001/api";
+export const PASSWORD = "Calm-River-42";
+export const STUDENT = "student@e2e.local";
+export const OTHER = "other@e2e.local";
+export const ADMIN = "admin@e2e.local";
+
+// Reuse one token per user: /api/login/ allows only 10 attempts a minute per IP.
+const tokens = new Map<string, string>();
+
+export async function apiToken(request: APIRequestContext, email: string): Promise<string> {
+	const cached = tokens.get(email);
+	if (cached) return cached;
+	const res = await request.post(`${API}/login/`, { data: { email, password: PASSWORD } });
+	if (!res.ok()) throw new Error(`login failed for ${email}: ${res.status()} ${await res.text()}`);
+	const token = (await res.json()).token;
+	tokens.set(email, token);
+	return token;
+}
+
+/** Log in through the API and hand the token to the app, skipping the login form. */
+export async function loginAs(page: Page, request: APIRequestContext, email: string): Promise<string> {
+	const token = await apiToken(request, email);
+	// Top frame only: embedded iframes (e.g. a failed video embed) can't use localStorage.
+	await page.addInitScript((t) => {
+		if (window === window.top) window.localStorage.setItem("token", t);
+	}, token);
+	return token;
+}
+
+/** On phone-sized screens the header links live behind a menu button; open it if it's there. */
+export async function openNavMenu(page: Page): Promise<void> {
+	await page.getByRole("navigation").first().waitFor();
+	const menu = page.getByRole("button", { name: "Open menu" });
+	if (await menu.isVisible()) await menu.click();
+}

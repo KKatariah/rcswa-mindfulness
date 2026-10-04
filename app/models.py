@@ -70,7 +70,8 @@ class UserManager(BaseUserManager):
     def _create_user(self, email, password, **extra_fields):
         if not email:
             raise ValueError("Email address is required.")
-        email = self.normalize_email(email)
+        # Emails are stored lower-case so sign-up and login ignore capitalisation.
+        email = self.normalize_email(email).lower()
         user = self.model(email=email, **extra_fields)
         if password:
             user.set_password(password)
@@ -159,9 +160,6 @@ class Enrollment(models.Model):
         on_delete=models.CASCADE,
         related_name="enrollments",
     )
-    # TODO: current_week is never written by any application code — appears to be
-    # dead. Candidate for removal in a separate cleanup issue.
-    current_week = models.PositiveSmallIntegerField(default=1)
     status = models.CharField(
         max_length=12, choices=Status.choices, default=Status.ACTIVE
     )
@@ -187,7 +185,6 @@ class Module(models.Model):
     description = models.TextField(blank=True)
     summary = models.CharField(max_length=300, blank=True)
     is_published = models.BooleanField(default=False)
-    unlock_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -202,7 +199,6 @@ class ContentItem(models.Model):
     class ContentType(models.TextChoices):
         VIDEO = "video", "Video"
         AUDIO = "audio", "Audio"
-        TEXT = "text", "Text"
         # TODO(backlog): file-upload content type — needs a storage backend decision.
 
     class Provider(models.TextChoices):
@@ -217,10 +213,8 @@ class ContentItem(models.Model):
     )
     title = models.CharField(max_length=200)
     type = models.CharField(max_length=10, choices=ContentType.choices)
-    # provider/embed_url only apply to video/audio items; body only applies to text items.
     provider = models.CharField(max_length=20, choices=Provider.choices, blank=True, default="")
     embed_url = models.URLField(blank=True, default="")
-    body = models.TextField(blank=True, default="")
     display_order = models.PositiveSmallIntegerField(default=0)
     # Day within the module's week (0 = first day). Null = never scheduled.
     # Due date = cohort.start_date + timedelta((module.week_number-1)*7 + day_offset)
@@ -265,10 +259,10 @@ class Resource(models.Model):
 
 
 class AdditionalResource(models.Model):
-    """Books/documentaries/online programs shown on the public Resources page.
+    """Books/documentaries/online programs shown on the Resources page (logged-in users only).
 
     Distinct from `Resource` above, which is a per-module supplementary link —
-    this model backs a standalone, admin-managed marketing/reading-list page
+    this model backs a standalone, admin-managed reading-list page
     and is not tied to a Module.
     """
 
@@ -467,12 +461,16 @@ class PushSubscription(models.Model):
 
 # Surveys
 
+class SurveyType(models.TextChoices):
+    INTAKE = "intake", "Intake"
+    WEEKLY = "weekly", "Weekly"
+    END = "end", "End"
+    FOLLOWUP = "followup", "Follow-up"
+
+
 class Survey(models.Model):
-    class SurveyType(models.TextChoices):
-        INTAKE = "intake", "Intake"
-        WEEKLY = "weekly", "Weekly"
-        END = "end", "End"
-        FOLLOWUP = "followup", "Follow-up"
+    # Backward-compat alias: Survey.SurveyType.WEEKLY continues to work everywhere.
+    SurveyType = SurveyType
 
     # SET_NULL: surveys may be global (not tied to any module).
     module = models.ForeignKey(
@@ -488,11 +486,21 @@ class Survey(models.Model):
     questions = models.JSONField(default=list)
 
     def clean(self):
-        if self.type == self.SurveyType.WEEKLY and self.module_id is None:
+        if self.type == SurveyType.WEEKLY and self.module_id is None:
             raise ValidationError({"module": "A weekly survey must be linked to a module."})
 
     def __str__(self):
         return f"{self.title} ({self.code})"
+
+    class Meta:
+        ordering = ["module__week_number"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["module"],
+                condition=Q(type=SurveyType.WEEKLY),
+                name="unique_weekly_survey_per_module",
+            ),
+        ]
 
 
 class SurveyResponse(models.Model):
@@ -502,10 +510,10 @@ class SurveyResponse(models.Model):
         on_delete=models.CASCADE,
         related_name="survey_responses",
     )
-    # CASCADE: a response is meaningless without its survey definition.
+    # PROTECT: responses are research data; a survey that has any can't be deleted.
     survey = models.ForeignKey(
         Survey,
-        on_delete=models.CASCADE,
+        on_delete=models.PROTECT,
         related_name="responses",
     )
     answers = models.JSONField()

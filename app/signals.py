@@ -6,13 +6,15 @@ a daemon thread so admin saves are not blocked by up to 80 sequential push calls
 """
 
 import logging
+import re
 import threading
 
 from django.db import transaction
 from django.db.models.signals import post_delete, post_save, pre_save
 from django.dispatch import receiver
 
-from .models import AdditionalResource, ContentItem, Module
+from .models import AdditionalResource, ContentItem, Module, Survey, SurveyType
+from .survey_template import STANDARD_WEEKLY_QUESTIONS
 
 logger = logging.getLogger(__name__)
 
@@ -95,3 +97,56 @@ def additional_resource_post_delete(sender, instance, **kwargs):
     """Delete the cover file from disk when the resource row itself is deleted."""
     if instance.cover_image:
         instance.cover_image.delete(save=False)
+
+
+# ── Weekly survey auto-creation ───────────────────────────────────────────────
+
+# Module has no content-vs-non-content distinction; all modules are content modules.
+@receiver(post_save, sender=Module)
+def create_weekly_survey(sender, instance, created, raw, **kwargs):
+    """Auto-create one weekly survey for every new module.
+
+    Skipped when raw=True (loaddata / fixtures) so existing fixture surveys
+    are not duplicated.  Uses get_or_create so calling this twice is harmless.
+    """
+    if not created or raw:
+        return
+    Survey.objects.get_or_create(
+        module=instance,
+        type=SurveyType.WEEKLY,
+        defaults={
+            "code": f"weekly-w{instance.week_number}",
+            "title": f"Week {instance.week_number}",
+            "questions": STANDARD_WEEKLY_QUESTIONS,
+        },
+    )
+
+
+_AUTO_TITLE_RE = re.compile(r"^Week \d+$")
+
+
+@receiver(pre_save, sender=Module)
+def sync_survey_title_on_week_reorder(sender, instance, **kwargs):
+    """Keep the weekly survey title in sync when week_number is changed.
+
+    Only updates titles that still match the auto-generated "Week N" format
+    so admins who have customised the title don't get it overwritten.
+    The survey code is never changed.
+    """
+    if not instance.pk or kwargs.get("raw"):
+        return
+    update_fields = kwargs.get("update_fields")
+    if update_fields is not None and "week_number" not in update_fields:
+        return
+    try:
+        old = Module.objects.get(pk=instance.pk)
+    except Module.DoesNotExist:
+        return
+    if old.week_number == instance.week_number:
+        return
+    try:
+        survey = Survey.objects.get(module=instance, type=SurveyType.WEEKLY)
+    except Survey.DoesNotExist:
+        return
+    if _AUTO_TITLE_RE.fullmatch(survey.title):
+        Survey.objects.filter(pk=survey.pk).update(title=f"Week {instance.week_number}")
