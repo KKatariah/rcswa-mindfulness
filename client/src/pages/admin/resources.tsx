@@ -4,6 +4,7 @@ import Head from "next/head";
 import AdminLayout from "@/components/admin/AdminLayout";
 import Modal from "@/components/main/Modal";
 import Select from "@/components/ui/Select";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { PlusIcon, PencilIcon, TrashIcon } from "@/components/ui/icons";
 import DragHandle, { ReorderHelp } from "@/components/ui/DragHandle";
 import { useDragReorder, type ReorderHandlers } from "@/hooks/useDragReorder";
@@ -199,6 +200,7 @@ export default function AdminResourcesPage() {
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const [newCategory, setNewCategory] = useState<AdditionalResourceCategory>("book");
 	const { draggingId, startDrag, handleKey } = useDragReorder<number>();
+	const [deleting, setDeleting] = useState<AdminAdditionalResource | null>(null);
 
 	const sections = useMemo(
 		() => SECTIONS.map((s) => ({ ...s, items: resources.filter((r) => r.category === s.category).sort(byOrder) })),
@@ -271,8 +273,10 @@ export default function AdminResourcesPage() {
 		setModalOpen(false);
 	}
 
-	async function handleDelete(resource: AdminAdditionalResource) {
-		if (!confirm(`Delete "${resource.title}"?`)) return;
+	async function handleDelete() {
+		if (!deleting) return;
+		const resource = deleting;
+		setDeleting(null);
 		setDeleteError(null);
 		const token = localStorage.getItem("token") ?? "";
 		try {
@@ -376,7 +380,7 @@ export default function AdminResourcesPage() {
 														<button type="button" onClick={() => openEdit(resource)} aria-label="Edit resource">
 															<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
 														</button>
-														<button type="button" onClick={() => handleDelete(resource)} aria-label="Delete resource">
+														<button type="button" onClick={() => setDeleting(resource)} aria-label="Delete resource">
 															<TrashIcon className="size-4 text-muted hover:text-red-500" />
 														</button>
 													</div>
@@ -410,6 +414,17 @@ export default function AdminResourcesPage() {
 					onCancel={() => setModalOpen(false)}
 				/>
 			</Modal>
+
+			{deleting && (
+				<ConfirmDialog
+					title={`Delete "${deleting.title}"?`}
+					message="Students will no longer see this resource. This can't be undone."
+					confirmLabel="Delete resource"
+					danger
+					onConfirm={handleDelete}
+					onCancel={() => setDeleting(null)}
+				/>
+			)}
 		</AdminLayout>
 	);
 }

@@ -335,6 +335,7 @@ export async function getProgramStatus(
 import type {
 	Cohort,
 	AdminModule,
+	ModuleProgress,
 	AdminContentItem,
 	AdminUser,
 	Enrollment,
@@ -553,6 +554,16 @@ export async function getModuleAdmin(
 		headers: { Authorization: `Token ${token}` },
 	});
 	return handleResponse<AdminModule>(res);
+}
+
+export async function getModuleProgress(
+	id: number,
+	token: string,
+): Promise<ModuleProgress> {
+	const res = await fetch(`${API_BASE_URL}/modules/${id}/progress/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<ModuleProgress>(res);
 }
 
 export async function createModule(

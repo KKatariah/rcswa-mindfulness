@@ -66,9 +66,36 @@ function EditUserForm({
 	const [error, setError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
 	const [confirmingPromote, setConfirmingPromote] = useState(false);
+	const [pendingChanges, setPendingChanges] = useState<string[] | null>(null);
 
-	async function handleSubmit(e: FormEvent) {
+	const cohortName = (id: string) => cohorts.find((c) => String(c.id) === id)?.name ?? "their cohort";
+
+	// Changes that cost the user access (or move them between cohort schedules) are confirmed before saving.
+	function riskyChanges(): string[] {
+		const changes: string[] = [];
+		if (initial.role === "admin" && form.role !== "admin") {
+			changes.push("lose access to the admin dashboard");
+		}
+		if (initial.cohort && !form.cohort) {
+			changes.push(`be removed from ${cohortName(initial.cohort)} and lose access to the program's modules`);
+		} else if (initial.cohort && form.cohort !== initial.cohort) {
+			changes.push(`move from ${cohortName(initial.cohort)} to ${cohortName(form.cohort)}, which changes when each module unlocks for them`);
+		}
+		return changes;
+	}
+
+	function handleSubmit(e: FormEvent) {
 		e.preventDefault();
+		const changes = riskyChanges();
+		if (changes.length > 0) {
+			setPendingChanges(changes);
+			return;
+		}
+		save();
+	}
+
+	async function save() {
+		setPendingChanges(null);
 		setError(null);
 		setSubmitting(true);
 		try {
@@ -157,6 +184,17 @@ function EditUserForm({
 					Cancel
 				</button>
 			</div>
+
+			{pendingChanges && (
+				<ConfirmDialog
+					title="Save these changes?"
+					message={`${initial.email} will ${pendingChanges.join(", and will ")}.`}
+					confirmLabel="Save changes"
+					danger
+					onConfirm={save}
+					onCancel={() => setPendingChanges(null)}
+				/>
+			)}
 
 			{confirmingPromote && (
 				<ConfirmDialog

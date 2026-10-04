@@ -917,6 +917,82 @@ def _module_completion_stats():
     return results
 
 
+def _module_student_progress(module, cohort_id=None):
+    """Per-student progress through one module, for every ACTIVE-enrolled student
+    (optionally limited to one cohort). Uses the same all-items definition of
+    "completed" as _module_completion_stats."""
+    enrollments = (
+        Enrollment.objects
+        .filter(status=Enrollment.Status.ACTIVE)
+        .select_related("user", "cohort")
+        .order_by("user__full_name", "user__email", "-enrolled_at")
+    )
+    if cohort_id:
+        enrollments = enrollments.filter(cohort_id=cohort_id)
+    # A student can hold more than one active enrollment; their most recent one
+    # decides their cohort and so when this module unlocked for them.
+    by_user = {}
+    for e in enrollments:
+        existing = by_user.get(e.user_id)
+        if existing is None or e.enrolled_at > existing.enrolled_at:
+            by_user[e.user_id] = e
+
+    item_ids = list(module.content_items.values_list("id", flat=True))
+    completions = {}
+    last_activity = {}
+    for user_id, item_id, completed_at in (
+        ContentCompletion.objects
+        .filter(user_id__in=by_user, content_item_id__in=item_ids)
+        .values_list("user_id", "content_item_id", "completed_at")
+    ):
+        completions.setdefault(user_id, []).append(item_id)
+        if user_id not in last_activity or completed_at > last_activity[user_id]:
+            last_activity[user_id] = completed_at
+
+    viewed = set(
+        ContentView.objects.filter(module=module, user_id__in=by_user).values_list("user_id", flat=True)
+    )
+    survey = Survey.objects.filter(module=module, type=Survey.SurveyType.WEEKLY).first()
+    responded = (
+        set(SurveyResponse.objects.filter(survey=survey, user_id__in=by_user).values_list("user_id", flat=True))
+        if survey else set()
+    )
+
+    today = timezone.localdate()
+    students = []
+    for user_id, enrollment in by_user.items():
+        user = enrollment.user
+        done = completions.get(user_id, [])
+        unlock_date = enrollment.cohort.start_date + timedelta(weeks=module.week_number - 1)
+        if item_ids and len(done) == len(item_ids):
+            progress_status = "completed"
+        elif done:
+            progress_status = "in_progress"
+        elif unlock_date > today:
+            progress_status = "locked"
+        else:
+            progress_status = "not_started"
+        students.append({
+            "user_id": user_id,
+            "full_name": user.full_name or user.display_name,
+            "email": user.email,
+            "cohort_id": enrollment.cohort_id,
+            "cohort_name": enrollment.cohort.name,
+            "unlock_date": unlock_date.isoformat(),
+            "status": progress_status,
+            "completed_item_ids": sorted(done),
+            "viewed": user_id in viewed,
+            "survey_submitted": user_id in responded if survey else None,
+            "last_activity": last_activity[user_id].isoformat() if user_id in last_activity else None,
+        })
+
+    return {
+        "item_count": len(item_ids),
+        "survey": {"id": survey.id, "title": survey.title} if survey else None,
+        "students": students,
+    }
+
+
 def _survey_response_rates():
     active_user_ids = set(
         Enrollment.objects.filter(status=Enrollment.Status.ACTIVE).values_list("user_id", flat=True)

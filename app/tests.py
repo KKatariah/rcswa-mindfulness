@@ -2380,6 +2380,81 @@ class DashboardStatsTests(APITestCase):
         self.assertEqual(resp.data["total_enrolled"], 1)
 
 
+class ModuleProgressTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.cohort = Cohort.objects.create(
+            name="Running", year=2026,
+            start_date=date.today() - timedelta(days=14),
+            end_date=date.today() + timedelta(days=42),
+        )
+        self.future_cohort = Cohort.objects.create(
+            name="Upcoming", year=2026,
+            start_date=date.today() + timedelta(days=14),
+            end_date=date.today() + timedelta(days=70),
+        )
+        self.done = User.objects.create_user(email="done@test.local", password="pw", full_name="Done")
+        self.partial = User.objects.create_user(email="partial@test.local", password="pw", full_name="Partial")
+        self.idle = User.objects.create_user(email="idle@test.local", password="pw", full_name="Idle")
+        self.later = User.objects.create_user(email="later@test.local", password="pw", full_name="Later")
+        self.pending = User.objects.create_user(email="pending@test.local", password="pw")
+        for user in (self.done, self.partial, self.idle):
+            Enrollment.objects.create(user=user, cohort=self.cohort, status=Enrollment.Status.ACTIVE)
+        Enrollment.objects.create(user=self.later, cohort=self.future_cohort, status=Enrollment.Status.ACTIVE)
+        Enrollment.objects.create(user=self.pending, cohort=self.cohort, status=Enrollment.Status.PENDING)
+
+        self.module = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+        self.a = ContentItem.objects.create(
+            module=self.module, title="A", type="video",
+            provider="youtube", embed_url="https://www.youtube.com/embed/x",
+        )
+        self.b = ContentItem.objects.create(
+            module=self.module, title="B", type="video",
+            provider="youtube", embed_url="https://www.youtube.com/embed/y",
+        )
+        ContentCompletion.objects.create(user=self.done, content_item=self.a)
+        ContentCompletion.objects.create(user=self.done, content_item=self.b)
+        ContentCompletion.objects.create(user=self.partial, content_item=self.a)
+        survey = Survey.objects.get(module=self.module, type=SurveyType.WEEKLY)
+        SurveyResponse.objects.create(user=self.done, survey=survey, answers={})
+
+    def _get(self, query=""):
+        self.client.force_login(self.admin)
+        return self.client.get(f"/api/modules/{self.module.pk}/progress/{query}")
+
+    def test_student_cannot_view_progress(self):
+        self.client.force_login(self.done)
+        resp = self.client.get(f"/api/modules/{self.module.pk}/progress/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_statuses_per_student(self):
+        resp = self._get()
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        by_email = {s["email"]: s for s in resp.data["students"]}
+        self.assertEqual(by_email["done@test.local"]["status"], "completed")
+        self.assertEqual(by_email["partial@test.local"]["status"], "in_progress")
+        self.assertEqual(by_email["idle@test.local"]["status"], "not_started")
+        self.assertEqual(by_email["later@test.local"]["status"], "locked")
+        self.assertEqual(by_email["partial@test.local"]["completed_item_ids"], [self.a.pk])
+        self.assertEqual(resp.data["item_count"], 2)
+
+    def test_only_active_students_listed(self):
+        emails = {s["email"] for s in self._get().data["students"]}
+        self.assertNotIn("pending@test.local", emails)
+        self.assertNotIn("admin@test.local", emails)
+
+    def test_survey_submission_reported(self):
+        by_email = {s["email"]: s for s in self._get().data["students"]}
+        self.assertTrue(by_email["done@test.local"]["survey_submitted"])
+        self.assertFalse(by_email["partial@test.local"]["survey_submitted"])
+
+    def test_cohort_filter(self):
+        resp = self._get(f"?cohort={self.future_cohort.pk}")
+        self.assertEqual([s["email"] for s in resp.data["students"]], ["later@test.local"])
+
+
 # ── Notification tests (Issue #74) ─────────────────────────────────────────────
 
 def _make_user(email, password="pw"):
@@ -2398,10 +2473,10 @@ def _make_module(week=1, published=True):
     return Module.objects.create(week_number=week, title=f"Week {week}", is_published=published)
 
 
-def _make_audio_item(module, day_offset=0, title="Meditation"):
+def _make_audio_item(module, title="Meditation", display_order=1):
     return ContentItem.objects.create(
         module=module, title=title, type="audio", provider="soundcloud",
-        embed_url="https://soundcloud.com/x/y", display_order=1, day_offset=day_offset,
+        embed_url="https://soundcloud.com/x/y", display_order=display_order,
     )
 
 
@@ -2473,7 +2548,7 @@ class FailedSendRetriesNextRunTests(TestCase):
         self.cohort = _make_cohort(days_ago=0, duration=56)
         Enrollment.objects.create(user=self.user, cohort=self.cohort)
         self.module = _make_module(week=1)
-        self.item = _make_audio_item(self.module, day_offset=0)
+        self.item = _make_audio_item(self.module)
 
         today = datetime.date.today()
         scheduled_for = _perth_midnight_utc(today)
@@ -2526,25 +2601,66 @@ class PerthDateBoundaryTests(TestCase):
         self.assertEqual(scheduled_for, datetime.datetime(2024, 6, 14, 16, 0, 0, tzinfo=datetime.timezone.utc))
 
 
-class VerifyMissingOffsetTests(TestCase):
-    """T5: --verify exits non-zero when audio items have no day_offset."""
+class VerifyMissingMeditationTests(TestCase):
+    """T5: --verify exits non-zero when a published week has no audio item to remind about."""
 
     def setUp(self):
         self.user = _make_user("verify@test.local")
         cohort = _make_cohort(days_ago=7, duration=56)
         Enrollment.objects.create(user=self.user, cohort=cohort, status=Enrollment.Status.ACTIVE)
-        module = _make_module(week=1)
-        # Audio item with no day_offset (unscheduled).
+        self.module = _make_module(week=1)
         ContentItem.objects.create(
-            module=module, title="Unscheduled Audio", type="audio",
-            provider="soundcloud", embed_url="https://soundcloud.com/x/y",
-            display_order=1, day_offset=None,
+            module=self.module, title="Talk", type="video",
+            provider="youtube", embed_url="https://www.youtube.com/embed/x", display_order=1,
         )
 
-    def test_verify_exits_nonzero_for_unscheduled_audio(self):
+    def test_verify_exits_nonzero_for_week_without_audio(self):
         with self.assertRaises(SystemExit) as ctx:
             call_command("send_due_reminders", "--verify", stderr=StringIO(), stdout=StringIO())
         self.assertNotEqual(ctx.exception.code, 0)
+
+    def test_verify_passes_once_week_has_audio(self):
+        _make_audio_item(self.module)
+        out = StringIO()
+        call_command("send_due_reminders", "--verify", stderr=StringIO(), stdout=out)
+        self.assertIn("OK", out.getvalue())
+
+
+class DailyMeditationReminderTests(TestCase):
+    """Every day of a running week sends exactly one meditation reminder per student."""
+
+    def setUp(self):
+        self.user = _make_user("daily@test.local")
+        # Day 4 of week 1, so a reminder must not depend on it being the week's first day.
+        self.cohort = _make_cohort(days_ago=3, duration=56)
+        Enrollment.objects.create(user=self.user, cohort=self.cohort)
+        self.module = _make_module(week=1)
+        self.first = _make_audio_item(self.module, title="Body Scan", display_order=1)
+        self.second = _make_audio_item(self.module, title="Breathing", display_order=2)
+
+    def _run(self):
+        from zoneinfo import ZoneInfo
+        fake_now = datetime.datetime.combine(
+            datetime.date.today(), datetime.time(8, 0), tzinfo=ZoneInfo("Australia/Perth")
+        )
+        out = StringIO()
+        with patch("app.management.commands.send_due_reminders._perth_now", return_value=fake_now):
+            call_command("send_due_reminders", "--dry-run", stdout=out)
+        return [line for line in out.getvalue().splitlines() if "would send (" in line]
+
+    def test_one_reminder_on_any_day_of_the_week(self):
+        lines = self._run()
+        self.assertEqual(len(lines), 1)
+        self.assertIn("Body Scan", lines[0])
+
+    def test_still_reminded_after_completing_the_audio(self):
+        ContentCompletion.objects.create(user=self.user, content_item=self.first)
+        self.assertEqual(len(self._run()), 1)
+
+    def test_no_reminder_for_unpublished_week(self):
+        self.module.is_published = False
+        self.module.save()
+        self.assertEqual(self._run(), [])
 
 
 class S21NotifiesOnlyActiveCohortTests(TestCase):

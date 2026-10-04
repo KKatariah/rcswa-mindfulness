@@ -78,6 +78,7 @@ from .serializers import (
     _survey_is_unlocked,
     _cohort_breakdown,
     _module_completion_stats,
+    _module_student_progress,
     _survey_response_rates,
     _forum_activity_stats,
     _enrollment_status_breakdown,
@@ -313,10 +314,16 @@ class ModuleViewSet(viewsets.ModelViewSet):
                 Module.objects.filter(pk=module_id).update(week_number=week)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(detail=True, methods=["get"])
+    def progress(self, request, pk=None):
+        """Which active students have (and haven't) worked through this module. ?cohort=<id> narrows it."""
+        module = self.get_object()
+        return Response(_module_student_progress(module, cohort_id=_id_param(request, "cohort")))
+
     def get_permissions(self):
         if self.action == "summary":
             return [AllowAny()]
-        if self.action in ("create", "update", "partial_update", "destroy", "reorder"):
+        if self.action in ("create", "update", "partial_update", "destroy", "reorder", "progress"):
             return [IsAuthenticated(), IsAdminOrStaff()]
         # The home page lists the programme for logged-out visitors. This override replaces
         # the action's own permission_classes, so it has to allow it here.

@@ -14,8 +14,6 @@ export type AdminContentItem = {
 	provider: "youtube" | "soundcloud" | "";
 	embed_url: string;
 	display_order: number;
-	// Day of the module's week (0 = Day 1) that the audio reminder is sent; null = no reminder.
-	day_offset: number | null;
 };
 
 export type AdminModule = {
@@ -28,6 +26,30 @@ export type AdminModule = {
 	is_unlocked: boolean;
 	content_items: AdminContentItem[];
 	resources: unknown[];
+};
+
+export type ModuleProgressStatus = "completed" | "in_progress" | "not_started" | "locked";
+
+export type ModuleStudentProgress = {
+	user_id: number;
+	full_name: string;
+	email: string;
+	cohort_id: number;
+	cohort_name: string;
+	// When this module opened for the student's cohort (YYYY-MM-DD).
+	unlock_date: string;
+	status: ModuleProgressStatus;
+	completed_item_ids: number[];
+	viewed: boolean;
+	// null when the module has no weekly survey.
+	survey_submitted: boolean | null;
+	last_activity: string | null;
+};
+
+export type ModuleProgress = {
+	item_count: number;
+	survey: { id: number; title: string } | null;
+	students: ModuleStudentProgress[];
 };
 
 export type AdminUser = {

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import Head from "next/head";
+import Link from "next/link";
 import AdminLayout from "@/components/admin/AdminLayout";
 import SurveyExport from "@/components/admin/SurveyExport";
 import { getDashboardStats } from "@/lib/api";
@@ -14,11 +15,17 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 	);
 }
 
-function ProgressBar({ label, pct, detail }: { label: string; pct: number; detail: string }) {
+function ProgressBar({ label, pct, detail, href }: { label: string; pct: number; detail: string; href?: string }) {
 	return (
 		<div>
 			<div className="flex items-center justify-between gap-3 text-sm">
-				<span className="min-w-0 wrap-anywhere font-semibold text-ink">{label}</span>
+				{href ? (
+					<Link href={href} className="min-w-0 wrap-anywhere font-semibold text-ink hover:text-brand-blue hover:underline">
+						{label}
+					</Link>
+				) : (
+					<span className="min-w-0 wrap-anywhere font-semibold text-ink">{label}</span>
+				)}
 				<span className="shrink-0 text-muted">{detail}</span>
 			</div>
 			<div className="mt-1.5 h-2 rounded-full bg-gray-200">
@@ -73,7 +80,10 @@ export default function AdminDashboardPage() {
 					</div>
 
 					<div className="rounded-2xl border border-gray-200 bg-white p-5">
-						<h2 className="text-sm font-bold uppercase tracking-wide text-muted">Module completion</h2>
+						<div className="flex flex-wrap items-baseline justify-between gap-2">
+							<h2 className="text-sm font-bold uppercase tracking-wide text-muted">Module completion</h2>
+							<span className="text-xs text-muted">Select a module to see which students have finished it</span>
+						</div>
 						<div className="mt-4 space-y-4">
 							{stats.modules.length === 0 ? (
 								<p className="text-sm text-muted">No published modules yet.</p>
@@ -84,6 +94,7 @@ export default function AdminDashboardPage() {
 										label={`Week ${m.week_number}: ${m.title}`}
 										pct={m.completion_pct}
 										detail={`${m.completed_count}/${m.eligible_count} (${m.completion_pct}%)`}
+										href={`/admin/modules/${m.id}#progress`}
 									/>
 								))
 							)}

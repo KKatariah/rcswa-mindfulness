@@ -1,7 +1,15 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { ADMIN, API, apiToken, loginAs, STUDENT } from "./helpers";
 
 const READER = "reader@e2e.local";
+
+/** Save the open survey, confirming the prompt shown when it already has responses. */
+async function saveSurvey(page: Page) {
+	await page.getByRole("button", { name: "Save changes" }).click();
+	const dialog = page.getByRole("alertdialog");
+	await expect(dialog.or(page.getByRole("status"))).toBeVisible();
+	if (await dialog.isVisible()) await dialog.getByRole("button", { name: "Save changes" }).click();
+}
 
 test("admin views a survey's responses", async ({ page, request }) => {
 	await loginAs(page, request, ADMIN);
@@ -24,7 +32,7 @@ test("admin edits question wording and participants see it", async ({ browser, p
 	const q1 = page.getByLabel("Question", { exact: true }).first();
 	const original = await q1.inputValue();
 	await q1.fill("How many times did you sit and meditate this week?");
-	await page.getByRole("button", { name: "Save changes" }).click();
+	await saveSurvey(page);
 	await expect(page.getByRole("status")).toHaveText("Saved.");
 
 	const reader = await browser.newPage();
@@ -34,7 +42,7 @@ test("admin edits question wording and participants see it", async ({ browser, p
 	await reader.close();
 
 	await q1.fill(original);
-	await page.getByRole("button", { name: "Save changes" }).click();
+	await saveSurvey(page);
 	await expect(page.getByRole("status")).toHaveText("Saved.");
 });
 
@@ -89,6 +97,8 @@ test("dirty state, discard, and server errors", async ({ page, request }) => {
 	// Whitespace passes the HTML `required` check, so the server must reject it visibly.
 	await q1.fill("   ");
 	await save.click();
+	// This survey already has a response, so saving asks first.
+	await page.getByRole("alertdialog").getByRole("button", { name: "Save changes" }).click();
 	await expect(page.locator("p[role=alert]:not(#__next-route-announcer__)")).toContainText("text is required");
 	await page.getByRole("button", { name: "Discard" }).click();
 });
