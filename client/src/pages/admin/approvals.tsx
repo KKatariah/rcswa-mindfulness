@@ -14,6 +14,10 @@ export default function AdminApprovalsPage() {
 	const [actioningId, setActioningId] = useState<number | null>(null);
 	const [selectedCohort, setSelectedCohort] = useState<Record<number, string>>({});
 	const [rejecting, setRejecting] = useState<Enrollment | null>(null);
+	const [approving, setApproving] = useState<Enrollment | null>(null);
+
+	const chosenCohortId = (e: Enrollment) => Number(selectedCohort[e.id] ?? e.cohort);
+	const cohortName = (id: number) => cohorts.find((c) => c.id === id)?.name ?? `#${id}`;
 
 	useEffect(() => {
 		let cancelled = false;
@@ -37,8 +41,11 @@ export default function AdminApprovalsPage() {
 		return () => { cancelled = true; };
 	}, []);
 
-	async function handleApprove(enrollment: Enrollment) {
-		const cohortId = Number(selectedCohort[enrollment.id] ?? enrollment.cohort);
+	async function handleApprove() {
+		if (!approving) return;
+		const enrollment = approving;
+		setApproving(null);
+		const cohortId = chosenCohortId(enrollment);
 		const token = localStorage.getItem("token") ?? "";
 		setActioningId(enrollment.id);
 		try {
@@ -114,7 +121,7 @@ export default function AdminApprovalsPage() {
 											<button
 												type="button"
 												disabled={actioningId === e.id}
-												onClick={() => handleApprove(e)}
+												onClick={() => setApproving(e)}
 												className="flex h-9 items-center gap-1.5 rounded-lg bg-brand-blue px-3 text-xs font-bold text-white disabled:opacity-50"
 											>
 												Approve
@@ -135,6 +142,16 @@ export default function AdminApprovalsPage() {
 					</table>
 				)}
 			</div>
+
+			{approving && (
+				<ConfirmDialog
+					title="Approve this signup?"
+					message={`${approving.user_email} will be enrolled in ${cohortName(chosenCohortId(approving))} and get access to its modules straight away.`}
+					confirmLabel="Approve"
+					onConfirm={handleApprove}
+					onCancel={() => setApproving(null)}
+				/>
+			)}
 
 			{rejecting && (
 				<ConfirmDialog

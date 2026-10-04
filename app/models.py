@@ -223,8 +223,8 @@ class ContentItem(models.Model):
     provider = models.CharField(max_length=20, choices=Provider.choices, blank=True, default="")
     embed_url = models.URLField(blank=True, default="")
     display_order = models.PositiveSmallIntegerField(default=0)
-    # Day within the module's week (0 = first day). Null = never scheduled.
-    # Due date = cohort.start_date + timedelta((module.week_number-1)*7 + day_offset)
+    # Day within the module's week (0 = first day). Not used by daily reminders, which
+    # go out every day; kept for a planned feature.
     day_offset = models.PositiveSmallIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

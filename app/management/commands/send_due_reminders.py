@@ -6,8 +6,9 @@ users have a full day ahead):
     # Run every hour; the command filters by each user's preferred reminder_time.
     0 * * * * /path/to/venv/bin/python manage.py send_due_reminders
 
-Due-date formula for a given user:
-    cohort.start_date + timedelta(days=(module.week_number - 1) * 7 + item.day_offset)
+Every day a cohort is running, each active student gets one reminder for the
+current week's meditation: the first audio item (by display order) in the
+published module for that week, where the week is counted from cohort.start_date.
 
 Idempotency key: (user_id, content_item_id, perth_date) scoped to status=SENT.
 A failed log entry is NOT treated as sent — it will be retried on the next run.
@@ -74,11 +75,8 @@ class Command(BaseCommand):
             "--verify",
             action="store_true",
             help=(
-                "Check schedule completeness per active cohort: "
-                "audio items with no day_offset, "
-                "days with no scheduled audio item, "
-                "duplicate day_offsets within a module. "
-                "Exits non-zero if any issues are found."
+                "Check every published week of each active cohort has an audio "
+                "item to remind about. Exits non-zero if any are missing."
             ),
         )
 
@@ -164,21 +162,22 @@ class Command(BaseCommand):
             if today < start or today > end:
                 continue
 
-            days_in = (today - start).days
-            week_number = days_in // 7 + 1
-            day_offset_val = days_in % 7
+            week_number = (today - start).days // 7 + 1
 
-            due_items = list(
+            # One reminder a day: the week's meditation, whichever day of the week it is.
+            item = (
                 ContentItem.objects
                 .filter(
                     type=ContentItem.ContentType.AUDIO,
-                    day_offset=day_offset_val,
                     module__week_number=week_number,
+                    module__is_published=True,
                 )
                 .select_related("module")
+                .order_by("display_order", "id")
+                .first()
             )
 
-            if not due_items:
+            if item is None:
                 continue
 
             for enr in enr_list:
@@ -202,53 +201,44 @@ class Command(BaseCommand):
                     skipped += 1
                     continue
 
-                # push_denied=True means the user explicitly refused — no push, no email.
-                if pref and pref.push_denied:
+                # Meditation is a daily practice, so this is sent every day even after
+                # the student has ticked the audio off once.
+                if (user.id, item.id) in already_sent:
                     skipped += 1
                     continue
 
-                completed = completed_by_user.get(user.id, set())
                 user_subs = subs_by_user.get(user.id, [])
 
-                for item in due_items:
-                    if item.id in completed:
-                        skipped += 1
-                        continue
-
-                    if (user.id, item.id) in already_sent:
-                        skipped += 1
-                        continue
-
-                    if dry_run:
-                        channel = "push" if user_subs else "email"
-                        self.stdout.write(
-                            f"  [dry-run] would send ({channel}): "
-                            f"user={user.email} item='{item.title}' day={today}"
-                        )
-                        sent += 1
-                        continue
-
-                    channel = self._send(user, item, user_subs, pref)
-                    log_status = (
-                        NotificationLog.Status.SENT if channel else NotificationLog.Status.FAILED
+                if dry_run:
+                    channel = "push" if user_subs else "email"
+                    self.stdout.write(
+                        f"  [dry-run] would send ({channel}): "
+                        f"user={user.email} item='{item.title}' day={today}"
                     )
-                    log_channel = channel or NotificationLog.Channel.PUSH
+                    sent += 1
+                    continue
 
-                    NotificationLog.objects.create(
-                        user=user,
-                        type=NotificationLog.NotificationType.CONTENT_REMINDER,
-                        content_item=item,
-                        module=item.module,
-                        channel=log_channel,
-                        scheduled_for=scheduled_for_utc,
-                        sent_at=timezone.now() if channel else None,
-                        status=log_status,
-                    )
+                channel = self._send(user, item, user_subs, pref)
+                log_status = (
+                    NotificationLog.Status.SENT if channel else NotificationLog.Status.FAILED
+                )
+                log_channel = channel or NotificationLog.Channel.PUSH
 
-                    if channel:
-                        sent += 1
-                    else:
-                        errors += 1
+                NotificationLog.objects.create(
+                    user=user,
+                    type=NotificationLog.NotificationType.CONTENT_REMINDER,
+                    content_item=item,
+                    module=item.module,
+                    channel=log_channel,
+                    scheduled_for=scheduled_for_utc,
+                    sent_at=timezone.now() if channel else None,
+                    status=log_status,
+                )
+
+                if channel:
+                    sent += 1
+                else:
+                    errors += 1
 
                 # ── Daily survey completion reminders ────────────────────────────────
 
@@ -517,9 +507,8 @@ class Command(BaseCommand):
 
     def _verify(self):
         """
-        Per active cohort: report audio items with no offset, days with no
-        scheduled audio item, duplicate day_offsets. Exits non-zero if any
-        issues are found.
+        Per active cohort: report published weeks with no audio item, since those
+        days would go without a meditation reminder. Exits non-zero if any are found.
         """
         today = _perth_today()
         issues_found = False
@@ -546,51 +535,21 @@ class Command(BaseCommand):
                 if module.week_number > weeks_in_program:
                     continue  # module is beyond this cohort's duration
 
-                audio_items = [
-                    ci for ci in module.content_items.all()
-                    if ci.type == ContentItem.ContentType.AUDIO
-                ]
-
-                # Audio items with no day_offset.
-                unscheduled = [ci for ci in audio_items if ci.day_offset is None]
-                if unscheduled:
+                has_audio = any(
+                    ci.type == ContentItem.ContentType.AUDIO for ci in module.content_items.all()
+                )
+                if not has_audio:
                     issues_found = True
-                    for ci in unscheduled:
-                        self.stdout.write(
-                            f"  UNSCHEDULED: module='{module}' item='{ci.title}' "
-                            f"(day_offset is null)"
-                        )
-
-                scheduled = [ci for ci in audio_items if ci.day_offset is not None]
-
-                # Duplicate day_offsets within this module.
-                offset_counts: dict[int, list] = {}
-                for ci in scheduled:
-                    offset_counts.setdefault(ci.day_offset, []).append(ci)
-                for offset, items in offset_counts.items():
-                    if len(items) > 1:
-                        issues_found = True
-                        titles = ", ".join(f"'{ci.title}'" for ci in items)
-                        self.stdout.write(
-                            f"  DUPLICATE OFFSET: module='{module}' day_offset={offset} "
-                            f"items=[{titles}]"
-                        )
-
-                # Days 0–6 with no scheduled audio item.
-                covered_offsets = {ci.day_offset for ci in scheduled}
-                for day in range(7):
-                    if day not in covered_offsets:
-                        issues_found = True
-                        self.stdout.write(
-                            f"  MISSING DAY: module='{module}' day_offset={day} "
-                            f"has no scheduled audio item"
-                        )
+                    self.stdout.write(
+                        f"  NO MEDITATION: module='{module}' has no audio item, "
+                        f"so no daily reminders will be sent that week"
+                    )
 
         if issues_found:
             self.stderr.write(
-                "\n[verify] FAIL — scheduling gaps detected (see above). "
-                "Assign day_offset to all audio items before going live."
+                "\n[verify] FAIL — weeks without a meditation (see above). "
+                "Add an audio item to each before going live."
             )
             sys.exit(1)
         else:
-            self.stdout.write("\n[verify] OK — all active cohorts are fully scheduled.")
+            self.stdout.write("\n[verify] OK — every published week has a meditation.")

@@ -88,7 +88,8 @@ export default function Select({
 					role="listbox"
 					aria-labelledby={id}
 					style={{ position: "fixed", top: rect.top + 8, left: rect.left, width: rect.width }}
-					className="z-50 max-h-60 overflow-auto rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
+					// z-[70]: above Modal and ConfirmDialog (z-[60]) so dropdowns inside them can be used.
+					className="z-[70] max-h-60 overflow-auto rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
 				>
 					{options.map((opt) => (
 						<li key={opt.value} role="presentation">

@@ -22,6 +22,7 @@ test("admin approves one signup and rejects another", async ({ page, request }) 
 
 	const approveRow = page.getByRole("row", { name: /approve-me@e2e\.local/ });
 	await approveRow.getByRole("button", { name: "Approve" }).click();
+	await page.getByRole("alertdialog").getByRole("button", { name: "Approve" }).click();
 	await expect(approveRow).toHaveCount(0);
 
 	const rejectRow = page.getByRole("row", { name: /reject-me@e2e\.local/ });
@@ -56,8 +57,9 @@ test("admin deletes a resource", async ({ page, request }) => {
 	await expect(firstDelete).toBeVisible();
 	const before = await page.getByRole("button", { name: "Delete resource" }).count();
 
-	page.once("dialog", (dialog) => dialog.accept());
 	await firstDelete.click();
+	await page.getByRole("alertdialog").getByRole("button", { name: "Delete resource" }).click();
+	await expect(page.getByRole("alertdialog")).toHaveCount(0);
 	await expect(page.getByRole("button", { name: "Delete resource" })).toHaveCount(before - 1);
 });
 
@@ -199,4 +201,93 @@ test("admin drags content items within a module", async ({ page, request }) => {
 	await expect.poll(names).toEqual([first, second]);
 	await page.reload();
 	await expect.poll(names).toEqual([first, second]);
+});
+
+test("admin sees which students have finished a module", async ({ page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin");
+	await page.getByRole("link", { name: /^Week 1:/ }).click();
+	await expect(page).toHaveURL(/\/admin\/modules\/\d+#progress$/);
+
+	const progress = page.locator("#progress");
+	const listed = (email: string) => progress.getByText(email).filter({ visible: true });
+	await progress.getByRole("button", { name: /^Completed/ }).click();
+	await expect(listed("student@e2e.local")).toHaveCount(1);
+	// Pending and withdrawn students aren't part of the cohort's progress.
+	await progress.getByRole("button", { name: /^All/ }).click();
+	await expect(listed("reject-me@e2e.local")).toHaveCount(0);
+	await expect(listed("responder@e2e.local")).toHaveCount(0);
+
+	await progress.getByRole("button", { name: /^Not started/ }).click();
+	await expect(listed("student@e2e.local")).toHaveCount(0);
+});
+
+test("unpublishing a module asks first", async ({ page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/modules/1");
+	await page.getByLabel("Published").uncheck();
+	await page.getByRole("button", { name: "Save module" }).click();
+	const dialog = page.getByRole("alertdialog");
+	await expect(dialog).toContainText("Unpublish");
+	await dialog.getByRole("button", { name: "Cancel" }).click();
+	await expect(dialog).toHaveCount(0);
+
+	// Nothing was saved.
+	await page.reload();
+	await expect(page.getByLabel("Published")).toBeChecked();
+});
+
+test("admin opens a person's profile from the users list and from module progress", async ({ page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/users");
+	await page.getByRole("link", { name: "student@e2e.local" }).filter({ visible: true }).first().click();
+	await expect(page).toHaveURL(/\/admin\/users\/\d+$/);
+	await expect(page.getByRole("heading", { name: "E2E Student" })).toBeVisible();
+	await expect(page.getByText("E2E Cohort").first()).toBeVisible();
+	// Week 1's content was completed in the seed data.
+	const week1 = page.getByRole("link", { name: /^Week 1:/ }).filter({ visible: true });
+	await expect(week1).toBeVisible();
+
+	await week1.click();
+	await expect(page).toHaveURL(/\/admin\/modules\/\d+#progress$/);
+	await page.locator("#progress").getByRole("link", { name: /other@e2e\.local/ }).filter({ visible: true }).click();
+	await expect(page.getByRole("heading", { name: "E2E Other" })).toBeVisible();
+});
+
+test("admin edits a person from their profile page", async ({ page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/users");
+	await page.getByRole("link", { name: "other@e2e.local" }).filter({ visible: true }).first().click();
+	await expect(page.getByRole("heading", { name: "E2E Other" })).toBeVisible();
+
+	await page.getByRole("button", { name: "Edit" }).click();
+	await page.locator("#user-name").fill("E2E Other Renamed");
+	await page.getByRole("button", { name: "Save", exact: true }).click();
+	await expect(page.getByRole("heading", { name: "E2E Other Renamed" })).toBeVisible();
+
+	// Removing their cohort asks first; cancelling leaves the form open and nothing saved.
+	await page.getByRole("button", { name: "Edit" }).click();
+	await page.locator("#user-name").fill("E2E Other");
+	await page.locator("#user-cohort").click();
+	await page.getByRole("option", { name: "Not enrolled" }).click();
+	await page.getByRole("button", { name: "Save", exact: true }).click();
+	await expect(page.getByRole("alertdialog")).toContainText("be removed from E2E Cohort");
+	await page.getByRole("alertdialog").getByRole("button", { name: "Cancel" }).click();
+
+	// Keep the cohort and just restore the name.
+	await page.locator("#user-cohort").click();
+	await page.getByRole("option", { name: "E2E Cohort" }).click();
+	await page.getByRole("button", { name: "Save", exact: true }).click();
+	await expect(page.getByRole("heading", { name: "E2E Other", exact: true })).toBeVisible();
+	await expect(page.getByText("E2E Cohort").first()).toBeVisible();
+});
+
+test("survey responses link to each participant's profile", async ({ page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/surveys/2");
+	await page.getByRole("tab", { name: /^Responses/ }).click();
+	await page.getByRole("link", { name: /Rae Responder/ }).click();
+	await expect(page).toHaveURL(/\/admin\/users\/\d+$/);
+	await expect(page.getByRole("heading", { name: "Rae Responder" })).toBeVisible();
+	await expect(page.getByText(/Submitted \d/).first()).toBeVisible();
 });

@@ -29,6 +29,7 @@ function QuestionsEditor({
 	const [saving, setSaving] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [savedAt, setSavedAt] = useState<Date | null>(null);
+	const [confirmingSave, setConfirmingSave] = useState(false);
 	const dirty = JSON.stringify(draft) !== JSON.stringify(survey);
 
 	function updateQuestion(index: number, changes: Partial<SurveyQuestion>) {
@@ -36,8 +37,18 @@ function QuestionsEditor({
 		setSavedAt(null);
 	}
 
-	async function handleSave(e: FormEvent) {
+	function handleSubmit(e: FormEvent) {
 		e.preventDefault();
+		// Edits reach participants who've already answered, so double-check before changing a live survey.
+		if (responseCount > 0) {
+			setConfirmingSave(true);
+			return;
+		}
+		save();
+	}
+
+	async function save() {
+		setConfirmingSave(false);
 		setSaving(true);
 		setError(null);
 		try {
@@ -58,7 +69,7 @@ function QuestionsEditor({
 	}
 
 	return (
-		<form onSubmit={handleSave} className="flex flex-col gap-4">
+		<form onSubmit={handleSubmit} className="flex flex-col gap-4">
 			{responseCount > 0 && (
 				<p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
 					{responseCount} participant{responseCount === 1 ? " has" : "s have"} already answered this survey.
@@ -167,6 +178,16 @@ function QuestionsEditor({
 					<span role="status" className="text-sm text-green-700">Saved.</span>
 				) : null}
 			</div>
+
+			{confirmingSave && (
+				<ConfirmDialog
+					title="Save changes to this survey?"
+					message={`${responseCount} participant${responseCount === 1 ? " has" : "s have"} already answered. Their answers stay as they are, but anyone answering from now on will see the new wording.`}
+					confirmLabel="Save changes"
+					onConfirm={save}
+					onCancel={() => setConfirmingSave(false)}
+				/>
+			)}
 		</form>
 	);
 }
@@ -244,8 +265,10 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 								{responses.map((r) => (
 									<tr key={r.id} className="border-b border-gray-100 align-top last:border-0">
 										<td className="px-4 py-3">
-											<p className="whitespace-nowrap font-semibold text-ink">{r.full_name || `#${r.participant_id}`}</p>
-											<p className="whitespace-nowrap text-xs text-muted">{r.email}</p>
+											<Link href={`/admin/users/${r.participant_id}`} className="group block">
+												<p className="whitespace-nowrap font-semibold text-ink group-hover:text-brand-blue group-hover:underline">{r.full_name || `#${r.participant_id}`}</p>
+												<p className="whitespace-nowrap text-xs text-muted">{r.email}</p>
+											</Link>
 										</td>
 										<td className="whitespace-nowrap px-4 py-3 text-ink-soft">{r.cohort || "—"}</td>
 										<td className="whitespace-nowrap px-4 py-3 text-ink-soft">

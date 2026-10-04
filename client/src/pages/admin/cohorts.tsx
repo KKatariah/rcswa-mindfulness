@@ -23,9 +23,20 @@ function CohortForm({
 	const [form, setForm] = useState(initial);
 	const [error, setError] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
+	const [confirmingStartChange, setConfirmingStartChange] = useState(false);
 
-	async function handleSubmit(e: FormEvent) {
+	function handleSubmit(e: FormEvent) {
 		e.preventDefault();
+		// Module unlock dates are counted from the start date, so moving it on an existing cohort is confirmed first.
+		if (initial.start_date && form.start_date !== initial.start_date) {
+			setConfirmingStartChange(true);
+			return;
+		}
+		save();
+	}
+
+	async function save() {
+		setConfirmingStartChange(false);
 		setError(null);
 		setSubmitting(true);
 		try {
@@ -107,6 +118,16 @@ function CohortForm({
 					Cancel
 				</button>
 			</div>
+
+			{confirmingStartChange && (
+				<ConfirmDialog
+					title="Change the start date?"
+					message="Every module's unlock date for students in this cohort is counted from the start date, so this will move when modules open for them, including any already unlocked."
+					confirmLabel="Change start date"
+					onConfirm={save}
+					onCancel={() => setConfirmingStartChange(false)}
+				/>
+			)}
 		</form>
 	);
 }

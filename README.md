@@ -108,14 +108,14 @@ next run.
 ### 5. Content setup workflow
 
 1. Create modules and content items while `is_published = False`.  
-   Editing `day_offset` on unpublished items does not notify anyone.
-2. Run the schedule check to confirm every audio item has a `day_offset` before
-   students are enrolled:
+   Editing unpublished items does not notify anyone.
+2. Give every week an audio item. Each day of a running week, students get one
+   meditation reminder for that week's first audio item. Check nothing is
+   missing before students are enrolled:
    ```bash
    python manage.py send_due_reminders --verify
    ```
-   This exits non-zero and prints any gaps (unscheduled items, missing days,
-   duplicate offsets). Fix all issues before going live.
+   This exits non-zero and lists any published week with no audio item.
 3. Publish the module. Students in currently active cohorts who can already open
    that week receive a single S21 content-update notification. Students in cohorts
    that have not started yet, or for whom the week is still locked, are excluded;
