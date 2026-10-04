@@ -1,6 +1,8 @@
-from datetime import date
+from datetime import timedelta
 
 from django.conf import settings
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.db.models import Count, Q
 from django.utils import timezone
 from rest_framework import serializers
@@ -33,6 +35,22 @@ class RegisterSerializer(serializers.ModelSerializer):
         model = User
         fields = ["email", "full_name", "password"]
 
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if User.objects.filter(email__iexact=value).exists():
+            raise serializers.ValidationError("An account with this email already exists.")
+        return value
+
+    def validate(self, attrs):
+        # Run AUTH_PASSWORD_VALIDATORS; the unsaved user lets the similarity
+        # check compare the password against the email and name.
+        candidate = User(email=attrs.get("email", ""), full_name=attrs.get("full_name", ""))
+        try:
+            validate_password(attrs["password"], user=candidate)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError({"password": list(exc.messages)})
+        return attrs
+
     def create(self, validated_data):
         return User.objects.create_user(
             email=validated_data["email"],
@@ -53,6 +71,19 @@ class CohortSerializer(serializers.ModelSerializer):
         end = attrs.get("end_date", getattr(self.instance, "end_date", None))
         if start and end and end <= start:
             raise serializers.ValidationError({"end_date": "end_date must be after start_date."})
+        instance = self.instance
+        if (
+            instance
+            and "start_date" in attrs
+            and attrs["start_date"] != instance.start_date
+            and instance.start_date <= timezone.localdate()
+            and instance.enrollments.filter(status=Enrollment.Status.ACTIVE).exists()
+        ):
+            # Moving the start date would shift every member's unlock dates and
+            # could re-lock weeks they have already opened.
+            raise serializers.ValidationError(
+                {"start_date": "This cohort has started and has active students, so its start date can't change."}
+            )
         return attrs
 
 
@@ -62,8 +93,23 @@ class EnrollmentSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Enrollment
-        fields = ["id", "user", "user_email", "user_full_name", "cohort", "current_week", "status", "enrolled_at"]
+        fields = ["id", "user", "user_email", "user_full_name", "cohort", "status", "enrolled_at"]
         read_only_fields = ["enrolled_at"]
+
+    def validate(self, attrs):
+        # One active enrollment per user: unlock dates, reminders and notices all
+        # assume a single cohort. Move a user by changing the cohort instead.
+        user = attrs.get("user", getattr(self.instance, "user", None))
+        new_status = attrs.get("status", getattr(self.instance, "status", Enrollment.Status.ACTIVE))
+        if user and new_status == Enrollment.Status.ACTIVE:
+            others = Enrollment.objects.filter(user=user, status=Enrollment.Status.ACTIVE)
+            if self.instance:
+                others = others.exclude(pk=self.instance.pk)
+            if others.exists():
+                raise serializers.ValidationError(
+                    {"status": "This user is already active in another cohort. Move or withdraw that enrollment first."}
+                )
+        return attrs
 
     def get_user_email(self, obj):
         return obj.user.email if obj.user else None
@@ -100,33 +146,80 @@ class AdditionalResourceSerializer(serializers.ModelSerializer):
 class ContentItemSerializer(serializers.ModelSerializer):
     class Meta:
         model = ContentItem
-        fields = ["id", "module", "title", "type", "provider", "embed_url", "body", "display_order"]
+        fields = ["id", "module", "title", "type", "provider", "embed_url", "display_order", "day_offset"]
+
+    def validate_day_offset(self, value):
+        # 0 = first day of the module's week; send_due_reminders only ever looks for 0-6.
+        if value is not None and value > 6:
+            raise serializers.ValidationError("Reminder day must be between 0 and 6.")
+        return value
 
     def validate(self, attrs):
-        type_ = attrs.get("type", getattr(self.instance, "type", None))
-        if type_ == ContentItem.ContentType.TEXT:
-            body = attrs.get("body", getattr(self.instance, "body", ""))
-            if not body or not body.strip():
-                raise serializers.ValidationError({"body": "Text content items require a non-empty body."})
-        else:
-            provider = attrs.get("provider", getattr(self.instance, "provider", ""))
-            embed_url = attrs.get("embed_url", getattr(self.instance, "embed_url", ""))
-            if not provider:
-                raise serializers.ValidationError({"provider": "Video/audio content items require a provider."})
-            if not embed_url:
-                raise serializers.ValidationError({"embed_url": "Video/audio content items require an embed_url."})
+        provider = attrs.get("provider", getattr(self.instance, "provider", ""))
+        embed_url = attrs.get("embed_url", getattr(self.instance, "embed_url", ""))
+        if not provider:
+            raise serializers.ValidationError({"provider": "Content items require a provider."})
+        if not embed_url:
+            raise serializers.ValidationError({"embed_url": "Content items require an embed_url."})
         return attrs
+
+    def create(self, validated_data):
+        # New items go to the end of their module unless a position is given.
+        if "display_order" not in validated_data:
+            last = validated_data["module"].content_items.order_by("-display_order").first()
+            validated_data["display_order"] = last.display_order + 1 if last else 1
+        return super().create(validated_data)
+
+
+def _cohort_start_date(user):
+    """Start date of the user's most recent active cohort, or None. Cached on the user for the request."""
+    if not hasattr(user, "_cohort_start_date"):
+        enrollment = (
+            Enrollment.objects
+            .filter(user=user, status=Enrollment.Status.ACTIVE)
+            .select_related("cohort")
+            .order_by("-enrolled_at")
+            .first()
+        )
+        user._cohort_start_date = enrollment.cohort.start_date if enrollment else None
+    return user._cohort_start_date
+
+
+def module_unlock_date(module, user):
+    """Week N opens (N-1) weeks after the user's cohort starts. None when the user has no active cohort."""
+    start = _cohort_start_date(user)
+    return start + timedelta(weeks=module.week_number - 1) if start else None
+
+
+def module_is_unlocked(module, user):
+    if getattr(user, "role", None) == "admin" or user.is_staff:
+        return True  # admins can open any module early to prepare content
+    if not module.is_published:
+        return False
+    unlock_date = module_unlock_date(module, user)
+    return unlock_date is not None and unlock_date <= timezone.localdate()
 
 
 class ModuleSerializer(serializers.ModelSerializer):
+    unlock_at = serializers.SerializerMethodField()
     is_unlocked = serializers.SerializerMethodField()
 
+    def _user(self):
+        request = self.context.get("request")
+        return request.user if request else None
+
+    def get_unlock_at(self, obj):
+        user = self._user()
+        unlock_date = module_unlock_date(obj, user) if user else None
+        return unlock_date.isoformat() if unlock_date else None
+
     def get_is_unlocked(self, obj):
-        return obj.unlock_at is None or obj.unlock_at <= timezone.now()
+        user = self._user()
+        return bool(user) and module_is_unlocked(obj, user)
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        if not self.get_is_unlocked(instance):
+        if not data["is_unlocked"]:
             data["content_items"] = []
             data["resources"] = []
         return data
@@ -144,6 +237,7 @@ class ModuleSerializer(serializers.ModelSerializer):
             "is_unlocked",
             "title",
             "description",
+            "summary",
             "is_published",
             "content_items",
             "resources",
@@ -160,8 +254,7 @@ class ModuleSummarySerializer(serializers.ModelSerializer):
 
 class ContentCompletionSerializer(serializers.ModelSerializer):
     def validate_content_item(self, item):
-        module = item.module
-        if not module.is_published or (module.unlock_at and module.unlock_at > timezone.now()):
+        if not module_is_unlocked(item.module, self.context["request"].user):
             raise serializers.ValidationError("This module is not available yet.")
         return item
 
@@ -276,7 +369,7 @@ def _is_program_active(today=None):
     ever been created, there is no "programme" to have ended yet, so stay open."""
     if not Cohort.objects.exists():
         return True
-    today = today or date.today()
+    today = today or timezone.localdate()
     return Cohort.objects.filter(start_date__lte=today, end_date__gte=today).exists()
 
 
@@ -284,7 +377,7 @@ def _pick_signup_cohort(today=None):
     """The cohort a new signup should be auto-enrolled into: the currently
     active one, or if none is active, the soonest upcoming one. None if
     neither exists."""
-    today = today or date.today()
+    today = today or timezone.localdate()
     active = (
         Cohort.objects.filter(start_date__lte=today, end_date__gte=today)
         .order_by("start_date")
@@ -431,17 +524,37 @@ class AdminUserUpdateSerializer(serializers.ModelSerializer):
         fields = ["id", "email", "full_name", "display_name", "role"]
         read_only_fields = ["id"]
 
+    def validate_role(self, value):
+        # Stops admins locking everyone out of the admin portal by mistake.
+        request = self.context.get("request")
+        if not self.instance or value == User.Role.ADMIN or self.instance.role != User.Role.ADMIN:
+            return value
+        if request and self.instance.pk == request.user.pk:
+            raise serializers.ValidationError("You can't remove your own admin role.")
+        if not User.objects.filter(role=User.Role.ADMIN).exclude(pk=self.instance.pk).exists():
+            raise serializers.ValidationError("There must always be at least one admin.")
+        return value
+
+    def validate_email(self, value):
+        value = value.strip().lower()
+        if User.objects.filter(email__iexact=value).exclude(pk=self.instance.pk if self.instance else None).exists():
+            raise serializers.ValidationError("A user with this email already exists.")
+        return value
+
 
 # ── Surveys ────────────────────────────────────────────────────────────────────
 
 def _survey_is_unlocked(survey, user):
     """Return True if every ContentItem in the survey's module is completed by user."""
+    # Once submitted, content added to the module later must not re-lock it.
+    if SurveyResponse.objects.filter(user=user, survey=survey).exists():
+        return True
     if survey.module_id is None:
         # Weekly surveys always require a module; guard against misconfigured data.
         if survey.type == Survey.SurveyType.WEEKLY:
             return False
         return True
-    if not survey.module.is_published or (survey.module.unlock_at and survey.module.unlock_at > timezone.now()):
+    if not module_is_unlocked(survey.module, user):
         return False
     required_ids = set(
         ContentItem.objects.filter(module_id=survey.module_id).values_list("id", flat=True)
@@ -453,6 +566,10 @@ def _survey_is_unlocked(survey, user):
         .values_list("content_item_id", flat=True)
     )
     return required_ids == completed_ids
+
+
+# Generous cap on free-text answers; the form asks for 100-250 words.
+LONGTEXT_MAX_CHARS = 5000
 
 
 def _validate_survey_answers(questions, answers):
@@ -495,6 +612,8 @@ def _validate_survey_answers(questions, answers):
         elif qtype == "longtext":
             if not isinstance(val, str) or not val.strip():
                 errors.append(f"Question {qid!r}: expected a non-empty string.")
+            elif len(val) > LONGTEXT_MAX_CHARS:
+                errors.append(f"Question {qid!r}: must be at most {LONGTEXT_MAX_CHARS} characters.")
 
     return errors
 
@@ -511,13 +630,15 @@ class SurveySerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return False
+        if self.get_has_responded(obj):
+            return True
         completed_ids = self.context.get("completed_ids")
         if completed_ids is not None:
             if obj.module_id is None:
                 if obj.type == Survey.SurveyType.WEEKLY:
                     return False
                 return True
-            if not obj.module.is_published or (obj.module.unlock_at and obj.module.unlock_at > timezone.now()):
+            if not module_is_unlocked(obj.module, request.user):
                 return False
             required_ids = {ci.id for ci in obj.module.content_items.all()}
             return not required_ids or required_ids <= completed_ids
@@ -774,7 +895,15 @@ class ProfileUpdateSerializer(serializers.ModelSerializer):
 
 class ChangePasswordSerializer(serializers.Serializer):
     current_password = serializers.CharField(write_only=True)
-    new_password = serializers.CharField(write_only=True, min_length=8)
+    new_password = serializers.CharField(write_only=True)
+
+    def validate_new_password(self, value):
+        user = self.context["request"].user if "request" in self.context else None
+        try:
+            validate_password(value, user=user)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value
 
 
 # ── Push notifications ─────────────────────────────────────────────────────────
@@ -803,6 +932,12 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
             "daily_survey_reminder",
         ]
         read_only_fields = ["id"]
+
+    def validate_reminder_time(self, value):
+        # send_due_reminders runs hourly and compares hours only.
+        if value.minute or value.second:
+            raise serializers.ValidationError("Reminder time must be on the hour (e.g. 08:00).")
+        return value
 
 
 # –– User profiles –––––––––––––––––––––––––––––––––––––––––––––––––––––––––

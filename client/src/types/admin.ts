@@ -10,11 +10,12 @@ export type AdminContentItem = {
 	id: number;
 	module: number;
 	title: string;
-	type: "video" | "audio" | "text";
+	type: "video" | "audio";
 	provider: "youtube" | "soundcloud" | "";
 	embed_url: string;
-	body: string;
 	display_order: number;
+	// Day of the module's week (0 = Day 1) that the audio reminder is sent; null = no reminder.
+	day_offset: number | null;
 };
 
 export type AdminModule = {
@@ -22,6 +23,7 @@ export type AdminModule = {
 	week_number: number;
 	title: string;
 	description: string;
+	summary: string;
 	is_published: boolean;
 	is_unlocked: boolean;
 	content_items: AdminContentItem[];
@@ -45,7 +47,6 @@ export type Enrollment = {
 	user_email: string;
 	user_full_name: string;
 	cohort: number;
-	current_week: number;
 	status: "pending" | "active" | "completed" | "withdrawn";
 	enrolled_at: string;
 };

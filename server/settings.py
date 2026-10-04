@@ -33,7 +33,16 @@ SECRET_KEY = 'REMOVED#'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+
+def _env_list(name, default=""):
+    """Comma-separated env var -> list, ignoring blanks and stray spaces. Unset or empty uses default."""
+    return [v.strip() for v in (os.environ.get(name) or default).split(",") if v.strip()]
+
+
+# Hosts, CORS and CSRF origins come from env vars of the same name (comma-separated).
+# Setting one REPLACES its defaults, so list localhost too if you still need it, e.g.
+#   ALLOWED_HOSTS=localhost,127.0.0.1,xxx.trycloudflare.com
+ALLOWED_HOSTS = _env_list("ALLOWED_HOSTS", "localhost,127.0.0.1,[::1]")
 
 
 # Application definition
@@ -66,10 +75,13 @@ MIDDLEWARE = [
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
 
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-]
+# Origins include the protocol, e.g. http://localhost:3000,https://xxx.trycloudflare.com
+CORS_ALLOWED_ORIGINS = _env_list("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://127.0.0.1:3000")
+# Lets the admin dashboard read the filename of CSV downloads.
+CORS_EXPOSE_HEADERS = ["Content-Disposition"]
+
+# Needed for HTTPS requests from tunnels, staging or production.
+CSRF_TRUSTED_ORIGINS = _env_list("CSRF_TRUSTED_ORIGINS")
 
 ROOT_URLCONF = 'server.urls'
 
@@ -126,7 +138,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Australia/Perth'
 
 USE_I18N = True
 
@@ -181,6 +193,8 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.SessionAuthentication',
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "forum_post": "1/min",
+        # Matches the client cooldown in client/src/pages/forum.tsx (3 posts per 30s).
+        "forum_post": "6/min",
+        "auth": "10/min",
     },
 }

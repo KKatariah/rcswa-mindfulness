@@ -1,12 +1,16 @@
+import unicodedata
+
 from django.conf import settings as django_settings
+from django.http import HttpResponse
 from django.shortcuts import render
 from django.utils import timezone
 from django.db import transaction
 from django.db.models import Prefetch
 from rest_framework import mixins, status, viewsets
-from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
+from rest_framework.throttling import ScopedRateThrottle
 from django.contrib.auth import authenticate
 from rest_framework.authtoken.models import Token
 from .serializers import ProfileUpdateSerializer, ChangePasswordSerializer
@@ -33,6 +37,8 @@ from .models import (
 
 from .notifications import notify_survey_unlocked
 from .permissions import IsAdminOrStaff, IsAdminOrSelf
+from .throttles import AuthRateThrottle
+from .exports import survey_responses_csv
 
 
 from google.oauth2 import id_token
@@ -69,6 +75,7 @@ from .serializers import (
     UserDisplayNameSerializer,
     _is_program_active,
     _pick_signup_cohort,
+    module_is_unlocked,
     _survey_is_unlocked,
     _cohort_breakdown,
     _module_completion_stats,
@@ -128,6 +135,7 @@ def _auto_enroll_new_user(user):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def register_view(request):
     serializer = RegisterSerializer(data=request.data)
 
@@ -151,17 +159,20 @@ def register_view(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def login_view(request):
     email = request.data.get("email")
     password = request.data.get("password")
 
-    if not email or not password:
+    if not isinstance(email, str) or not isinstance(password, str) or not email or not password:
         return Response(
             {"error": "Email and password are required."},
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    user = authenticate(request, email=email, password=password)
+    # Emails are matched case-insensitively; authenticate() needs the stored spelling.
+    match = User.objects.filter(email__iexact=email.strip()).first()
+    user = authenticate(request, email=match.email, password=password) if match else None
 
     if user is None:
         return Response(
@@ -181,23 +192,6 @@ def login_view(request):
     )
 
 
-@api_view(["GET"])
-@permission_classes([IsAuthenticated])
-def current_user_view(request):
-    user = request.user
-
-    return Response(
-        {
-            "user": {
-                "id": user.id,
-                "email": user.email,
-                "full_name": user.full_name,
-            }
-        },
-        status=status.HTTP_200_OK,
-    )
-
-
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def logout_view(request):
@@ -210,10 +204,11 @@ def logout_view(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def google_login_view(request):
     token = request.data.get("credential")
 
-    if not token:
+    if not isinstance(token, str) or not token:
         return Response(
             {"error": "Google credential token is required."},
             status=status.HTTP_400_BAD_REQUEST,
@@ -229,7 +224,7 @@ def google_login_view(request):
             status=status.HTTP_401_UNAUTHORIZED,
         )
 
-    email = idinfo.get("email")
+    email = (idinfo.get("email") or "").strip().lower()
     full_name = idinfo.get("name", "")
 
     if not email:
@@ -238,14 +233,16 @@ def google_login_view(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    user, created = User.objects.get_or_create(
-        email=email,
-        defaults={"full_name": full_name, "auth_provider": "google"},
-    )
+    # An unverified address could belong to someone else, and we match accounts by email.
+    if not idinfo.get("email_verified"):
+        return Response(
+            {"error": "Your Google email address isn't verified."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
-    if created:
-        user.set_unusable_password()
-        user.save()
+    user = User.objects.filter(email__iexact=email).first()
+    if user is None:
+        user = User.objects.create_user(email=email, full_name=full_name, auth_provider="google")
         _auto_enroll_new_user(user)
 
     token_obj, _ = Token.objects.get_or_create(user=user)
@@ -286,7 +283,7 @@ class ModuleViewSet(viewsets.ModelViewSet):
 
     def retrieve(self, request, *args, **kwargs):
         module = self.get_object()
-        if module.unlock_at and module.unlock_at > timezone.now():
+        if not module_is_unlocked(module, request.user):
             raise PermissionDenied("This module is not available yet.")
         return Response(self.get_serializer(module).data)
 
@@ -295,22 +292,9 @@ class ModuleViewSet(viewsets.ModelViewSet):
         modules = Module.objects.filter(is_published=True).order_by("week_number")
         return Response(ModuleSummarySerializer(modules, many=True).data)
 
-    serializer_class = ModuleSerializer
-    queryset = (
-        Module.objects
-        .filter(is_published=True)
-        .prefetch_related(
-            # display_order already exists on ContentItem; secondary sort by id keeps
-            # ordering stable when display_order values tie (e.g. all default to 0).
-            Prefetch(
-                "content_items",
-                queryset=ContentItem.objects.order_by("display_order", "id"),
-            ),
-            "resources",
-        )
-    )
-
     def get_permissions(self):
+        if self.action == "summary":
+            return [AllowAny()]
         if self.action in ("create", "update", "partial_update", "destroy"):
             return [IsAuthenticated(), IsAdminOrStaff()]
         return [IsAuthenticated()]
@@ -323,10 +307,26 @@ class ContentItemViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = ContentItem.objects.select_related("module").order_by("module", "display_order")
-        module_id = self.request.query_params.get("module")
+        module_id = _id_param(self.request, "module")
         if module_id:
             qs = qs.filter(module_id=module_id)
         return qs
+
+    @action(detail=False, methods=["post"])
+    def reorder(self, request):
+        """Set a module's item order in one go: {"module": id, "ids": [item ids in display order]}."""
+        module_id = request.data.get("module")
+        ids = request.data.get("ids")
+        if not isinstance(ids, list):
+            raise ValidationError({"ids": "Expected a list of content item ids."})
+        items = {item.id: item for item in ContentItem.objects.filter(module_id=module_id)}
+        if sorted(ids) != sorted(items):
+            raise ValidationError({"ids": "Must list every content item in the module exactly once."})
+        with transaction.atomic():
+            for position, item_id in enumerate(ids, start=1):
+                items[item_id].display_order = position
+            ContentItem.objects.bulk_update(items.values(), ["display_order"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class CohortViewSet(viewsets.ModelViewSet):
@@ -362,7 +362,7 @@ class EnrollmentViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         qs = Enrollment.objects.select_related("user", "cohort").order_by("-enrolled_at")
-        cohort_id = self.request.query_params.get("cohort")
+        cohort_id = _id_param(self.request, "cohort")
         if cohort_id:
             qs = qs.filter(cohort_id=cohort_id)
         status_param = self.request.query_params.get("status")
@@ -437,6 +437,20 @@ class ContentViewViewSet(
 
 # ── Forum ──────────────────────────────────────────────────────────────────────
 
+def _id_param(request, name):
+    """An optional numeric id from the query string; a 400, not a 500, if it isn't one."""
+    raw = request.query_params.get(name)
+    if raw in (None, ""):
+        return None
+    try:
+        value = int(raw)
+    except ValueError:
+        raise ValidationError({name: "Must be a whole number."})
+    if value < 1:
+        raise ValidationError({name: "Must be a positive id."})
+    return value
+
+
 def _derive_title(body: str) -> str:
     """First ≤60 chars of body, trimmed at the nearest word boundary."""
     text = body.strip()
@@ -446,7 +460,26 @@ def _derive_title(body: str) -> str:
         return text
     truncated = text[:60]
     boundary = truncated.rfind(" ")
-    return truncated[:boundary] if boundary > 0 else truncated
+    if boundary > 0:
+        return truncated[:boundary]
+    # No space to cut at: back off so we don't split an emoji or accented letter.
+    cut = 60
+    while cut > 1 and (_attaches_to_previous(text[cut]) or text[cut - 1] == "\u200d"):
+        cut -= 1
+    return text[:cut]
+
+
+def _attaches_to_previous(ch: str) -> bool:
+    """True for characters that belong to the one before them: zero-width joiner,
+    variation selectors, skin-tone modifiers, tag characters and combining marks."""
+    code = ord(ch)
+    return (
+        code == 0x200D
+        or 0xFE00 <= code <= 0xFE0F
+        or 0x1F3FB <= code <= 0x1F3FF
+        or 0xE0020 <= code <= 0xE007F
+        or unicodedata.combining(ch) != 0
+    )
 
 
 class IsAuthorOrAdmin(BasePermission):
@@ -463,6 +496,11 @@ class IsAuthorOrAdmin(BasePermission):
 
 class ForumThreadViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    throttle_scope = "forum_post"
+
+    def get_throttles(self):
+        # Only creating threads/posts is rate limited; reads and edits are not.
+        return [ScopedRateThrottle()] if self.action == "create" else []
 
     def get_queryset(self):
         return (
@@ -532,6 +570,11 @@ class ForumPostViewSet(
 ):
     http_method_names = ["post", "patch", "delete", "head", "options"]
     serializer_class = ForumPostSerializer
+    throttle_scope = "forum_post"
+
+    def get_throttles(self):
+        # Only creating threads/posts is rate limited; reads and edits are not.
+        return [ScopedRateThrottle()] if self.action == "create" else []
 
     def get_queryset(self):
         return ForumPost.objects.filter(is_deleted=False).select_related("author")
@@ -621,6 +664,11 @@ class UserProfileViewSet(
     def perform_destroy(self, instance):
         if instance.pk == self.request.user.pk:
             raise PermissionDenied("You can't delete your own account.")
+        if (
+            instance.role == User.Role.ADMIN
+            and not User.objects.filter(role=User.Role.ADMIN).exclude(pk=instance.pk).exists()
+        ):
+            raise PermissionDenied("There must always be at least one admin.")
         instance.delete()
 
 
@@ -657,12 +705,36 @@ class SurveyViewSet(viewsets.ReadOnlyModelViewSet):
             )
         return ctx
 
+    @action(detail=False, methods=["get"], url_path="export", permission_classes=[IsAuthenticated, IsAdminOrStaff])
+    def export(self, request):
+        """Admin-only CSV of survey responses.
+
+        ?survey=<id>  limit to one survey (default: all surveys)
+        ?identify=1   include participant names and emails (default: user id only)
+        """
+        surveys = Survey.objects.select_related("module").order_by("module__week_number", "code")
+        survey_id = _id_param(request, "survey")
+        if survey_id:
+            surveys = surveys.filter(pk=survey_id)
+            if not surveys.exists():
+                return Response({"detail": "Survey not found."}, status=status.HTTP_404_NOT_FOUND)
+        include_identity = request.query_params.get("identify") in ("1", "true")
+
+        label = surveys.first().code if survey_id else "all"
+        filename = f"survey-responses-{label}-{timezone.localdate().isoformat()}.csv"
+        response = HttpResponse(
+            survey_responses_csv(surveys, include_identity=include_identity),
+            content_type="text/csv; charset=utf-8",
+        )
+        response["Content-Disposition"] = f'attachment; filename="{filename}"'
+        return response
+
     @action(detail=False, methods=["get"], url_path="module-responses")
     def module_responses(self, request):
         u = request.user
         if not (getattr(u, "role", None) == "admin" or u.is_staff):
             raise PermissionDenied()
-        module_id = request.query_params.get("module")
+        module_id = _id_param(request, "module")
         if not module_id:
             return Response(
                 {"detail": "module query parameter is required."},
@@ -898,7 +970,7 @@ def change_password_view(request):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
-    serializer = ChangePasswordSerializer(data=request.data)
+    serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
     if not serializer.is_valid():
         return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 

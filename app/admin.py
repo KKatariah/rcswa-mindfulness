@@ -79,7 +79,7 @@ class ForumThreadAdminForm(forms.ModelForm):
 
     class Meta:
         model = ForumThread
-        fields = "__all__"
+        fields = ("module", "content_item", "created_by", "title", "is_pinned", "pin_order", "opened_by")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)

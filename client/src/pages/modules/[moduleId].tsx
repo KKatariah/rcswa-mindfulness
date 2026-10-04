@@ -4,7 +4,7 @@ import Link from "next/link";
 import Head from "next/head";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
-import NextSession from "@/components/modules/NextSession";
+import UpcomingSession from "@/components/modules/UpcomingSession";
 import ModuleHeader from "@/components/modules/ModuleHeader";
 import ModuleContent from "@/components/modules/ModuleContent";
 import { useAuth } from "@/context/AuthContext";
@@ -163,12 +163,7 @@ export default function ModulePage() {
 			<Head>
 				<title>{module.title}</title>
 			</Head>
-			<AppShell
-				rightRail={
-					// Sample schedule until session data is connected.
-					<NextSession moduleTitle="Module Week 3" startsAt="2028-10-24T10:00:00+08:00" dateLabel="Tue, Oct 24" timeLabel="10:00 AM" />
-				}
-			>
+			<AppShell rightRail={<UpcomingSession />}>
 				<div className="flex min-w-0 flex-col rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 					<ModuleHeader
 						embedded

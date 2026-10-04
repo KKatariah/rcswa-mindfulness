@@ -4,6 +4,7 @@ import Head from "next/head";
 import Link from "next/link";
 import AppShell from "@/components/main/AppShell";
 import NextSession from "@/components/modules/NextSession";
+import UpcomingSession, { findUpcomingModule } from "@/components/modules/UpcomingSession";
 import { CheckIcon, PlayIcon, LockIcon } from "@/components/ui/icons";
 
 export default function ProgressPage() {
@@ -24,6 +25,7 @@ export default function ProgressPage() {
     return { id: module.id, number: module.week_number, title: module.title, status: !module.is_unlocked ? "locked" : progress.complete ? "completed" : "current", progress: progress.percentage, unlockAt: module.unlock_at };
   });
   const next = weeks.find((week) => week.status === "current");
+  const hasUpcoming = findUpcomingModule(modules) !== undefined;
   const completed = weeks.filter((week) => week.status === "completed").length;
   const percentage = Math.round((completed / weeks.length) * 100);
 
@@ -39,6 +41,8 @@ export default function ProgressPage() {
             <Link href={`/modules/${next.id}`} className="block rounded-[10px] focus-visible:outline-2 focus-visible:outline-brand-blue-dark">
               <NextSession compactOnMobile moduleTitle={`Week ${next.number}: ${next.title}`} />
             </Link>
+          ) : hasUpcoming ? (
+            <UpcomingSession modules={modules} />
           ) : <div className="rounded-[10px] bg-white p-5 text-sm text-muted">{completed === weeks.length ? "You’ve completed all available modules." : "Upcoming modules will become available on their unlock dates."}</div>
         }
       >
@@ -98,7 +102,7 @@ export default function ProgressPage() {
                 return (
                   <li key={week.number}>
                     {locked ? (
-                      <div title={week.unlockAt ? `Available ${new Date(week.unlockAt).toLocaleString()}` : undefined} aria-disabled="true" className="flex min-h-14 items-center gap-3 px-4 py-3 text-muted sm:px-5">{content}</div>
+                      <div title={week.unlockAt ? `Available ${new Date(`${week.unlockAt}T00:00`).toLocaleDateString()}` : undefined} aria-disabled="true" className="flex min-h-14 items-center gap-3 px-4 py-3 text-muted sm:px-5">{content}</div>
                     ) : (
                       <Link href={`/modules/${week.id}`} className="flex min-h-14 items-center gap-3 px-4 py-3 text-ink hover:bg-surface-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-blue-dark sm:px-5">{content}</Link>
                     )}

@@ -9,6 +9,7 @@ type SurveyQuestionsProps = {
 	formalQuestions?: ScaleQuestion[];
 	informalQuestions?: ScaleQuestion[];
 	onSubmit?: (answers: Record<number, number | string>) => void;
+	isSubmitting?: boolean;
 };
 
 const DEFAULT_FORMAL_QUESTIONS: ScaleQuestion[] = [
@@ -109,12 +110,17 @@ function ScaleQuestionGroup({
 	);
 }
 
+// Matches LONGTEXT_MAX_CHARS in app/serializers.py.
+const JOURNAL_MAX_CHARS = 5000;
+
 export default function SurveyQuestions({
 	formalQuestions = DEFAULT_FORMAL_QUESTIONS,
 	informalQuestions = DEFAULT_INFORMAL_QUESTIONS,
 	onSubmit,
+	isSubmitting = false,
 }: SurveyQuestionsProps) {
 	const [answers, setAnswers] = useState<Record<number, number | string>>({});
+	const journalWords = String(answers[13] ?? "").trim().split(/\s+/).filter(Boolean).length;
 
 	const updateAnswer = (questionId: number, value: number | string) => {
 		setAnswers((currentAnswers) => ({ ...currentAnswers, [questionId]: value }));
@@ -184,17 +190,23 @@ export default function SurveyQuestions({
 				<textarea
 					rows={4}
 					placeholder="Enter reflection..."
+					maxLength={JOURNAL_MAX_CHARS}
+					aria-describedby="journal-word-count"
 					className="mt-5 w-full resize-y rounded-xl border border-[#5b5a5a] bg-white px-3 py-3 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30 md:mt-6"
 					onChange={(event) => updateAnswer(13, event.target.value)}
 				/>
+				<p id="journal-word-count" className="mt-2 text-xs text-muted">
+					{journalWords} {journalWords === 1 ? "word" : "words"} (aim for 100-250)
+				</p>
 			</section>
 
 			<div className="flex justify-center pt-1 md:pt-2">
 				<button
 					type="submit"
+					disabled={isSubmitting}
 					className="inline-flex h-11 items-center justify-center rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50"
 				>
-					Submit survey
+					{isSubmitting ? "Submitting..." : "Submit survey"}
 				</button>
 			</div>
 		</form>

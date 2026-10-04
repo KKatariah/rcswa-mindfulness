@@ -5,12 +5,14 @@ from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.management import call_command
-from django.test import TestCase, override_settings
+from django.core.cache import cache
+from django.test import TestCase as DjangoTestCase, override_settings
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase as DRFAPITestCase
 from rest_framework.authtoken.models import Token
 
 from .models import (
+    AdditionalResource,
     Cohort,
     ContentCompletion,
     ContentItem,
@@ -30,6 +32,33 @@ from .serializers import ForumPostSerializer
 from .utils import gravatar_url
 
 User = get_user_model()
+
+
+class _ClearCacheMixin:
+    """Rate-limit counters live in the cache, which Django does not reset between tests."""
+
+    def _pre_setup(self):
+        super()._pre_setup()
+        cache.clear()
+
+
+class TestCase(_ClearCacheMixin, DjangoTestCase):
+    pass
+
+
+class APITestCase(_ClearCacheMixin, DRFAPITestCase):
+    pass
+
+
+def _enroll(*users):
+    """Put users in an active cohort that started a year ago, so every module week is unlocked."""
+    today = date.today()
+    cohort = Cohort.objects.create(
+        name="Enrolled Cohort", year=today.year,
+        start_date=today - timedelta(days=365), end_date=today + timedelta(days=365),
+    )
+    for user in users:
+        Enrollment.objects.create(user=user, cohort=cohort, status=Enrollment.Status.ACTIVE)
 
 
 class ModuleListTests(APITestCase):
@@ -86,6 +115,19 @@ class ModuleListTests(APITestCase):
         self.assertEqual(items[0]["title"], "First item")
         self.assertEqual(items[1]["display_order"], 2)
         self.assertEqual(items[1]["title"], "Second item")
+
+
+class ModuleSummaryPublicTests(APITestCase):
+    def setUp(self):
+        Module.objects.create(week_number=1, title="Week 1", is_published=True)
+
+    def test_anonymous_summary_returns_200(self):
+        resp = self.client.get("/api/modules/summary/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_anonymous_module_list_returns_401(self):
+        resp = self.client.get("/api/modules/")
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
 # ── Embed URL normalization ───────────────────────────────────────────────────────
@@ -204,6 +246,7 @@ class ContentCompletionTests(APITestCase):
         self.student2 = User.objects.create_user(
             email="s2@test.local", password="testpass"
         )
+        _enroll(self.student1, self.student2)
         module = Module.objects.create(
             week_number=1, title="Week 1", is_published=True
         )
@@ -281,6 +324,25 @@ class ForumTests(APITestCase):
         self.reply = ForumPost.objects.create(
             thread=self.thread, author=self.other, body="A reply"
         )
+
+    def test_post_creation_rate_limited_but_edits_are_not(self):
+        self.client.force_login(self.other)
+        for i in range(6):
+            resp = self.client.post(
+                "/api/forum/posts/", {"thread": self.thread.pk, "body": f"reply {i}"},
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        resp = self.client.post(
+            "/api/forum/posts/", {"thread": self.thread.pk, "body": "one too many"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        resp = self.client.patch(
+            f"/api/forum/posts/{self.reply.pk}/", {"body": "still editable"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
     # ── S24/anonymous rejection ────────────────────────────────────────────────
 
@@ -932,6 +994,7 @@ class SurveyTests(APITestCase):
             email="admin@test.local", password="testpass",
             full_name="Admin User", role=User.Role.ADMIN,
         )
+        _enroll(self.student, self.other)
         self.module = Module.objects.create(
             week_number=1, title="Week 1", is_published=True
         )
@@ -1261,6 +1324,7 @@ class SurveyFixtureFlowTests(APITestCase):
             password="testpass",
             full_name="Fixture Student",
         )
+        _enroll(self.student)
 
     def test_week1_survey_locked_unlocked_and_submittable(self):
         """
@@ -1333,17 +1397,84 @@ class AuthRoleTests(APITestCase):
     def test_register_response_includes_role(self):
         resp = self.client.post(
             "/api/register/",
-            {"email": "new@test.local", "full_name": "New User", "password": "testpass"},
+            {"email": "new@test.local", "full_name": "New User", "password": "Calm-River-42"},
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         self.assertEqual(resp.data["user"]["role"], "student")
+
+    def test_register_rejects_weak_passwords(self):
+        for password in ["a", "password1", "12345678", "newuser123"]:
+            resp = self.client.post(
+                "/api/register/",
+                {"email": "newuser@test.local", "full_name": "New User", "password": password},
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, password)
+            self.assertIn("password", resp.data)
+        self.assertFalse(User.objects.filter(email="newuser@test.local").exists())
+
+    def test_change_password_rejects_weak_password(self):
+        self.client.force_login(self.student)
+        resp = self.client.post(
+            "/api/change-password/",
+            {"current_password": "testpass", "new_password": "password1"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("new_password", resp.data)
+
+    def test_login_rate_limited_after_10_attempts(self):
+        for _ in range(10):
+            resp = self.client.post(
+                "/api/login/",
+                {"email": "student@test.local", "password": "wrong"},
+                content_type="application/json",
+            )
+            self.assertNotEqual(resp.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+        resp = self.client.post(
+            "/api/login/",
+            {"email": "student@test.local", "password": "testpass"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
     def test_current_user_returns_role(self):
         self.client.force_login(self.student)
         resp = self.client.get("/api/user/")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         self.assertEqual(resp.data["user"]["role"], "student")
+
+
+class RoleStaffSyncTests(TestCase):
+    """User.save() keeps is_staff in step with role."""
+
+    def test_promoting_to_admin_sets_is_staff(self):
+        user = User.objects.create_user(email="promote@test.local", password="testpass")
+        self.assertFalse(user.is_staff)
+        user.role = User.Role.ADMIN
+        user.save()
+        user.refresh_from_db()
+        self.assertTrue(user.is_staff)
+
+    def test_demoting_admin_clears_is_staff(self):
+        user = User.objects.create_user(
+            email="demote@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.assertTrue(user.is_staff)
+        user.role = User.Role.STUDENT
+        user.save()
+        user.refresh_from_db()
+        self.assertFalse(user.is_staff)
+
+    def test_superuser_is_always_admin(self):
+        user = User.objects.create_superuser(email="super@test.local", password="testpass")
+        self.assertEqual(user.role, User.Role.ADMIN)
+        user.role = User.Role.STUDENT
+        user.save()
+        user.refresh_from_db()
+        self.assertEqual(user.role, User.Role.ADMIN)
+        self.assertTrue(user.is_staff)
 
 
 # ── Admin portal: Cohort CRUD permissions ────────────────────────────────────────
@@ -1396,6 +1527,225 @@ class CohortAdminTests(APITestCase):
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+# ── Admin portal: user management ────────────────────────────────────────────────
+
+class UserManagementAdminTests(APITestCase):
+    def setUp(self):
+        self.student = User.objects.create_user(email="student@test.local", password="testpass")
+        self.other = User.objects.create_user(email="other@test.local", password="testpass")
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+
+    def test_student_lists_only_themselves(self):
+        self.client.force_login(self.student)
+        resp = self.client.get("/api/users/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual([u["id"] for u in resp.data], [self.student.pk])
+        self.assertNotIn("role", resp.data[0])
+
+    def test_student_cannot_make_themselves_admin(self):
+        self.client.force_login(self.student)
+        resp = self.client.patch(
+            f"/api/users/{self.student.pk}/", {"role": "admin", "display_name": "Me"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.role, User.Role.STUDENT)
+        self.assertEqual(self.student.display_name, "Me")
+
+    def test_student_cannot_edit_or_delete_another_user(self):
+        self.client.force_login(self.student)
+        resp = self.client.patch(
+            f"/api/users/{self.other.pk}/", {"display_name": "Hacked"}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(self.client.delete(f"/api/users/{self.other.pk}/").status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(User.objects.filter(pk=self.other.pk).exists())
+
+    def test_admin_lists_all_users_with_roles(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get("/api/users/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        by_email = {u["email"]: u for u in resp.data}
+        self.assertEqual(set(by_email), {"student@test.local", "other@test.local", "admin@test.local"})
+        self.assertEqual(by_email["admin@test.local"]["role"], "admin")
+
+    def test_admin_can_promote_and_rename_user(self):
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/users/{self.student.pk}/", {"role": "admin", "full_name": "Renamed"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.role, User.Role.ADMIN)
+        self.assertEqual(self.student.full_name, "Renamed")
+
+    def test_admin_invalid_role_rejected(self):
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/users/{self.student.pk}/", {"role": "superuser"}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_admin_cannot_demote_themselves(self):
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/users/{self.admin.pk}/", {"role": "student"}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.admin.refresh_from_db()
+        self.assertEqual(self.admin.role, User.Role.ADMIN)
+
+    def test_admin_cannot_delete_themselves(self):
+        self.client.force_login(self.admin)
+        resp = self.client.delete(f"/api/users/{self.admin.pk}/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())
+
+    def test_admin_can_delete_another_user(self):
+        self.client.force_login(self.admin)
+        resp = self.client.delete(f"/api/users/{self.other.pk}/")
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(User.objects.filter(pk=self.other.pk).exists())
+
+
+# ── Admin portal: sign-up approvals (enrollments) ────────────────────────────────
+
+class ApprovalsAdminTests(APITestCase):
+    def setUp(self):
+        today = date.today()
+        self.cohort = Cohort.objects.create(
+            name="Current", year=today.year,
+            start_date=today - timedelta(days=3), end_date=today + timedelta(days=60),
+        )
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.student = User.objects.create_user(email="student@test.local", password="testpass")
+        self.module = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+
+    def test_signup_is_enrolled_pending_in_current_cohort(self):
+        resp = self.client.post(
+            "/api/register/",
+            {"email": "new@test.local", "full_name": "New User", "password": "Calm-River-42"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        enrollment = Enrollment.objects.get(user__email="new@test.local")
+        self.assertEqual(enrollment.cohort, self.cohort)
+        self.assertEqual(enrollment.status, Enrollment.Status.PENDING)
+
+    def test_pending_user_sees_no_modules_until_approved(self):
+        enrollment = Enrollment.objects.create(
+            user=self.student, cohort=self.cohort, status=Enrollment.Status.PENDING,
+        )
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get("/api/modules/").data, [])
+
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/enrollments/{enrollment.pk}/", {"status": "active"}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        self.client.force_login(self.student)
+        modules = self.client.get("/api/modules/").data
+        self.assertEqual([m["id"] for m in modules], [self.module.pk])
+        self.assertTrue(modules[0]["is_unlocked"])
+
+    def test_admin_filters_enrollments_by_status_and_cohort(self):
+        other = User.objects.create_user(email="other@test.local", password="testpass")
+        Enrollment.objects.create(user=self.student, cohort=self.cohort, status=Enrollment.Status.PENDING)
+        Enrollment.objects.create(user=other, cohort=self.cohort, status=Enrollment.Status.ACTIVE)
+        self.client.force_login(self.admin)
+
+        pending = self.client.get("/api/enrollments/?status=pending").data
+        self.assertEqual([e["user_email"] for e in pending], ["student@test.local"])
+        in_cohort = self.client.get(f"/api/enrollments/?cohort={self.cohort.pk}").data
+        self.assertEqual(len(in_cohort), 2)
+
+    def test_student_cannot_list_or_approve_enrollments(self):
+        enrollment = Enrollment.objects.create(
+            user=self.student, cohort=self.cohort, status=Enrollment.Status.PENDING,
+        )
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get("/api/enrollments/").status_code, status.HTTP_403_FORBIDDEN)
+        resp = self.client.patch(
+            f"/api/enrollments/{enrollment.pk}/", {"status": "active"}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        enrollment.refresh_from_db()
+        self.assertEqual(enrollment.status, Enrollment.Status.PENDING)
+
+    def test_duplicate_enrollment_in_same_cohort_rejected(self):
+        Enrollment.objects.create(user=self.student, cohort=self.cohort)
+        self.client.force_login(self.admin)
+        resp = self.client.post(
+            "/api/enrollments/", {"user": self.student.pk, "cohort": self.cohort.pk},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+# ── Admin portal: additional resources ───────────────────────────────────────────
+
+class AdditionalResourceAdminTests(APITestCase):
+    def setUp(self):
+        self.student = User.objects.create_user(email="student@test.local", password="testpass")
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+
+    def _create(self, **overrides):
+        data = {"category": "book", "title": "Test Book", "author": "A. Writer", "url": "https://example.com/book"}
+        data.update(overrides)
+        return self.client.post("/api/additional-resources/", data, format="multipart")
+
+    def test_admin_can_create_update_and_delete(self):
+        self.client.force_login(self.admin)
+        resp = self._create()
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        rid = resp.data["id"]
+
+        resp = self.client.patch(
+            f"/api/additional-resources/{rid}/", {"title": "Renamed Book"}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["title"], "Renamed Book")
+
+        self.assertEqual(self.client.delete(f"/api/additional-resources/{rid}/").status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(AdditionalResource.objects.filter(pk=rid).exists())
+
+    def test_invalid_category_rejected(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self._create(category="podcast").status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_logged_out_visitor_cannot_list_resources(self):
+        resp = self.client.get("/api/additional-resources/")
+        self.assertIn(resp.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+
+    def test_student_can_read_and_filter_but_not_write(self):
+        AdditionalResource.objects.create(category="documentary", title="Test Doc")
+        existing = AdditionalResource.objects.create(category="book", title="Test Book")
+        self.client.force_login(self.student)
+
+        docs = self.client.get("/api/additional-resources/?category=documentary").data
+        self.assertIn("Test Doc", [r["title"] for r in docs])
+        self.assertTrue(all(r["category"] == "documentary" for r in docs))
+
+        self.assertEqual(self._create().status_code, status.HTTP_403_FORBIDDEN)
+        resp = self.client.patch(
+            f"/api/additional-resources/{existing.pk}/", {"title": "x"}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(
+            self.client.delete(f"/api/additional-resources/{existing.pk}/").status_code, status.HTTP_403_FORBIDDEN,
+        )
 
 
 # ── Admin portal: Module/ContentItem CRUD permissions ────────────────────────────
@@ -1465,7 +1815,8 @@ class ModuleAdminTests(APITestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_admin_can_create_text_content_item(self):
+    def test_text_content_items_are_rejected(self):
+        # Module text lives in Module.description; content items are video/audio only.
         self.client.force_login(self.admin)
         resp = self.client.post(
             "/api/content-items/",
@@ -1477,65 +1828,131 @@ class ModuleAdminTests(APITestCase):
             },
             content_type="application/json",
         )
-        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(ContentItem.objects.get(title="Notes").type, "text")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(ContentItem.objects.filter(title="Notes").exists())
+
+    def _create_item(self, title):
+        return self.client.post(
+            "/api/content-items/",
+            {
+                "module": self.published.pk, "title": title, "type": "video",
+                "provider": "youtube", "embed_url": "https://www.youtube.com/embed/ZToicYcHIOU",
+            },
+            content_type="application/json",
+        )
+
+    def test_new_content_item_goes_to_end_of_module(self):
+        self.client.force_login(self.admin)
+        first = self._create_item("First").data
+        second = self._create_item("Second").data
+        self.assertLess(first["display_order"], second["display_order"])
+
+    def test_reorder_sets_display_order(self):
+        self.client.force_login(self.admin)
+        a = self._create_item("A").data["id"]
+        b = self._create_item("B").data["id"]
+        resp = self.client.post(
+            "/api/content-items/reorder/",
+            {"module": self.published.pk, "ids": [b, a]},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        ordered = list(self.published.content_items.order_by("display_order").values_list("id", flat=True))
+        self.assertEqual(ordered, [b, a])
+
+    def test_admin_can_set_summary_and_reminder_day(self):
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/modules/{self.published.pk}/", {"summary": "Short blurb"}, content_type="application/json",
+        )
+        self.assertEqual(resp.data["summary"], "Short blurb")
+        item_id = self._create_item("Audio").data["id"]
+        resp = self.client.patch(f"/api/content-items/{item_id}/", {"day_offset": 6}, content_type="application/json")
+        self.assertEqual(resp.data["day_offset"], 6)
+        resp = self.client.patch(f"/api/content-items/{item_id}/", {"day_offset": 7}, content_type="application/json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_reorder_rejects_incomplete_id_list(self):
+        self.client.force_login(self.admin)
+        a = self._create_item("A").data["id"]
+        self._create_item("B")
+        resp = self.client.post(
+            "/api/content-items/reorder/",
+            {"module": self.published.pk, "ids": [a]},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 # ── Admin portal: module unlock computation ──────────────────────────────────────
 
 class ModuleUnlockTests(APITestCase):
+    """Week N unlocks (N-1) weeks after the student's cohort start date."""
+
     def setUp(self):
+        from django.utils import timezone
+        self.today = timezone.localdate()
         self.admin = User.objects.create_user(
             email="admin@test.local", password="testpass", role=User.Role.ADMIN,
         )
         self.student = User.objects.create_user(
             email="student@test.local", password="testpass",
         )
+        # Started a week ago: weeks 1-2 are open, week 3 opens in 7 days.
         self.cohort = Cohort.objects.create(
-            name="Test Cohort", year=2024,
-            start_date=date(2024, 1, 1), end_date=date(2024, 12, 31),
+            name="Test Cohort", year=self.today.year,
+            start_date=self.today - timedelta(days=7), end_date=self.today + timedelta(days=60),
         )
         Enrollment.objects.create(
             user=self.student, cohort=self.cohort, status=Enrollment.Status.ACTIVE,
         )
         self.week1 = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+        self.week2 = Module.objects.create(week_number=2, title="Week 2", is_published=True)
         self.week3 = Module.objects.create(week_number=3, title="Week 3", is_published=True)
+        self.week3_item = ContentItem.objects.create(
+            module=self.week3, title="Video", type=ContentItem.ContentType.VIDEO,
+            provider="youtube", embed_url="https://www.youtube.com/embed/ZToicYcHIOU",
+        )
 
-    def _unlocked_map(self):
+    def _modules_by_week(self):
         resp = self.client.get("/api/modules/")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        return {m["week_number"]: m["is_unlocked"] for m in resp.data}
+        return {m["week_number"]: m for m in resp.data}
 
-    def test_module_with_no_unlock_at_is_unlocked(self):
+    def test_weeks_unlock_from_cohort_start(self):
         self.client.force_login(self.student)
-        unlocked = self._unlocked_map()
-        self.assertTrue(unlocked[1])
-        self.assertTrue(unlocked[3])
+        modules = self._modules_by_week()
+        self.assertTrue(modules[1]["is_unlocked"])
+        self.assertTrue(modules[2]["is_unlocked"])
+        self.assertFalse(modules[3]["is_unlocked"])
+        self.assertEqual(modules[3]["unlock_at"], (self.today + timedelta(days=7)).isoformat())
+        self.assertEqual(modules[3]["content_items"], [])
 
-    def test_module_locked_before_future_unlock_at(self):
-        from django.utils import timezone
-        self.week3.unlock_at = timezone.now() + timedelta(days=7)
-        self.week3.save()
+    def test_week_unlocks_on_its_start_day(self):
+        self.cohort.start_date = self.today - timedelta(days=14)
+        self.cohort.save()
         self.client.force_login(self.student)
-        unlocked = self._unlocked_map()
-        self.assertTrue(unlocked[1])
-        self.assertFalse(unlocked[3])
-
-    def test_module_unlocked_once_unlock_at_has_passed(self):
-        from django.utils import timezone
-        self.week3.unlock_at = timezone.now() - timedelta(minutes=1)
-        self.week3.save()
-        self.client.force_login(self.student)
-        unlocked = self._unlocked_map()
-        self.assertTrue(unlocked[3])
+        self.assertTrue(self._modules_by_week()[3]["is_unlocked"])
 
     def test_locked_module_detail_returns_403(self):
-        from django.utils import timezone
-        self.week3.unlock_at = timezone.now() + timedelta(days=7)
-        self.week3.save()
         self.client.force_login(self.student)
         resp = self.client.get(f"/api/modules/{self.week3.pk}/")
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_cannot_complete_item_in_locked_module(self):
+        self.client.force_login(self.student)
+        resp = self.client.post(
+            "/api/progress/", {"content_item": self.week3_item.pk}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(ContentCompletion.objects.filter(user=self.student).exists())
+
+    def test_admin_can_open_locked_module_with_content(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get(f"/api/modules/{self.week3.pk}/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp.data["content_items"]), 1)
+        self.assertEqual(len(self._modules_by_week()[3]["content_items"]), 1)
 
 
 # ── Admin portal: forum archive gating ───────────────────────────────────────────
@@ -1858,6 +2275,411 @@ class S21NotifiesOnlyActiveCohortTests(TestCase):
         notified_user_ids = set(logs.values_list("user_id", flat=True))
         self.assertIn(self.active_user.pk, notified_user_ids)
         self.assertNotIn(self.ended_user.pk, notified_user_ids)
+
+    def test_users_with_module_still_locked_not_notified(self):
+        # Active cohort started 7 days ago, so week 3 opens in 7 days.
+        locked_module = _make_module(week=3)
+        with self.settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
+            from app.notifications import notify_content_update
+            notify_content_update(module=locked_module)
+
+        self.assertFalse(
+            NotificationLog.objects.filter(
+                type=NotificationLog.NotificationType.CONTENT_UPDATE,
+                user=self.active_user,
+            ).exists()
+        )
+
+
+# ── Edge cases ───────────────────────────────────────────────────────────────────
+
+def _cohort(days_since_start, length_days=60):
+    from django.utils import timezone
+    today = timezone.localdate()
+    return Cohort.objects.create(
+        name=f"Cohort {days_since_start}", year=today.year,
+        start_date=today - timedelta(days=days_since_start),
+        end_date=today - timedelta(days=days_since_start) + timedelta(days=length_days),
+    )
+
+
+@override_settings(GOOGLE_CLIENT_ID="test-client")
+class GoogleLoginEdgeCaseTests(APITestCase):
+    def setUp(self):
+        self.existing = User.objects.create_user(email="victim@test.local", password="testpass")
+
+    def _google_login(self, idinfo):
+        with patch("app.views.id_token.verify_oauth2_token", return_value=idinfo):
+            return self.client.post("/api/google-login/", {"credential": "x"}, content_type="application/json")
+
+    def test_unverified_email_cannot_log_into_existing_account(self):
+        resp = self._google_login({"email": "victim@test.local", "email_verified": False, "name": "Attacker"})
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn("token", resp.data)
+
+    def test_verified_email_logs_into_existing_account_ignoring_case(self):
+        resp = self._google_login({"email": "Victim@Test.local", "email_verified": True, "name": "Victim"})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["user"]["id"], self.existing.pk)
+        self.assertEqual(User.objects.filter(email__iexact="victim@test.local").count(), 1)
+
+    def test_new_google_user_is_created_lowercase_without_password(self):
+        resp = self._google_login({"email": "New.Person@Gmail.com", "email_verified": True, "name": "New"})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        user = User.objects.get(email="new.person@gmail.com")
+        self.assertFalse(user.has_usable_password())
+        self.client.force_login(user)
+        resp = self.client.post(
+            "/api/change-password/", {"current_password": "x", "new_password": "Calm-River-42"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Google", resp.data["error"])
+
+
+class EmailCaseTests(APITestCase):
+    def test_register_rejects_same_email_with_different_case(self):
+        User.objects.create_user(email="student@test.local", password="testpass")
+        resp = self.client.post(
+            "/api/register/", {"email": "Student@Test.local", "full_name": "Dup", "password": "Calm-River-42"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("email", resp.data)
+
+    def test_register_stores_lowercase_and_login_ignores_case(self):
+        resp = self.client.post(
+            "/api/register/", {"email": "Mixed.Case@Test.local", "full_name": "Mixed", "password": "Calm-River-42"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(User.objects.filter(email="mixed.case@test.local").exists())
+        resp = self.client.post(
+            "/api/login/", {"email": "MIXED.case@test.LOCAL", "password": "Calm-River-42"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+
+class LastAdminTests(APITestCase):
+    def setUp(self):
+        self.a = User.objects.create_user(email="a@test.local", password="testpass", role=User.Role.ADMIN)
+        self.b = User.objects.create_user(email="b@test.local", password="testpass", role=User.Role.ADMIN)
+        self.staff = User.objects.create_user(email="staff@test.local", password="testpass")
+        # save() now derives is_staff from role, so write it directly: this mimics a
+        # pre-existing staff-but-not-admin row that hasn't been re-saved since.
+        User.objects.filter(pk=self.staff.pk).update(is_staff=True)
+        self.staff.refresh_from_db()
+
+    def test_admin_can_demote_another_admin_while_one_remains(self):
+        self.client.force_login(self.a)
+        resp = self.client.patch(f"/api/users/{self.b.pk}/", {"role": "student"}, content_type="application/json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_last_admin_cannot_be_demoted_or_deleted(self):
+        self.b.role = User.Role.STUDENT
+        self.b.save()
+        # Staff accounts can manage users but aren't role=admin, so they could remove the last admin.
+        self.client.force_login(self.staff)
+        resp = self.client.patch(f"/api/users/{self.a.pk}/", {"role": "student"}, content_type="application/json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self.client.delete(f"/api/users/{self.a.pk}/").status_code, status.HTTP_403_FORBIDDEN)
+        self.a.refresh_from_db()
+        self.assertEqual(self.a.role, User.Role.ADMIN)
+
+
+class SurveyResponseProtectionTests(TestCase):
+    def test_survey_with_responses_cannot_be_deleted(self):
+        from django.db.models import ProtectedError
+        user = User.objects.create_user(email="s@test.local", password="testpass")
+        survey = Survey.objects.create(code="intake", title="Intake", type=Survey.SurveyType.INTAKE)
+        SurveyResponse.objects.create(user=user, survey=survey, answers={"q1": 1})
+        with self.assertRaises(ProtectedError):
+            survey.delete()
+        self.assertEqual(SurveyResponse.objects.count(), 1)
+
+
+class EnrollmentEdgeCaseTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(email="admin@test.local", password="testpass", role=User.Role.ADMIN)
+        self.student = User.objects.create_user(email="s@test.local", password="testpass")
+        self.old = _cohort(30)
+        self.new = _cohort(3)
+        self.client.force_login(self.admin)
+
+    def test_second_active_enrollment_rejected(self):
+        Enrollment.objects.create(user=self.student, cohort=self.old, status=Enrollment.Status.ACTIVE)
+        resp = self.client.post(
+            "/api/enrollments/", {"user": self.student.pk, "cohort": self.new.pk, "status": "active"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_approving_pending_when_already_active_elsewhere_rejected(self):
+        Enrollment.objects.create(user=self.student, cohort=self.old, status=Enrollment.Status.ACTIVE)
+        pending = Enrollment.objects.create(user=self.student, cohort=self.new, status=Enrollment.Status.PENDING)
+        resp = self.client.patch(f"/api/enrollments/{pending.pk}/", {"status": "active"}, content_type="application/json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_moving_user_between_cohorts_is_allowed(self):
+        enr = Enrollment.objects.create(user=self.student, cohort=self.old, status=Enrollment.Status.ACTIVE)
+        resp = self.client.patch(f"/api/enrollments/{enr.pk}/", {"cohort": self.new.pk}, content_type="application/json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_content_update_sends_one_notice_with_two_enrollments(self):
+        # Legacy data can still hold two active enrollments; only one notice should go out.
+        Enrollment.objects.create(user=self.student, cohort=self.old, status=Enrollment.Status.ACTIVE)
+        Enrollment.objects.create(user=self.student, cohort=self.new, status=Enrollment.Status.ACTIVE)
+        with patch("app.signals._fire_async"):
+            module = Module.objects.create(week_number=1, title="W1", is_published=True)
+        with self.settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
+            from app.notifications import notify_content_update
+            notify_content_update(module=module)
+        self.assertEqual(
+            NotificationLog.objects.filter(user=self.student, type=NotificationLog.NotificationType.CONTENT_UPDATE).count(), 1,
+        )
+
+
+class CohortStartDateTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(email="admin@test.local", password="testpass", role=User.Role.ADMIN)
+        self.client.force_login(self.admin)
+
+    def _move_start(self, cohort):
+        return self.client.patch(
+            f"/api/cohorts/{cohort.pk}/", {"start_date": str(cohort.start_date - timedelta(days=7))},
+            content_type="application/json",
+        )
+
+    def test_running_cohort_with_students_keeps_start_date(self):
+        cohort = _cohort(10)
+        Enrollment.objects.create(user=User.objects.create_user(email="s@test.local"), cohort=cohort)
+        self.assertEqual(self._move_start(cohort).status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_future_or_empty_cohort_start_date_can_change(self):
+        empty_running = _cohort(10)
+        self.assertEqual(self._move_start(empty_running).status_code, status.HTTP_200_OK)
+        future = _cohort(-14)
+        Enrollment.objects.create(user=User.objects.create_user(email="s@test.local"), cohort=future)
+        self.assertEqual(self._move_start(future).status_code, status.HTTP_200_OK)
+
+    def test_renaming_running_cohort_still_allowed(self):
+        cohort = _cohort(10)
+        Enrollment.objects.create(user=User.objects.create_user(email="s@test.local"), cohort=cohort)
+        resp = self.client.patch(f"/api/cohorts/{cohort.pk}/", {"name": "Renamed"}, content_type="application/json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class UnlockNotificationEdgeCaseTests(TestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="s@test.local", password="testpass")
+        with patch("app.signals._fire_async"):
+            for week in range(1, 11):
+                Module.objects.create(week_number=week, title=f"W{week}", is_published=True)
+
+    def _run(self):
+        out = StringIO()
+        call_command("send_module_unlock_notifications", stdout=out)
+        return NotificationLog.objects.filter(user=self.user, type=NotificationLog.NotificationType.MODULE_ADDED)
+
+    def test_week_after_cohort_end_is_not_announced(self):
+        # 8-week cohort; week 10 opens 63 days after the start, after the end date.
+        cohort = _cohort(63, length_days=56)
+        Enrollment.objects.create(user=self.user, cohort=cohort)
+        self.assertEqual(self._run().count(), 0)
+
+    def test_approved_mid_cohort_gets_only_todays_week(self):
+        # Week 5 opens today; weeks 1-4 are already open but must not all be announced.
+        cohort = _cohort(28)
+        Enrollment.objects.create(user=self.user, cohort=cohort)
+        self.assertEqual([log.module.week_number for log in self._run()], [5])
+
+    def test_unlock_follows_perth_midnight(self):
+        import datetime as dt
+        from django.utils import timezone
+        from .serializers import module_is_unlocked
+        cohort = _cohort(0)
+        Enrollment.objects.create(user=self.user, cohort=cohort)
+        week2 = Module.objects.get(week_number=2)
+        unlock_day = cohort.start_date + timedelta(days=7)
+        perth_midnight_utc = dt.datetime.combine(unlock_day, dt.time.min, tzinfo=dt.timezone.utc) - timedelta(hours=8)
+        for offset, expected in ((timedelta(minutes=-1), False), (timedelta(0), True)):
+            user = User.objects.get(pk=self.user.pk)  # fresh instance: cohort start is cached per user
+            with patch("django.utils.timezone.now", return_value=perth_midnight_utc + offset):
+                self.assertEqual(module_is_unlocked(week2, user), expected, offset)
+                self.assertEqual(timezone.localdate(), unlock_day if expected else unlock_day - timedelta(days=1))
+
+
+class SurveyEdgeCaseTests(APITestCase):
+    QUESTIONS = [
+        {"id": "q1", "type": "integer"},
+        {"id": "q2", "type": "integer", "skip_if": {"question_id": "q1", "value": 0}},
+        {"id": "q13", "type": "longtext"},
+    ]
+
+    def setUp(self):
+        self.user = User.objects.create_user(email="s@test.local", password="testpass")
+        _enroll(self.user)
+        with patch("app.signals._fire_async"):
+            self.module = Module.objects.create(week_number=1, title="W1", is_published=True)
+            self.item = ContentItem.objects.create(
+                module=self.module, title="V", type=ContentItem.ContentType.VIDEO,
+                provider="youtube", embed_url="https://www.youtube.com/embed/ZToicYcHIOU",
+            )
+        ContentCompletion.objects.create(user=self.user, content_item=self.item)
+        self.survey = Survey.objects.create(
+            module=self.module, code="w1", title="W1", type=Survey.SurveyType.WEEKLY, questions=self.QUESTIONS,
+        )
+        self.client.force_login(self.user)
+
+    def _submit(self, answers):
+        return self.client.post(
+            "/api/survey-responses/", {"survey": self.survey.pk, "answers": answers}, format="json",
+        )
+
+    def test_zero_meditation_skips_follow_up_questions(self):
+        self.assertEqual(self._submit({"q1": 0, "q13": "Busy week."}).status_code, status.HTTP_201_CREATED)
+
+    def test_journal_over_limit_rejected(self):
+        resp = self._submit({"q1": 1, "q2": 10, "q13": "x" * 5001})
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_submitted_survey_stays_unlocked_after_new_content(self):
+        self.assertEqual(self._submit({"q1": 0, "q13": "Done."}).status_code, status.HTTP_201_CREATED)
+        with patch("app.signals._fire_async"):
+            ContentItem.objects.create(
+                module=self.module, title="New", type=ContentItem.ContentType.VIDEO,
+                provider="youtube", embed_url="https://www.youtube.com/embed/ZToicYcHIOU",
+            )
+        listed = {s["id"]: s for s in self.client.get("/api/surveys/").data}
+        self.assertTrue(listed[self.survey.pk]["is_unlocked"])
+        self.assertTrue(listed[self.survey.pk]["has_responded"])
+        resp = self._submit({"q1": 0, "q13": "Again."})
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("already submitted", resp.data["detail"])
+
+
+class ForumEdgeCaseTests(APITestCase):
+    def test_pinned_thread_survives_author_deletion(self):
+        admin = User.objects.create_user(email="admin@test.local", password="testpass", role=User.Role.ADMIN)
+        author = User.objects.create_user(email="author@test.local", password="testpass")
+        reader = User.objects.create_user(email="reader@test.local", password="testpass")
+        self.client.force_login(author)
+        tid = self.client.post("/api/forum/threads/", {"body": "Pinned by admin"}, format="json").data["id"]
+        self.client.force_login(admin)
+        self.client.patch(f"/api/forum/threads/{tid}/", {"is_pinned": True}, format="json")
+        self.client.delete(f"/api/users/{author.pk}/")
+
+        self.client.force_login(reader)
+        listing = self.client.get("/api/forum/threads/")
+        self.assertEqual(listing.status_code, status.HTTP_200_OK)
+        self.assertTrue(listing.data[0]["is_pinned"])
+        detail = self.client.get(f"/api/forum/threads/{tid}/")
+        self.assertEqual(detail.status_code, status.HTTP_200_OK)
+        self.assertEqual(detail.data["body"], "Pinned by admin")
+
+    def test_title_cut_never_splits_an_emoji(self):
+        from .views import _derive_title
+        family = "\U0001F468‍\U0001F469‍\U0001F467"
+        thumbs = "\U0001F44D\U0001F3FD"
+        for filler in range(55, 62):
+            for emoji in (family, thumbs):
+                title = _derive_title("a" * filler + emoji * 3)
+                self.assertFalse(title.endswith("‍"), (filler, title))
+                self.assertLessEqual(len(title), 60)
+                rest = ("a" * filler + emoji * 3)[len(title):]
+                self.assertFalse(rest and rest[0] in ("‍", "\U0001F3FD"), (filler, title))
+
+
+@override_settings(VAPID_PRIVATE_KEY="test-key", EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class PushFallbackTests(TestCase):
+    def test_expired_subscription_is_removed_and_email_sent(self):
+        from django.core import mail
+        from pywebpush import WebPushException
+        from .notifications import deliver
+        user = User.objects.create_user(email="s@test.local", password="testpass")
+        PushSubscription.objects.create(user=user, endpoint="https://push.example/gone", p256dh="k", auth="a")
+        gone = WebPushException("gone", response=type("R", (), {"status_code": 410})())
+        with patch("pywebpush.webpush", side_effect=gone):
+            channel, success = deliver(
+                user=user, payload_dict={"title": "t"}, subject="Hello",
+                email_template="app/content_update_email.txt",
+                email_context={"user": user, "module": type("M", (), {"title": "W1", "week_number": 1})()},
+            )
+        self.assertTrue(success)
+        self.assertFalse(PushSubscription.objects.filter(user=user).exists())
+        self.assertEqual([m.subject for m in mail.outbox], ["Hello"])
+
+
+class ReminderTimeTests(APITestCase):
+    def test_reminder_time_must_be_on_the_hour(self):
+        user = User.objects.create_user(email="s@test.local", password="testpass")
+        self.client.force_login(user)
+        bad = self.client.patch("/api/notifications/preferences/me/", {"reminder_time": "08:30"}, format="json")
+        self.assertEqual(bad.status_code, status.HTTP_400_BAD_REQUEST)
+        ok = self.client.patch("/api/notifications/preferences/me/", {"reminder_time": "19:00"}, format="json")
+        self.assertEqual(ok.status_code, status.HTTP_200_OK)
+
+
+class SurveyExportTests(APITestCase):
+    def setUp(self):
+        import csv as _csv
+        self._csv = _csv
+        self.admin = User.objects.create_user(email="admin@test.local", password="testpass", role=User.Role.ADMIN)
+        self.student = User.objects.create_user(email="s@test.local", password="testpass", full_name="Sam Student")
+        cohort = _cohort(10)
+        Enrollment.objects.create(user=self.student, cohort=cohort)
+        with patch("app.signals._fire_async"):
+            self.w1 = Module.objects.create(week_number=1, title="W1", is_published=True)
+            self.w2 = Module.objects.create(week_number=2, title="W2", is_published=True)
+        questions = [{"id": "q1", "type": "integer"}, {"id": "q13", "type": "longtext"}]
+        self.s1 = Survey.objects.create(module=self.w1, code="wk1", title="Week 1", type="weekly", questions=questions)
+        self.s2 = Survey.objects.create(module=self.w2, code="wk2", title="Week 2", type="weekly", questions=questions)
+        SurveyResponse.objects.create(user=self.student, survey=self.s1, answers={"q1": 3, "q13": "=HYPERLINK(\"x\")"})
+        SurveyResponse.objects.create(user=self.student, survey=self.s2, answers={"q1": 0, "q13": "Calm 😊"})
+
+    def _rows(self, resp):
+        text = resp.content.decode("utf-8").lstrip("﻿")
+        return list(self._csv.DictReader(text.splitlines()))
+
+    def test_admin_downloads_all_responses_without_identity_by_default(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get("/api/surveys/export/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp["Content-Type"], "text/csv; charset=utf-8")
+        self.assertIn('filename="survey-responses-all-', resp["Content-Disposition"])
+        rows = self._rows(resp)
+        self.assertEqual([r["survey_code"] for r in rows], ["wk1", "wk2"])
+        self.assertEqual(rows[0]["participant_id"], str(self.student.pk))
+        self.assertEqual(rows[0]["cohort"], "Cohort 10")
+        self.assertEqual(rows[1]["q13"], "Calm 😊")
+        self.assertNotIn("email", rows[0])
+        self.assertNotIn("s@test.local", resp.content.decode("utf-8"))
+
+    def test_identify_adds_name_and_email(self):
+        self.client.force_login(self.admin)
+        rows = self._rows(self.client.get("/api/surveys/export/?identify=1"))
+        self.assertEqual(rows[0]["email"], "s@test.local")
+        self.assertEqual(rows[0]["full_name"], "Sam Student")
+
+    def test_formula_like_answers_are_neutralised(self):
+        self.client.force_login(self.admin)
+        rows = self._rows(self.client.get("/api/surveys/export/"))
+        self.assertEqual(rows[0]["q13"], "'=HYPERLINK(\"x\")")
+
+    def test_single_survey_filter_and_unknown_survey(self):
+        self.client.force_login(self.admin)
+        resp = self.client.get(f"/api/surveys/export/?survey={self.s2.pk}")
+        self.assertIn('filename="survey-responses-wk2-', resp["Content-Disposition"])
+        self.assertEqual([r["survey_code"] for r in self._rows(resp)], ["wk2"])
+        self.assertEqual(self.client.get("/api/surveys/export/?survey=999").status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_students_cannot_export(self):
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get("/api/surveys/export/").status_code, status.HTTP_403_FORBIDDEN)
+        self.client.logout()
+        self.assertIn(self.client.get("/api/surveys/export/").status_code, (401, 403))
 
 
 # ── Issue #196: surveys per module ────────────────────────────────────────────

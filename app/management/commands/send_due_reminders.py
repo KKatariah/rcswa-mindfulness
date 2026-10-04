@@ -26,6 +26,7 @@ from django.core.management.base import BaseCommand
 from django.template.loader import render_to_string
 from django.utils import timezone
 
+from app.serializers import module_is_unlocked
 from app.models import (
     Cohort,
     ContentItem,
@@ -289,11 +290,8 @@ class Command(BaseCommand):
             for survey in surveys:
                 module = survey.module
 
-                # Module must already be available.
-                if not module.is_published:
-                    continue
-
-                if module.unlock_at and module.unlock_at > timezone.now():
+                # Module must already be available to this user.
+                if not module_is_unlocked(module, user):
                     continue
 
                 required_ids = set(

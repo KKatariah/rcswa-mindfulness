@@ -3,9 +3,9 @@ import { CalendarIcon } from "@/components/ui/icons";
 type NextSessionProps = {
   moduleTitle: string;
   compactOnMobile?: boolean;
-  /** ISO 8601 timestamp, including the session's timezone offset. */
+  /** ISO 8601 date, or timestamp including the session's timezone offset. */
   startsAt?: string;
-  /** Display labels supplied by the page in the intended timezone. */
+  /** Display labels supplied by the page in the intended timezone. timeLabel is omitted for date-only sessions. */
   dateLabel?: string;
   timeLabel?: string;
 };
@@ -30,9 +30,12 @@ export default function NextSession({
       <p className={`${compactOnMobile ? "md:mt-2.5" : "mt-2.5"} break-words text-sm font-semibold leading-5`}>
         {moduleTitle}
       </p>
-      {startsAt && dateLabel && timeLabel ? <time dateTime={startsAt} className="mt-1 block text-sm leading-5 text-muted">
-        {dateLabel} <span aria-hidden="true">•</span><span className="sr-only"> at </span>{" "}
-        <span className="whitespace-nowrap">{timeLabel}</span>
+      {startsAt && dateLabel ? <time dateTime={startsAt} className="mt-1 block text-sm leading-5 text-muted">
+        {dateLabel}
+        {timeLabel && <>
+          {" "}<span aria-hidden="true">•</span><span className="sr-only"> at </span>{" "}
+          <span className="whitespace-nowrap">{timeLabel}</span>
+        </>}
       </time> : <p className="mt-1 text-sm text-muted">Available now · Continue module</p>}
       </div>
     </section>

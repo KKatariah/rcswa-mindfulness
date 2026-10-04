@@ -12,6 +12,26 @@ type AuthResponse = { message: string; token: string; user: AuthUser };
 async function handleResponse<T>(res: Response): Promise<T> {
 	const data = await res.json();
 	if (!res.ok) {
+		// The stored token was rejected (e.g. the password was changed in another
+		// tab). Sign out and go home rather than leaving the page half-broken.
+		// Login itself also returns 401, but with "error" rather than "detail".
+		if (res.status === 401 && data?.detail && typeof window !== "undefined" && localStorage.getItem("token")) {
+			localStorage.removeItem("token");
+			localStorage.removeItem("user");
+			if (window.location.pathname !== "/") {
+				// eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload resets AuthContext; this runs outside React so there's no router
+				window.location.assign("/");
+			}
+			throw new Error("Your session has expired. Please log in again.");
+		}
+		if (res.status === 429) {
+			const seconds = /(\d+) seconds?/.exec(String(data?.detail ?? ""))?.[1];
+			throw new Error(
+				seconds
+					? `You're doing that too often. Please wait ${seconds} seconds and try again.`
+					: "You're doing that too often. Please wait a moment and try again.",
+			);
+		}
 		const message =
 			typeof data === "object" && data !== null
 				? Object.values(data).flat().join(" ")
@@ -67,6 +87,9 @@ export type ApiModule = {
 	id: number;
 	week_number: number;
 	title: string;
+	// ISO date the student's cohort reaches this week; null when not in an active cohort.
+	unlock_at: string | null;
+	is_unlocked: boolean;
 	content_items: ApiContentItem[];
 };
 
@@ -468,7 +491,7 @@ export async function createEnrollment(
 
 export async function updateEnrollment(
 	id: number,
-	data: Partial<{ cohort: number; status: Enrollment["status"]; current_week: number }>,
+	data: Partial<{ cohort: number; status: Enrollment["status"] }>,
 	token: string,
 ): Promise<Enrollment> {
 	const res = await fetch(`${API_BASE_URL}/enrollments/${id}/`, {
@@ -525,6 +548,7 @@ export async function updateModule(
 		week_number: number;
 		title: string;
 		description: string;
+		summary: string;
 		is_published: boolean;
 	}>,
 	token: string,
@@ -589,6 +613,23 @@ export async function deleteContentItem(
 	return deleteRequest(`${API_BASE_URL}/content-items/${id}/`, token);
 }
 
+// ids: every content item in the module, in the new display order.
+export async function reorderContentItems(moduleId: number, ids: number[], token: string): Promise<void> {
+	const res = await fetch(`${API_BASE_URL}/content-items/reorder/`, {
+		method: "POST",
+		headers: authHeader(token),
+		body: JSON.stringify({ module: moduleId, ids }),
+	});
+	if (!res.ok) {
+		const data = await res.json().catch(() => ({}));
+		const message =
+			typeof data === "object" && data !== null
+				? Object.values(data).flat().join(" ")
+				: "Something went wrong";
+		throw new Error(message || "Failed to reorder content items");
+	}
+}
+
 // ── Admin: Dashboard ───────────────────────────────────────────────────────────
 
 export async function getDashboardStats(
@@ -598,6 +639,30 @@ export async function getDashboardStats(
 		headers: { Authorization: `Token ${token}` },
 	});
 	return handleResponse<DashboardStats>(res);
+}
+
+/** Download survey responses as CSV (admin only). Omit surveyId for all surveys. */
+export async function downloadSurveyResponsesCsv(
+	token: string,
+	options: { surveyId?: number; includeIdentity?: boolean } = {},
+): Promise<void> {
+	const params = new URLSearchParams();
+	if (options.surveyId) params.set("survey", String(options.surveyId));
+	if (options.includeIdentity) params.set("identify", "1");
+	const query = params.toString() ? `?${params}` : "";
+	const res = await fetch(`${API_BASE_URL}/surveys/export/${query}`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	if (!res.ok) await handleResponse(res);
+
+	const filename =
+		/filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "survey-responses.csv";
+	const url = URL.createObjectURL(await res.blob());
+	const link = document.createElement("a");
+	link.href = url;
+	link.download = filename;
+	link.click();
+	URL.revokeObjectURL(url);
 }
 
 export async function loginWithGoogle(
