@@ -9,6 +9,7 @@ import UpcomingSession from "@/components/modules/UpcomingSession";
 import { CheckIcon, LockIcon, PlayIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { listModules, listProgress, type ApiModule } from "@/lib/api";
+import { weekLabel } from "@/lib/weeks";
 
 type WeekStatus = "completed" | "current" | "locked";
 
@@ -194,7 +195,7 @@ export default function ModulesIndexPage() {
 														{icon}
 													</span>
 													<span className={`flex-1 font-semibold ${isLocked ? "text-gray-400" : "text-ink"}`}>
-														Week {m.week_number}
+														{weekLabel(m.week_number)}
 													</span>
 													{!isLocked && (
 														<div className="h-2 w-40 max-w-[40%] overflow-hidden rounded-full bg-surface-muted">

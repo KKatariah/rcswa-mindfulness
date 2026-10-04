@@ -215,7 +215,7 @@ def notify_content_update(module=None, content_item=None):
             continue
 
         payload = {
-            "title": f"New content: Week {module.week_number}",
+            "title": f"New content: {module.week_label}",
             "body": module.title,
             "url": f"/modules/{module.week_number}/",
         }

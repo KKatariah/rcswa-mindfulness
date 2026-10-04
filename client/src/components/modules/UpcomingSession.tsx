@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import NextSession from "@/components/modules/NextSession";
 import { listModules } from "@/lib/api";
+import { weekLabel } from "@/lib/weeks";
 
 type SessionModule = {
 	id: number;
@@ -72,7 +73,7 @@ export default function UpcomingSession({ modules }: { modules?: SessionModule[]
 
 	return (
 		<NextSession
-			moduleTitle={`Module Week ${upcoming.week_number}`}
+			moduleTitle={upcoming.week_number === 0 ? weekLabel(0) : `Module ${weekLabel(upcoming.week_number)}`}
 			startsAt={upcoming.unlock_at}
 			{...unlockLabels(upcoming.unlock_at)}
 		/>

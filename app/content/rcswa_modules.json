@@ -3,6 +3,21 @@
   "source_sha256": "127c50380b5be51cba0d3d6f92d67c1c954cea980bbec36d5f6ca7feb0e452dd",
   "modules": [
     {
+      "week_number": 0,
+      "title": "Module 0 - Introduction",
+      "content_items": [
+        {
+          "title": "Introduction to the RCSWA Online Mindfulness Training Program",
+          "type": "video",
+          "provider": "youtube",
+          "source_url": "https://www.youtube.com/watch?v=uaRFzaBehB4",
+          "embed_url": "https://www.youtube.com/embed/uaRFzaBehB4"
+        }
+      ],
+      "description": "Welcome to the WA Medical Schools Online Mindfulness Program.\n\nWatch this introduction from Dr Sarah Moore before you start Week 1.",
+      "summary": "Meet the program and learn how the eight weeks fit together before you begin."
+    },
+    {
       "week_number": 1,
       "title": "Module 1 - Body Scan",
       "content_items": [
