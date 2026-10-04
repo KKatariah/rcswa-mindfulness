@@ -917,6 +917,17 @@ def _module_completion_stats():
     return results
 
 
+def _progress_status(done_count, item_count, unlock_date, today):
+    """One student's standing in one module. unlock_date is None when they have no active cohort."""
+    if item_count and done_count == item_count:
+        return "completed"
+    if done_count:
+        return "in_progress"
+    if unlock_date is None or unlock_date > today:
+        return "locked"
+    return "not_started"
+
+
 def _module_student_progress(module, cohort_id=None):
     """Per-student progress through one module, for every ACTIVE-enrolled student
     (optionally limited to one cohort). Uses the same all-items definition of
@@ -964,14 +975,7 @@ def _module_student_progress(module, cohort_id=None):
         user = enrollment.user
         done = completions.get(user_id, [])
         unlock_date = enrollment.cohort.start_date + timedelta(weeks=module.week_number - 1)
-        if item_ids and len(done) == len(item_ids):
-            progress_status = "completed"
-        elif done:
-            progress_status = "in_progress"
-        elif unlock_date > today:
-            progress_status = "locked"
-        else:
-            progress_status = "not_started"
+        progress_status = _progress_status(len(done), len(item_ids), unlock_date, today)
         students.append({
             "user_id": user_id,
             "full_name": user.full_name or user.display_name,
@@ -990,6 +994,108 @@ def _module_student_progress(module, cohort_id=None):
         "item_count": len(item_ids),
         "survey": {"id": survey.id, "title": survey.title} if survey else None,
         "students": students,
+    }
+
+
+def _user_overview(user):
+    """Everything the admin portal shows on one person's profile page."""
+    today = timezone.localdate()
+    enrollments = list(
+        Enrollment.objects.filter(user=user).select_related("cohort").order_by("-enrolled_at")
+    )
+    active = next((e for e in enrollments if e.status == Enrollment.Status.ACTIVE), None)
+
+    completions = {
+        item_id: completed_at
+        for item_id, completed_at in ContentCompletion.objects.filter(user=user)
+        .values_list("content_item_id", "completed_at")
+    }
+    responses = {
+        r.survey_id: r.submitted_at for r in SurveyResponse.objects.filter(user=user)
+    }
+    weekly_survey_by_module = {
+        s.module_id: s for s in Survey.objects.filter(type=Survey.SurveyType.WEEKLY, module__isnull=False)
+    }
+
+    modules = []
+    for module in Module.objects.filter(is_published=True).prefetch_related("content_items").order_by("week_number"):
+        item_ids = [i.id for i in module.content_items.all()]
+        done = [completions[i] for i in item_ids if i in completions]
+        unlock_date = (
+            active.cohort.start_date + timedelta(weeks=module.week_number - 1) if active else None
+        )
+        survey = weekly_survey_by_module.get(module.id)
+        modules.append({
+            "id": module.id,
+            "week_number": module.week_number,
+            "title": module.title,
+            "item_count": len(item_ids),
+            "completed_count": len(done),
+            "status": _progress_status(len(done), len(item_ids), unlock_date, today),
+            "unlock_date": unlock_date.isoformat() if unlock_date else None,
+            "survey_submitted": (survey.id in responses) if survey else None,
+            "last_activity": max(done).isoformat() if done else None,
+        })
+
+    surveys = [
+        {
+            "id": s.id,
+            "title": s.title,
+            "type": s.type,
+            "week_number": s.module.week_number if s.module else None,
+            "submitted_at": responses[s.id].isoformat() if s.id in responses else None,
+        }
+        for s in Survey.objects.select_related("module").order_by("module__week_number", "id")
+    ]
+
+    posts = ForumPost.objects.filter(author=user, is_deleted=False)
+    recent_posts = [
+        {
+            "id": p.id,
+            "thread_title": p.thread.title,
+            "body": p.body[:200],
+            "is_head_post": p.is_head_post,
+            "created_at": p.created_at.isoformat(),
+        }
+        for p in posts.select_related("thread").order_by("-created_at")[:5]
+    ]
+
+    pref = NotificationPreference.objects.filter(user=user).first()
+    return {
+        "user": {
+            **AdminUserSerializer(user).data,
+            "avatar_url": gravatar_url(user.email),
+            "forum_rules_accepted_at": (
+                user.forum_rules_accepted_at.isoformat() if user.forum_rules_accepted_at else None
+            ),
+        },
+        "enrollments": [
+            {
+                "id": e.id,
+                "cohort_id": e.cohort_id,
+                "cohort_name": e.cohort.name,
+                "cohort_start_date": e.cohort.start_date.isoformat(),
+                "cohort_end_date": e.cohort.end_date.isoformat(),
+                "status": e.status,
+                "enrolled_at": e.enrolled_at.isoformat(),
+            }
+            for e in enrollments
+        ],
+        "modules": modules,
+        "surveys": surveys,
+        "forum": {
+            "thread_count": ForumThread.objects.filter(created_by=user).count(),
+            "post_count": posts.filter(is_head_post=False).count(),
+            "recent_posts": recent_posts,
+        },
+        "notifications": {
+            "push_devices": PushSubscription.objects.filter(user=user).count(),
+            "email_enabled": pref.email_enabled if pref else True,
+            "push_denied": pref.push_denied if pref else False,
+            "reminder_time": pref.reminder_time.strftime("%H:%M") if pref else "08:00",
+            "daily_content_reminder": pref.daily_content_reminder if pref else True,
+            "daily_survey_reminder": pref.daily_survey_reminder if pref else False,
+        },
     }
 
 

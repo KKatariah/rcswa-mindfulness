@@ -1,32 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import Select from "@/components/ui/Select";
 import { CheckIcon } from "@/components/ui/icons";
+import { ProgressStatusBadge, PROGRESS_LABELS } from "@/components/admin/Badges";
 import { getModuleProgress } from "@/lib/api";
 import type { AdminContentItem, ModuleProgress as Progress, ModuleProgressStatus, ModuleStudentProgress } from "@/types/admin";
 
-const STATUS_LABELS: Record<ModuleProgressStatus, string> = {
-	completed: "Completed",
-	in_progress: "In progress",
-	not_started: "Not started",
-	locked: "Not unlocked yet",
-};
-
-const STATUS_STYLES: Record<ModuleProgressStatus, string> = {
-	completed: "bg-green-100 text-green-700",
-	in_progress: "bg-amber-100 text-amber-700",
-	not_started: "bg-red-100 text-red-700",
-	locked: "bg-gray-100 text-gray-600",
-};
-
 const STATUS_ORDER: ModuleProgressStatus[] = ["completed", "in_progress", "not_started", "locked"];
-
-function StatusBadge({ status }: { status: ModuleProgressStatus }) {
-	return (
-		<span className={`inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold ${STATUS_STYLES[status]}`}>
-			{STATUS_LABELS[status]}
-		</span>
-	);
-}
 
 // One dot per content item, filled when the student has completed it.
 function ItemDots({ items, student }: { items: AdminContentItem[]; student: ModuleStudentProgress }) {
@@ -159,7 +139,7 @@ export default function ModuleProgress({ moduleId, items }: { moduleId: number; 
 			) : (
 				<>
 					<div className="mt-4 flex flex-wrap gap-2" role="group" aria-label="Filter by progress">
-						{([["", "All", inScope.length], ...STATUS_ORDER.map((s) => [s, STATUS_LABELS[s], counts[s]])] as [ModuleProgressStatus | "", string, number][]).map(
+						{([["", "All", inScope.length], ...STATUS_ORDER.map((s) => [s, PROGRESS_LABELS[s], counts[s]])] as [ModuleProgressStatus | "", string, number][]).map(
 							([value, label, count]) => (
 								<button
 									key={value || "all"}
@@ -216,11 +196,11 @@ export default function ModuleProgress({ moduleId, items }: { moduleId: number; 
 								{shown.map((s) => (
 									<div key={s.user_id} className="rounded-2xl border border-gray-200 bg-white p-4">
 										<div className="flex items-start justify-between gap-3">
-											<div className="min-w-0">
-												<p className="truncate font-semibold text-ink">{s.full_name || "—"}</p>
+											<Link href={`/admin/users/${s.user_id}`} className="group min-w-0">
+												<p className="truncate font-semibold text-ink group-hover:text-brand-blue group-hover:underline">{s.full_name || "—"}</p>
 												<p className="truncate text-sm text-ink-soft">{s.email}</p>
-											</div>
-											<StatusBadge status={s.status} />
+											</Link>
+											<ProgressStatusBadge status={s.status} />
 										</div>
 										<dl className="mt-3 grid grid-cols-2 gap-y-1.5 text-sm">
 											<dt className="text-muted">Cohort</dt>
@@ -255,11 +235,13 @@ export default function ModuleProgress({ moduleId, items }: { moduleId: number; 
 										{shown.map((s) => (
 											<tr key={s.user_id} className="border-b border-gray-100 last:border-0">
 												<td className="px-5 py-3">
-													<p className="font-semibold text-ink">{s.full_name || "—"}</p>
-													<p className="text-xs text-ink-soft">{s.email}</p>
+													<Link href={`/admin/users/${s.user_id}`} className="group block">
+														<p className="font-semibold text-ink group-hover:text-brand-blue group-hover:underline">{s.full_name || "—"}</p>
+														<p className="text-xs text-ink-soft">{s.email}</p>
+													</Link>
 												</td>
 												<td className="px-5 py-3 text-ink-soft">{s.cohort_name}</td>
-												<td className="px-5 py-3"><StatusBadge status={s.status} /></td>
+												<td className="px-5 py-3"><ProgressStatusBadge status={s.status} /></td>
 												<td className="px-5 py-3"><ItemDots items={items} student={s} /></td>
 												{progress.survey && (
 													<td className="px-5 py-3"><SurveyCell submitted={s.survey_submitted} /></td>

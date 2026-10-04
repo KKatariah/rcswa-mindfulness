@@ -336,6 +336,7 @@ import type {
 	Cohort,
 	AdminModule,
 	ModuleProgress,
+	UserOverview,
 	AdminContentItem,
 	AdminUser,
 	Enrollment,
@@ -351,6 +352,13 @@ export async function listUsers(token: string): Promise<AdminUser[]> {
 		headers: { Authorization: `Token ${token}` },
 	});
 	return handleResponse<AdminUser[]>(res);
+}
+
+export async function getUserOverview(id: number, token: string): Promise<UserOverview> {
+	const res = await fetch(`${API_BASE_URL}/users/${id}/overview/`, {
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<UserOverview>(res);
 }
 
 export async function updateUser(

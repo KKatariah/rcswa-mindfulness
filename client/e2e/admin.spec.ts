@@ -236,3 +236,20 @@ test("unpublishing a module asks first", async ({ page, request }) => {
 	await page.reload();
 	await expect(page.getByLabel("Published")).toBeChecked();
 });
+
+test("admin opens a person's profile from the users list and from module progress", async ({ page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/users");
+	await page.getByRole("link", { name: "student@e2e.local" }).filter({ visible: true }).first().click();
+	await expect(page).toHaveURL(/\/admin\/users\/\d+$/);
+	await expect(page.getByRole("heading", { name: "E2E Student" })).toBeVisible();
+	await expect(page.getByText("E2E Cohort").first()).toBeVisible();
+	// Week 1's content was completed in the seed data.
+	const week1 = page.getByRole("link", { name: /^Week 1:/ }).filter({ visible: true });
+	await expect(week1).toBeVisible();
+
+	await week1.click();
+	await expect(page).toHaveURL(/\/admin\/modules\/\d+#progress$/);
+	await page.locator("#progress").getByRole("link", { name: /other@e2e\.local/ }).filter({ visible: true }).click();
+	await expect(page.getByRole("heading", { name: "E2E Other" })).toBeVisible();
+});

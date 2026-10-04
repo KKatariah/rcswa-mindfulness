@@ -79,6 +79,7 @@ from .serializers import (
     _cohort_breakdown,
     _module_completion_stats,
     _module_student_progress,
+    _user_overview,
     _survey_response_rates,
     _forum_activity_stats,
     _enrollment_status_breakdown,
@@ -715,10 +716,15 @@ class UserProfileViewSet(
             return AdminUserSerializer
         return UserDisplayNameSerializer
 
+    @action(detail=True, methods=["get"])
+    def overview(self, request, pk=None):
+        """An admin's view of one person: profile, enrollments, module progress, surveys, forum activity."""
+        return Response(_user_overview(self.get_object()))
+
     def get_permissions(self):
         if self.action in ("partial_update", "update"):
             return [IsAuthenticated(), IsAdminOrSelf()]
-        if self.action == "destroy":
+        if self.action in ("destroy", "overview"):
             return [IsAuthenticated(), IsAdminOrStaff()]
         return [IsAuthenticated()]
 

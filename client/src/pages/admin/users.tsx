@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Head from "next/head";
+import Link from "next/link";
 import AdminLayout from "@/components/admin/AdminLayout";
 import Modal from "@/components/main/Modal";
 import Select from "@/components/ui/Select";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { EnrollmentStatusBadge, RoleBadge } from "@/components/admin/Badges";
 import { PencilIcon } from "@/components/ui/icons";
 import {
 	listCohorts,
@@ -15,34 +17,6 @@ import {
 	deleteEnrollment,
 } from "@/lib/api";
 import type { AdminUser, Cohort, Enrollment } from "@/types/admin";
-
-const STATUS_STYLES: Record<Enrollment["status"], string> = {
-	pending: "bg-amber-100 text-amber-700",
-	active: "bg-green-100 text-green-700",
-	completed: "bg-blue-100 text-blue-700",
-	withdrawn: "bg-gray-100 text-gray-600",
-};
-
-const ROLE_STYLES: Record<AdminUser["role"], string> = {
-	admin: "bg-purple-100 text-purple-700",
-	student: "bg-gray-100 text-gray-600",
-};
-
-function StatusBadge({ status }: { status: Enrollment["status"] }) {
-	return (
-		<span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${STATUS_STYLES[status]}`}>
-			{status}
-		</span>
-	);
-}
-
-function RoleBadge({ role }: { role: AdminUser["role"] }) {
-	return (
-		<span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${ROLE_STYLES[role]}`}>
-			{role}
-		</span>
-	);
-}
 
 type EditFormState = {
 	full_name: string;
@@ -352,10 +326,10 @@ export default function AdminUsersPage() {
 							return (
 								<div key={u.id} className="rounded-2xl border border-gray-200 bg-white p-4">
 									<div className="flex items-start justify-between gap-3">
-										<div className="min-w-0">
-											<p className="truncate font-semibold text-ink">{u.full_name || u.display_name || "—"}</p>
+										<Link href={`/admin/users/${u.id}`} className="group min-w-0">
+											<p className="truncate font-semibold text-ink group-hover:text-brand-blue group-hover:underline">{u.full_name || u.display_name || "—"}</p>
 											<p className="truncate text-sm text-ink-soft">{u.email}</p>
-										</div>
+										</Link>
 										<button
 											type="button"
 											onClick={() => setEditingUser(u)}
@@ -368,7 +342,7 @@ export default function AdminUsersPage() {
 
 									<div className="mt-3 flex flex-wrap items-center gap-2">
 										<RoleBadge role={u.role} />
-										{enrollment ? <StatusBadge status={enrollment.status} /> : <span className="text-xs text-muted">Not enrolled</span>}
+										{enrollment ? <EnrollmentStatusBadge status={enrollment.status} /> : <span className="text-xs text-muted">Not enrolled</span>}
 									</div>
 
 									<dl className="mt-3 grid grid-cols-2 gap-y-1.5 text-sm">
@@ -401,11 +375,15 @@ export default function AdminUsersPage() {
 									const enrollment = enrollmentByUser.get(u.id);
 									return (
 										<tr key={u.id} className="border-b border-gray-100 last:border-0">
-											<td className="px-5 py-3 font-semibold text-ink">{u.full_name || u.display_name || "—"}</td>
-											<td className="px-5 py-3 text-ink-soft">{u.email}</td>
+											<td className="px-5 py-3 font-semibold text-ink">
+												<Link href={`/admin/users/${u.id}`} className="hover:text-brand-blue hover:underline">{u.full_name || u.display_name || "—"}</Link>
+											</td>
+											<td className="px-5 py-3 text-ink-soft">
+												<Link href={`/admin/users/${u.id}`} className="hover:text-brand-blue hover:underline">{u.email}</Link>
+											</td>
 											<td className="px-5 py-3"><RoleBadge role={u.role} /></td>
 											<td className="px-5 py-3 text-ink-soft">{enrollment ? cohortName(enrollment.cohort) : "—"}</td>
-											<td className="px-5 py-3">{enrollment ? <StatusBadge status={enrollment.status} /> : <span className="text-xs text-muted">Not enrolled</span>}</td>
+											<td className="px-5 py-3">{enrollment ? <EnrollmentStatusBadge status={enrollment.status} /> : <span className="text-xs text-muted">Not enrolled</span>}</td>
 											<td className="px-5 py-3 text-ink-soft">{new Date(u.created_at).toLocaleDateString()}</td>
 											<td className="px-5 py-3">
 												<button type="button" onClick={() => setEditingUser(u)} aria-label="Edit user">

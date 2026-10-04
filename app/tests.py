@@ -2455,6 +2455,69 @@ class ModuleProgressTests(APITestCase):
         self.assertEqual([s["email"] for s in resp.data["students"]], ["later@test.local"])
 
 
+class UserOverviewTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.student = User.objects.create_user(email="stu@test.local", password="pw", full_name="Stu Dent")
+        self.cohort = Cohort.objects.create(
+            name="Running", year=2026,
+            start_date=date.today() - timedelta(days=3),
+            end_date=date.today() + timedelta(days=50),
+        )
+        Enrollment.objects.create(user=self.student, cohort=self.cohort, status=Enrollment.Status.ACTIVE)
+        self.week1 = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+        self.week2 = Module.objects.create(week_number=2, title="Week 2", is_published=True)
+        Module.objects.create(week_number=3, title="Draft", is_published=False)
+        self.a = ContentItem.objects.create(
+            module=self.week1, title="A", type="video",
+            provider="youtube", embed_url="https://www.youtube.com/embed/x",
+        )
+        ContentItem.objects.create(
+            module=self.week1, title="B", type="video",
+            provider="youtube", embed_url="https://www.youtube.com/embed/y",
+        )
+        ContentCompletion.objects.create(user=self.student, content_item=self.a)
+        self.survey = Survey.objects.get(module=self.week1, type=SurveyType.WEEKLY)
+        SurveyResponse.objects.create(user=self.student, survey=self.survey, answers={})
+        thread = ForumThread.objects.create(created_by=self.student, title="Hello")
+        ForumPost.objects.create(thread=thread, author=self.student, body="Hello", is_head_post=True)
+        ForumPost.objects.create(thread=thread, author=self.student, body="A reply")
+        ForumPost.objects.create(thread=thread, author=self.student, body="Gone", is_deleted=True)
+
+    def _get(self, user=None):
+        self.client.force_login(user or self.admin)
+        return self.client.get(f"/api/users/{self.student.pk}/overview/")
+
+    def test_student_cannot_view_overview(self):
+        self.assertEqual(self._get(self.student).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_profile_and_enrollment(self):
+        data = self._get().data
+        self.assertEqual(data["user"]["full_name"], "Stu Dent")
+        self.assertEqual([e["cohort_name"] for e in data["enrollments"]], ["Running"])
+
+    def test_module_progress_published_only(self):
+        modules = {m["week_number"]: m for m in self._get().data["modules"]}
+        self.assertNotIn(3, modules)
+        self.assertEqual(modules[1]["status"], "in_progress")
+        self.assertEqual((modules[1]["completed_count"], modules[1]["item_count"]), (1, 2))
+        self.assertTrue(modules[1]["survey_submitted"])
+        # Week 2 opens 7 days after the cohort start, which is still 4 days away.
+        self.assertEqual(modules[2]["status"], "locked")
+
+    def test_surveys_marked_submitted(self):
+        surveys = {s["id"]: s for s in self._get().data["surveys"]}
+        self.assertIsNotNone(surveys[self.survey.pk]["submitted_at"])
+
+    def test_forum_activity_skips_deleted_posts(self):
+        forum = self._get().data["forum"]
+        self.assertEqual(forum["thread_count"], 1)
+        self.assertEqual(forum["post_count"], 1)
+        self.assertNotIn("Gone", [p["body"] for p in forum["recent_posts"]])
+
+
 # ── Notification tests (Issue #74) ─────────────────────────────────────────────
 
 def _make_user(email, password="pw"):
