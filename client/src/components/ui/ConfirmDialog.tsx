@@ -15,7 +15,8 @@ export default function ConfirmDialog({
 }) {
 	return (
 		<div
-			className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+			// z-[60] like Modal: above the mobile bottom nav (z-50).
+			className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
 			onClick={onCancel}
 		>
 			<div

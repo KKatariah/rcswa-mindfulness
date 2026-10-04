@@ -6,6 +6,7 @@ type ModalProps = {
 	onClose: () => void;
 	title?: string;
 	children?: ReactNode;
+	/** Put the close button on its own row above the title (for long titles on small screens). */
 	closeButtonAboveTitle?: boolean;
 };
 
@@ -27,7 +28,8 @@ export default function Modal({ isOpen, onClose, title, children, closeButtonAbo
 
 	return (
 		<div
-			className="fixed inset-0 z-[60] flex items-center justify-center overflow-y-auto bg-black/50 p-4"
+			// z-[60]: above the mobile bottom nav (z-50).
+			className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4"
 			onMouseDown={(event) => {
 				mouseDownOnBackdrop.current = event.target === event.currentTarget;
 			}}
@@ -43,32 +45,50 @@ export default function Modal({ isOpen, onClose, title, children, closeButtonAbo
 				aria-modal="true"
 				aria-labelledby={title ? "modal-title" : undefined}
 				onClick={(event) => event.stopPropagation()}
-				className={`relative max-h-[calc(100dvh-2rem)] w-full max-w-[640px] overflow-hidden rounded-[32px] border-[6px] border-brand-blue bg-white shadow-[0px_10px_20px_rgba(0,0,0,0.15)] ${closeButtonAboveTitle ? "px-6 pb-6 pt-2 sm:px-8 sm:pb-8 sm:pt-3 md:px-12 md:pb-12 md:pt-4" : "p-6 sm:p-8 md:p-12"}`}
+				// max-h-full + the inner scroll area keep tall modals inside the viewport;
+				// short ones size to their content as before.
+				className="flex max-h-full w-full max-w-[640px] flex-col overflow-hidden rounded-[32px] border-[6px] border-brand-blue bg-white shadow-[0px_10px_20px_rgba(0,0,0,0.15)]"
 			>
-				<div
-					className={`modal-scroll-content overscroll-contain ${closeButtonAboveTitle ? "max-h-[calc(100dvh-2rem-44px)] sm:max-h-[calc(100dvh-2rem-56px)] md:max-h-[calc(100dvh-2rem-76px)]" : "max-h-[calc(100dvh-5rem-12px)] sm:max-h-[calc(100dvh-6rem-12px)] md:max-h-[calc(100dvh-8rem-12px)]"}`}
-				>
-					<div>
-						<div className={closeButtonAboveTitle ? "flex flex-col items-end" : "relative flex items-center justify-center"}>
+				<div className={`modal-scroll-content min-h-0 overscroll-contain ${closeButtonAboveTitle ? "px-6 pb-6 pt-3 sm:px-8 sm:pb-8 md:px-12 md:pb-12 md:pt-4" : "p-6 sm:p-8 md:p-12"}`}>
+					{closeButtonAboveTitle ? (
+						// Close button on its own row so a long title can't run underneath it on narrow screens.
+						<div className="flex flex-col items-end">
+							<CloseButton onClose={onClose} compact />
 							{title && (
-								<h2 id="modal-title" className={`text-2xl font-extrabold text-ink sm:text-3xl md:text-4xl ${closeButtonAboveTitle ? "order-2 w-full text-center" : ""}`}>
+								<h2 id="modal-title" className="w-full text-center text-2xl font-extrabold text-ink sm:text-3xl md:text-4xl">
 									{title}
 								</h2>
 							)}
-							<button
-								type="button"
-								onClick={onClose}
-								aria-label="Close"
-								className={`${closeButtonAboveTitle ? "order-1 size-8" : "absolute right-0 top-0 size-12"} flex items-center justify-center rounded-lg text-ink hover:bg-surface-muted`}
-							>
-								<XIcon className={closeButtonAboveTitle ? "size-5" : "size-6"} strokeWidth={2.5} />
-							</button>
 						</div>
+					) : (
+						<div className="relative flex items-center justify-center">
+							{title && (
+								<h2 id="modal-title" className="text-2xl font-extrabold text-ink sm:text-3xl md:text-4xl">
+									{title}
+								</h2>
+							)}
+							<div className="absolute right-0 top-0">
+								<CloseButton onClose={onClose} />
+							</div>
+						</div>
+					)}
 
-						{children && <div className="mt-6">{children}</div>}
-					</div>
+					{children && <div className="mt-6">{children}</div>}
 				</div>
 			</div>
 		</div>
+	);
+}
+
+function CloseButton({ onClose, compact = false }: { onClose: () => void; compact?: boolean }) {
+	return (
+		<button
+			type="button"
+			onClick={onClose}
+			aria-label="Close"
+			className={`flex items-center justify-center rounded-lg text-ink hover:bg-surface-muted ${compact ? "size-8" : "size-12"}`}
+		>
+			<XIcon className={compact ? "size-5" : "size-6"} strokeWidth={2.5} />
+		</button>
 	);
 }
