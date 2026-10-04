@@ -6,7 +6,9 @@ import remarkGfm from "remark-gfm";
 import AdminLayout from "@/components/admin/AdminLayout";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import ContentEmbed from "@/components/modules/ContentEmbed";
-import { ChevronDownIcon, ChevronUpIcon, PencilIcon, TrashIcon } from "@/components/ui/icons";
+import DragHandle, { ReorderHelp } from "@/components/ui/DragHandle";
+import { PencilIcon, TrashIcon } from "@/components/ui/icons";
+import { useDragReorder, type ReorderHandlers } from "@/hooks/useDragReorder";
 import {
 	getModuleAdmin,
 	updateModule,
@@ -183,6 +185,7 @@ export default function AdminModuleEditorPage() {
 	const [metaSaving, setMetaSaving] = useState(false);
 	const [metaError, setMetaError] = useState<string | null>(null);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
+	const { draggingId, startDrag, handleKey } = useDragReorder<number>();
 	const [confirmingModuleDelete, setConfirmingModuleDelete] = useState(false);
 	const [moduleDeleting, setModuleDeleting] = useState(false);
 
@@ -246,20 +249,22 @@ export default function AdminModuleEditorPage() {
 		await refresh();
 	}
 
-	async function handleMoveItem(index: number, direction: -1 | 1) {
-		if (!module) return;
-		const items = [...module.content_items];
-		[items[index], items[index + direction]] = [items[index + direction], items[index]];
-		const previous = module;
-		setModule({ ...module, content_items: items });
-		setDeleteError(null);
-		try {
-			const token = localStorage.getItem("token") ?? "";
-			await reorderContentItems(module.id, items.map((item) => item.id), token);
-		} catch (err) {
-			setModule(previous);
-			setDeleteError(err instanceof Error ? err.message : "Failed to reorder content items");
-		}
+	function itemReorder(current: AdminModule): ReorderHandlers<number> {
+		const byId = new Map(current.content_items.map((item) => [item.id, item]));
+		const arrange = (ids: number[]) => setModule((m) => m && { ...m, content_items: ids.map((id) => byId.get(id)!) });
+		return {
+			onMove: arrange,
+			onCancel: arrange,
+			onDrop: async (ids, before) => {
+				setDeleteError(null);
+				try {
+					await reorderContentItems(current.id, ids, localStorage.getItem("token") ?? "");
+				} catch (err) {
+					arrange(before);
+					setDeleteError(err instanceof Error ? err.message : "Failed to reorder content items");
+				}
+			},
+		};
 	}
 
 	async function handleDeleteItem(item: AdminContentItem) {
@@ -441,7 +446,7 @@ export default function AdminModuleEditorPage() {
 					</p>
 				)}
 
-				{module.content_items.map((item, index) =>
+				{module.content_items.map((item) =>
 					editingItem?.id === item.id ? (
 						<ContentItemForm
 							key={item.id}
@@ -450,8 +455,20 @@ export default function AdminModuleEditorPage() {
 							onCancel={() => setEditingItem(null)}
 						/>
 					) : (
-						<div key={item.id} className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-4">
+						<div
+							key={item.id}
+							data-reorder-id={item.id}
+							className={`flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-4 ${
+								draggingId === item.id ? "opacity-50" : ""
+							}`}
+						>
 							<div className="flex min-w-0 items-center gap-3">
+								<DragHandle
+									label={`Reorder ${item.title}`}
+									onPointerDown={(e) => startDrag(e, item.id, module.content_items.map((i) => i.id), itemReorder(module))}
+									onKeyDown={(e) => handleKey(e, item.id, module.content_items.map((i) => i.id), itemReorder(module))}
+									disabled={editingItem !== null}
+								/>
 								<span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-semibold uppercase text-muted">
 									{item.type}
 								</span>
@@ -463,24 +480,6 @@ export default function AdminModuleEditorPage() {
 								)}
 							</div>
 							<div className="flex items-center gap-3">
-								<button
-									type="button"
-									onClick={() => handleMoveItem(index, -1)}
-									disabled={index === 0}
-									aria-label="Move content item up"
-									className="disabled:opacity-30"
-								>
-									<ChevronUpIcon className="size-4 text-muted hover:text-brand-blue" />
-								</button>
-								<button
-									type="button"
-									onClick={() => handleMoveItem(index, 1)}
-									disabled={index === module.content_items.length - 1}
-									aria-label="Move content item down"
-									className="disabled:opacity-30"
-								>
-									<ChevronDownIcon className="size-4 text-muted hover:text-brand-blue" />
-								</button>
 								<button type="button" onClick={() => setEditingItem(item)} aria-label="Edit content item">
 									<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
 								</button>
@@ -492,6 +491,8 @@ export default function AdminModuleEditorPage() {
 					)
 				)}
 			</div>
+
+			<ReorderHelp />
 
 			{confirmingModuleDelete && (
 				<ConfirmDialog

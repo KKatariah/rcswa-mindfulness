@@ -65,33 +65,6 @@ export type AdminAdditionalResource = {
 	updated_at: string;
 };
 
-export type SurveyQuestion = {
-	id: string;
-	type: "integer" | "likert" | "longtext";
-	text: string;
-	unit?: string;
-	min?: number;
-	max?: number;
-	section?: string;
-	scale_labels?: Record<string, string>;
-	skip_if?: { question_id: string; value: number };
-	[key: string]: unknown;
-};
-
-export type AdminSurvey = {
-	id: number;
-	code: string;
-	title: string;
-	module: number | null;
-	module_week_number: number | null;
-	question_count: number;
-	response_count: number;
-};
-
-export type AdminSurveyDetail = AdminSurvey & {
-	questions: SurveyQuestion[];
-};
-
 export type DashboardStats = {
 	total_enrolled: number;
 	by_cohort: {
@@ -125,4 +98,38 @@ export type DashboardStats = {
 		active_participants: number;
 	};
 	enrollment_status_breakdown: Record<string, number>;
+};
+
+export type SurveyType = "intake" | "weekly" | "end" | "followup";
+
+export type SurveyQuestion = {
+	id: string;
+	type: "integer" | "likert" | "longtext";
+	text: string;
+	section?: string;
+	unit?: string;
+	min?: number;
+	max?: number;
+	scale_labels?: Record<string, string>;
+	skip_if?: { question_id: string; value: number };
+};
+
+export type AdminSurvey = {
+	id: number;
+	code: string;
+	title: string;
+	type: SurveyType;
+	module: number | null;
+	questions: SurveyQuestion[];
+	response_count: number;
+};
+
+export type AdminSurveyResponse = {
+	id: number;
+	participant_id: number;
+	full_name: string;
+	email: string;
+	cohort: string;
+	submitted_at: string;
+	answers: Record<string, number | string>;
 };

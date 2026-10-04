@@ -3,6 +3,7 @@ from django.conf import settings
 from django.contrib import admin, messages
 from django.contrib.auth.admin import UserAdmin
 from django.db import transaction
+from rest_framework import serializers
 
 from .models import (
     User,
@@ -22,6 +23,7 @@ from .models import (
     ForumThread,
     ForumPost,
 )
+from .serializers import validate_survey_questions
 
 
 @admin.register(User)
@@ -218,42 +220,18 @@ admin.site.register(SurveyResponse)
 
 # ── Survey admin ──────────────────────────────────────────────────────────────
 
-_ALLOWED_QUESTION_TYPES = {"integer", "likert", "longtext"}
-
-
 class SurveyAdminForm(forms.ModelForm):
     class Meta:
         model = Survey
         fields = ["module", "code", "title", "type", "questions"]
 
     def clean_questions(self):
+        # Same rules as the admin API, so questions can't be saved here in a shape the app rejects.
         questions = self.cleaned_data.get("questions")
-        if not isinstance(questions, list):
-            raise forms.ValidationError("Questions must be a JSON array.")
-        ids_seen: set = set()
-        for i, q in enumerate(questions):
-            label = f"Question {i + 1}"
-            if not isinstance(q, dict):
-                raise forms.ValidationError(f"{label}: must be a JSON object.")
-            if not q.get("id") or not isinstance(q["id"], str):
-                raise forms.ValidationError(f"{label}: 'id' must be a non-empty string.")
-            if q["id"] in ids_seen:
-                raise forms.ValidationError(f"{label}: duplicate id {q['id']!r}.")
-            ids_seen.add(q["id"])
-            qtype = q.get("type")
-            if qtype not in _ALLOWED_QUESTION_TYPES:
-                raise forms.ValidationError(
-                    f"{label}: 'type' must be one of {sorted(_ALLOWED_QUESTION_TYPES)}."
-                )
-            if qtype == "likert":
-                if not isinstance(q.get("min"), int) or not isinstance(q.get("max"), int):
-                    raise forms.ValidationError(
-                        f"{label}: likert questions require integer 'min' and 'max'."
-                    )
-                if q["min"] >= q["max"]:
-                    raise forms.ValidationError(
-                        f"{label}: 'min' must be less than 'max'."
-                    )
+        try:
+            validate_survey_questions(questions)
+        except serializers.ValidationError as exc:
+            raise forms.ValidationError(exc.detail)
         return questions
 
 

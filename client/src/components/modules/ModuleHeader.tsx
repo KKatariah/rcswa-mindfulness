@@ -17,7 +17,7 @@ export default function ModuleHeader({
 }: ModuleHeaderProps) {
 	return (
 		<div className={embedded ? "px-6 pt-6 sm:px-10 sm:pt-10 lg:px-12 lg:pt-12" : "rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)]"}>
-			<h1 className="text-2xl sm:text-3xl font-extrabold text-ink">{title}</h1>
+			<h1 className="text-2xl sm:text-3xl font-extrabold wrap-anywhere text-ink">{title}</h1>
 
 			<div className="mt-2 flex flex-wrap items-center gap-3">
 				<div className="inline-flex items-center gap-2 text-sm font-semibold text-ink">

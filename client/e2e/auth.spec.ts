@@ -1,9 +1,10 @@
 import { expect, test } from "@playwright/test";
-import { PASSWORD, STUDENT } from "./helpers";
+import { openNavMenu, PASSWORD, STUDENT } from "./helpers";
 
 test("logs in with email and password", async ({ page }) => {
 	await page.goto("/");
-	await page.getByRole("button", { name: "Log In" }).click();
+	await openNavMenu(page);
+	await page.getByRole("button", { name: "Log In" }).filter({ visible: true }).click();
 	await page.locator("#login-email").fill(STUDENT);
 	await page.locator("#login-password").fill(PASSWORD);
 	await page.getByRole("button", { name: "Login", exact: true }).click();
@@ -12,7 +13,8 @@ test("logs in with email and password", async ({ page }) => {
 
 test("rejects a wrong password", async ({ page }) => {
 	await page.goto("/");
-	await page.getByRole("button", { name: "Log In" }).click();
+	await openNavMenu(page);
+	await page.getByRole("button", { name: "Log In" }).filter({ visible: true }).click();
 	await page.locator("#login-email").fill(STUDENT);
 	await page.locator("#login-password").fill("not-the-password");
 	await page.getByRole("button", { name: "Login", exact: true }).click();

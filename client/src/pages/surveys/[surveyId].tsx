@@ -63,29 +63,50 @@ export default function SurveyPage() {
 		};
 	}, [authLoading, router.isReady, surveyId, user]);
 
-	const formalQuestions = useMemo<NormalizedQuestion[]>(() => {
-		if (!survey?.questions) return [];
-
+	// Only trust well-formed entries: a malformed question from the API is dropped rather than
+	// crashing the page (e.g. a non-string id has no .replace, an object `text` can't render).
+	const questions = useMemo(() => {
+		if (!Array.isArray(survey?.questions)) return [];
 		return survey.questions
+			.filter((q) => q && typeof q === "object" && typeof q.id === "string")
+			.map((q) => ({
+				id: q.id,
+				text: typeof q.text === "string" ? q.text : "",
+				section: typeof q.section === "string" ? q.section : "",
+			}));
+	}, [survey]);
+
+	const formalQuestions = useMemo<NormalizedQuestion[]>(() => {
+		return questions
 		.filter((q) => ["q3", "q4", "q5", "q6"].includes(q.id))
 		.map((q) => ({
 			id: Number(q.id.replace("q", "")),
 			text: q.text,
 		}));
-	}, [survey]);
+	}, [questions]);
 
 	const informalQuestions = useMemo<NormalizedQuestion[]>(() => {
-		if (!survey?.questions) return [];
-
-		return survey.questions
+		return questions
 		.filter((q) => ["q7", "q8", "q9", "q10", "q11", "q12"].includes(q.id))
 		.map((q) => ({
 			id: Number(q.id.replace("q", "")),
 			text: q.text,
 		}));
-	}, [survey]);
+	}, [questions]);
 	
-	const title = survey?.title || `Week ${surveyId ?? "1"} Survey`;
+	// Wording for the questions SurveyQuestions lays out itself, so admin edits show up.
+	const { questionText, sectionText } = useMemo(() => {
+		const questionText: Record<number, string> = {};
+		const sectionText: Record<number, string> = {};
+		for (const q of questions) {
+			const n = Number(q.id.replace("q", ""));
+			if (q.text) questionText[n] = q.text;
+			if (q.section) sectionText[n] = q.section;
+		}
+		return { questionText, sectionText };
+	}, [questions]);
+
+	const title = (typeof survey?.title === "string" && survey.title) || `Week ${surveyId ?? "1"} Survey`;
 
 	const handleSubmit = async (answers: Record<number, number | string>) => {
 		if (!surveyId || !user) return;
@@ -174,6 +195,8 @@ export default function SurveyPage() {
 							<SurveyQuestions
 								formalQuestions={formalQuestions}
 								informalQuestions={informalQuestions}
+								questionText={questionText}
+								sectionText={sectionText}
 								onSubmit={handleSubmit}
 								isSubmitting={submitting}
 							/>

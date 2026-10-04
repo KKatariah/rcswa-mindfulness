@@ -8,6 +8,10 @@ type ScaleQuestion = {
 type SurveyQuestionsProps = {
 	formalQuestions?: ScaleQuestion[];
 	informalQuestions?: ScaleQuestion[];
+	// Admin-editable wording from the survey definition, keyed by question number.
+	// Falls back to the built-in copy below when missing.
+	questionText?: Partial<Record<number, string>>;
+	sectionText?: Partial<Record<number, string>>;
 	onSubmit?: (answers: Record<number, number | string>) => void;
 	isSubmitting?: boolean;
 };
@@ -116,10 +120,16 @@ const JOURNAL_MAX_CHARS = 5000;
 export default function SurveyQuestions({
 	formalQuestions = DEFAULT_FORMAL_QUESTIONS,
 	informalQuestions = DEFAULT_INFORMAL_QUESTIONS,
+	questionText = {},
+	sectionText = {},
 	onSubmit,
 	isSubmitting = false,
 }: SurveyQuestionsProps) {
 	const [answers, setAnswers] = useState<Record<number, number | string>>({});
+	// Each question in the journal prompt becomes its own list item.
+	const journalPrompts = questionText[13]
+		? (questionText[13].match(/[^?]+\?|[^?]+$/g) ?? []).map((part) => part.trim()).filter(Boolean)
+		: ["How are you feeling this week?", "What has been your experience with the mindfulness intervention this week?"];
 	const journalWords = String(answers[13] ?? "").trim().split(/\s+/).filter(Boolean).length;
 
 	const updateAnswer = (questionId: number, value: number | string) => {
@@ -135,11 +145,11 @@ export default function SurveyQuestions({
 		<form onSubmit={submit} className="grid gap-4 pb-[calc(var(--mobile-bottom-nav-height)+var(--mobile-bottom-nav-safe))] md:gap-5 md:pb-0">
 			<section className="rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10">
 				<h2 className="text-[13px] font-bold leading-5 text-ink md:text-base">
-					Questions 1 to 6 ask about your <u>formal meditation practice</u> (e.g. sitting meditation).
+					{sectionText[1] ?? <>Questions 1 to 6 ask about your <u>formal meditation practice</u> (e.g. sitting meditation).</>}
 				</h2>
 				<div className="mt-4 grid gap-3 md:mt-5 md:max-w-[900px] md:gap-4">
 					<label className="grid gap-2 text-sm leading-5 text-ink md:grid-cols-[minmax(0,1fr)_170px] md:items-center md:text-base">
-						<span>1. How many times did you do formal meditation practice in the <u>past week</u>?</span>
+						<span>1. {questionText[1] ?? <>How many times did you do formal meditation practice in the <u>past week</u>?</>}</span>
 						<input
 							type="number"
 							min="0"
@@ -149,7 +159,7 @@ export default function SurveyQuestions({
 						/>
 					</label>
 					<label className="grid gap-2 text-sm leading-5 text-ink md:grid-cols-[minmax(0,1fr)_170px] md:items-center md:text-base">
-						<span>2. What was the average duration of each meditation session (estimate in minutes)?</span>
+						<span>2. {questionText[2] ?? "What was the average duration of each meditation session (estimate in minutes)?"}</span>
 						<input
 							type="number"
 							min="0"
@@ -170,7 +180,7 @@ export default function SurveyQuestions({
 
 			<section className="rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10">
 				<h2 className="text-sm font-bold leading-5 text-ink md:text-base">
-					Questions 7 to 12 ask about your informal practice (being mindful in everyday life, outside of meditation sessions).
+					{sectionText[7] ?? "Questions 7 to 12 ask about your informal practice (being mindful in everyday life, outside of meditation sessions)."}
 				</h2>
 				<p className="mt-3 text-sm font-bold leading-5 text-ink md:mt-4 md:text-base">
 					Again, please select the appropriate number to indicate how much each of the following were true for you over the <u>past week</u>.
@@ -184,8 +194,7 @@ export default function SurveyQuestions({
 					Please write 100-250 words (4-5 sentences) reflecting on the following questions:
 				</p>
 				<ol className="mt-2 list-decimal pl-5 text-sm leading-5 text-ink md:pl-6 md:text-base">
-					<li>How are you feeling this week?</li>
-					<li>What has been your experience with the mindfulness intervention this week?</li>
+					{journalPrompts.map((prompt) => <li key={prompt}>{prompt}</li>)}
 				</ol>
 				<textarea
 					rows={4}

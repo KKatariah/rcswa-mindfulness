@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { IconProps, BarChart2Icon, CalendarIcon, BookOpenIcon, UsersIcon, CheckIcon, FolderIcon, ClipboardListIcon } from "@/components/ui/icons";
+import { IconProps, BarChart2Icon, CalendarIcon, BookOpenIcon, UsersIcon, CheckIcon, FolderIcon, ClipboardIcon } from "@/components/ui/icons";
 
 type NavItem = {
   label: string;
@@ -12,7 +12,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/admin", icon: BarChart2Icon },
   { label: "Cohorts", href: "/admin/cohorts", icon: CalendarIcon },
   { label: "Modules", href: "/admin/modules", icon: BookOpenIcon },
-  { label: "Surveys", href: "/admin/surveys", icon: ClipboardListIcon },
+  { label: "Surveys", href: "/admin/surveys", icon: ClipboardIcon },
   { label: "Resources", href: "/admin/resources", icon: FolderIcon },
   { label: "Users", href: "/admin/users", icon: UsersIcon },
   { label: "Approvals", href: "/admin/approvals", icon: CheckIcon },
