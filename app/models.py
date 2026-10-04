@@ -191,8 +191,13 @@ class Module(models.Model):
     class Meta:
         ordering = ["week_number"]
 
+    @property
+    def week_label(self):
+        """Display label for the week; week 0 is the programme introduction."""
+        return "Introduction" if self.week_number == 0 else f"Week {self.week_number}"
+
     def __str__(self):
-        return f"Week {self.week_number}: {self.title}"
+        return f"{self.week_label}: {self.title}"
 
 
 class ContentItem(models.Model):

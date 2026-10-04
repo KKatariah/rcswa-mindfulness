@@ -204,9 +204,10 @@ def _cohort_start_date(user):
 
 
 def module_unlock_date(module, user):
-    """Week N opens (N-1) weeks after the user's cohort starts. None when the user has no active cohort."""
+    """Week N opens (N-1) weeks after the user's cohort starts; the week 0 introduction opens with week 1.
+    None when the user has no active cohort."""
     start = _cohort_start_date(user)
-    return start + timedelta(weeks=module.week_number - 1) if start else None
+    return start + timedelta(weeks=max(module.week_number - 1, 0)) if start else None
 
 
 def module_is_unlocked(module, user):
