@@ -121,6 +121,7 @@ def _user_payload(user):
         "avatar_url": gravatar_url(user.email),
         "auth_provider": user.auth_provider,
         "cohort_start_date": _active_cohort_start_date(user),
+        "forum_rules_accepted": user.forum_rules_accepted_at is not None,
     }
 
 
@@ -536,6 +537,17 @@ class IsAuthorOrAdmin(BasePermission):
         return False
 
 
+class HasAcceptedForumRules(BasePermission):
+    message = "You must agree to the forum rules before using the forum."
+
+    def has_permission(self, request, view):
+        u = request.user
+        # Admins moderate the forum and aren't asked to accept the rules.
+        if getattr(u, "role", None) == "admin" or u.is_staff:
+            return True
+        return u.forum_rules_accepted_at is not None
+
+
 class ForumThreadViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     throttle_scope = "forum_post"
@@ -600,8 +612,8 @@ class ForumThreadViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ["partial_update", "destroy"]:
-            return [IsAuthenticated(), IsAuthorOrAdmin()]
-        return [IsAuthenticated()]
+            return [IsAuthenticated(), HasAcceptedForumRules(), IsAuthorOrAdmin()]
+        return [IsAuthenticated(), HasAcceptedForumRules()]
 
 
 class ForumPostViewSet(
@@ -664,8 +676,8 @@ class ForumPostViewSet(
 
     def get_permissions(self):
         if self.action in ["partial_update", "destroy"]:
-            return [IsAuthenticated(), IsAuthorOrAdmin()]
-        return [IsAuthenticated()]
+            return [IsAuthenticated(), HasAcceptedForumRules(), IsAuthorOrAdmin()]
+        return [IsAuthenticated(), HasAcceptedForumRules()]
 
 
 # ── User profile ───────────────────────────────────────────────────────────────
@@ -1041,6 +1053,16 @@ def dashboard_stats_view(request):
         "forum_activity": _forum_activity_stats(),
         "enrollment_status_breakdown": _enrollment_status_breakdown(),
     })
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def accept_forum_rules_view(request):
+    user = request.user
+    if user.forum_rules_accepted_at is None:
+        user.forum_rules_accepted_at = timezone.now()
+        user.save(update_fields=["forum_rules_accepted_at"])
+    return Response({"user": _user_payload(user)})
 
 
 @api_view(["GET"])
