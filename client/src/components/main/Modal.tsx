@@ -47,9 +47,10 @@ export default function Modal({ isOpen, onClose, title, children, closeButtonAbo
 				onClick={(event) => event.stopPropagation()}
 				// max-h-full + the inner scroll area keep tall modals inside the viewport;
 				// short ones size to their content as before.
-				className="flex max-h-full w-full max-w-[640px] flex-col overflow-hidden rounded-[32px] border-[6px] border-brand-blue bg-white shadow-[0px_10px_20px_rgba(0,0,0,0.15)]"
+				className={`flex max-h-full w-full max-w-[640px] flex-col overflow-hidden rounded-[32px] border-[6px] border-brand-blue bg-white shadow-[0px_10px_20px_rgba(0,0,0,0.15)] ${closeButtonAboveTitle ? "px-6 pb-6 pt-3 sm:px-8 sm:pb-8 md:px-12 md:pb-12 md:pt-4" : "p-6 sm:p-8 md:p-12"}`}
 			>
-				<div className={`modal-scroll-content min-h-0 overscroll-contain ${closeButtonAboveTitle ? "px-6 pb-6 pt-3 sm:px-8 sm:pb-8 md:px-12 md:pb-12 md:pt-4" : "p-6 sm:p-8 md:p-12"}`}>
+				{/* Padding stays on the dialog so the scrollbar sits inset inside it, not against the border. */}
+				<div className="modal-scroll-content min-h-0 overscroll-contain">
 					{closeButtonAboveTitle ? (
 						// Close button on its own row so a long title can't run underneath it on narrow screens.
 						<div className="flex flex-col items-end">
