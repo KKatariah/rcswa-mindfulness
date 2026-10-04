@@ -4,7 +4,7 @@ import Head from "next/head";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
 import { useAuth } from "@/context/AuthContext";
-import ForumRulesModal, { ForumRulesList } from "@/components/forum/ForumRulesModal";
+import ForumRulesModal, { ForumRulesSummary } from "@/components/forum/ForumRulesModal";
 import {
   acceptForumRules,
   createForumPost,
@@ -890,7 +890,7 @@ function ForumSidebar({
       </div>
       <div className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
         <p className="mb-3 text-sm font-bold text-ink">Forum rules</p>
-        <ForumRulesList />
+        <ForumRulesSummary />
       </div>
     </div>
   );
@@ -1110,7 +1110,7 @@ export default function ForumPage() {
               <ForumRulesModal
                 isOpen
                 onAccept={handleAcceptRules}
-                onDecline={() => router.push("/modules")}
+                onClose={() => router.push("/modules")}
               />
             </div>
           ) : error ? (
