@@ -5,7 +5,7 @@ import Link from "next/link";
 import Navbar from "@/components/main/Navbar";
 import Footer from "@/components/main/Footer";
 import Sidebar from "@/components/main/Sidebar";
-import NextSession from "@/components/modules/NextSession";
+import UpcomingSession from "@/components/modules/UpcomingSession";
 import { CheckIcon, LockIcon, PlayIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { listModules, listProgress, type ApiModule } from "@/lib/api";
@@ -81,7 +81,6 @@ export default function ModulesIndexPage() {
 	const router = useRouter();
 	const { user, isLoading: authLoading } = useAuth();
 	const [modules, setModules] = useState<ApiModule[]>([]);
-	const [currentTime] = useState(() => Date.now());
 
 	useEffect(() => {
 		if (!authLoading && !user) {
@@ -130,40 +129,6 @@ export default function ModulesIndexPage() {
 	}
 
 	const rows = buildWeekRows(modules, completedItemIds, user?.cohort_start_date);
-	const nextModule = modules
-    .filter(
-        (module) =>
-            module.is_published &&
-            module.unlock_at !== null &&
-            new Date(module.unlock_at).getTime() > currentTime
-    )
-    .sort(
-        (a, b) =>
-            new Date(a.unlock_at!).getTime() -
-            new Date(b.unlock_at!).getTime()
-    )[0];
-
-const nextSessionDate = nextModule?.unlock_at
-    ? new Date(nextModule.unlock_at)
-    : null;
-
-const nextSessionDateLabel = nextSessionDate
-    ? nextSessionDate.toLocaleDateString("en-AU", {
-          timeZone: "Australia/Perth",
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-      })
-    : undefined;
-
-const nextSessionTimeLabel = nextSessionDate
-    ? nextSessionDate.toLocaleTimeString("en-AU", {
-          timeZone: "Australia/Perth",
-          hour: "numeric",
-          minute: "2-digit",
-          hour12: true,
-      })
-    : undefined;
 	const completedWeeks = rows.filter((r) => r.status === "completed").length;
 	const totalItemsAll = rows.reduce((sum, r) => sum + r.totalItems, 0);
 	const completedItemsAll = rows.reduce((sum, r) => sum + r.completedItems, 0);
@@ -182,7 +147,7 @@ const nextSessionTimeLabel = nextSessionDate
 					<Navbar />
 				</div>
 
-				<div className="mx-auto grid max-w-[1920px] items-start gap-6 p-4 md:grid-cols-[240px_minmax(0,1fr)_280px] lg:p-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+				<div className="mx-auto grid max-w-[1920px] items-start gap-6 p-4 md:grid-cols-[240px_minmax(0,1fr)] lg:p-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
 					<Sidebar responsive />
 
 					<div className="flex min-w-0 flex-col gap-6">
@@ -266,20 +231,13 @@ const nextSessionTimeLabel = nextSessionDate
 							)}
 						</div>
 
-						                    <div className="min-w-0 md:col-start-3 md:sticky md:top-20 lg:top-24">
-                        {!loading && !authLoading && !error && nextModule && (
-                            <NextSession
-                                moduleTitle={`Module Week ${nextModule.week_number}`}
-                                startsAt={nextModule.unlock_at ?? undefined}
-                                dateLabel={nextSessionDateLabel}
-                                timeLabel={nextSessionTimeLabel}
-                            />
-                        )}
-                    </div>
-                </div>
-            </div>
+						<div className="min-w-0 md:col-start-2 xl:col-start-3 md:sticky md:top-20 lg:top-24">
+							{!loading && !authLoading && !error && <UpcomingSession modules={modules} />}
+						</div>
+					</div>
+				</div>
 
-            <Footer />
-        </>
-    );
+				<Footer />
+			</>
+	);
 }
