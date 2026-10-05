@@ -2615,7 +2615,7 @@ class FailedSendRetriesNextRunTests(TestCase):
 
     def setUp(self):
         self.user = _make_user("retry@test.local")
-        # reminder_time defaults to 08:00 Perth — the mock will set current hour to 8
+        # reminder_time defaults to 17:00 Perth — the mock will set current hour to 17
         self.cohort = _make_cohort(days_ago=0, duration=56)
         Enrollment.objects.create(user=self.user, cohort=self.cohort)
         self.module = _make_module(week=1)
@@ -2638,7 +2638,7 @@ class FailedSendRetriesNextRunTests(TestCase):
         from zoneinfo import ZoneInfo
         PERTH_TZ = ZoneInfo("Australia/Perth")
         fake_now = datetime.datetime.combine(
-            datetime.date.today(), datetime.time(8, 0), tzinfo=PERTH_TZ
+            datetime.date.today(), datetime.time(17, 0), tzinfo=PERTH_TZ
         )
 
         with patch("app.management.commands.send_due_reminders._perth_now", return_value=fake_now):
@@ -2712,7 +2712,7 @@ class DailyMeditationReminderTests(TestCase):
     def _run(self):
         from zoneinfo import ZoneInfo
         fake_now = datetime.datetime.combine(
-            datetime.date.today(), datetime.time(8, 0), tzinfo=ZoneInfo("Australia/Perth")
+            datetime.date.today(), datetime.time(17, 0), tzinfo=ZoneInfo("Australia/Perth")
         )
         out = StringIO()
         with patch("app.management.commands.send_due_reminders._perth_now", return_value=fake_now):

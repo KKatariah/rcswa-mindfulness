@@ -113,7 +113,7 @@ class Command(BaseCommand):
         user_ids = list({e.user_id for e in enrollments})
 
         # ── Per-user preference hour lookup ────────────────────────────────────
-        # Users without a preference row default to 8am Perth.
+        # Users without a preference row default to 5pm Perth.
         pref_hours: dict[int, int] = {}
         for pref in NotificationPreference.objects.filter(user_id__in=user_ids).values(
             "user_id", "reminder_time"
@@ -182,7 +182,7 @@ class Command(BaseCommand):
 
             for enr in enr_list:
                 user = enr.user
-                user_hour = pref_hours.get(user.id, 8)
+                user_hour = pref_hours.get(user.id, 17)
 
                 # Hourly cron support: only fire for users whose preferred hour matches.
                 if user_hour != current_hour:
@@ -251,7 +251,7 @@ class Command(BaseCommand):
                 continue
 
             # Respect the user's preferred reminder hour.
-            user_hour = pref_hours.get(user.id, 8)
+            user_hour = pref_hours.get(user.id, 17)
             if user_hour != current_hour:
                 continue
 

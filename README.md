@@ -88,8 +88,8 @@ was sent successfully is never sent again, and failed sends are retried on the
 next run.
 
 - `send_due_reminders` must run **every hour** — it filters each user by their
-  `reminder_time` preference (Perth timezone) so a user who chose 8 am receives their
-  reminder at the cron run that corresponds to 8 am Perth time.
+  `reminder_time` preference (Perth timezone) so a user who chose 5 pm receives their
+  reminder at the cron run that corresponds to 5 pm Perth time.
 - `send_module_unlock_notifications` tells each participant "Week N is now
   available" on the day that week unlocks for their cohort (cohort start date +
   (N − 1) weeks, Perth time). It only looks at weeks unlocking *today*, so it runs
