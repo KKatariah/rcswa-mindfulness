@@ -10,6 +10,7 @@ from django.db import connection
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 from django.test import TestCase as DjangoTestCase, override_settings
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase as DRFAPITestCase
 
@@ -309,6 +310,11 @@ class ForumTests(APITestCase):
             email="admin@test.local", password="testpass",
             full_name="Admin User", role=User.Role.ADMIN,
         )
+        User.objects.filter(pk__in=[self.student.pk, self.other.pk]).update(
+            forum_rules_accepted_at=timezone.now()
+        )
+        self.student.refresh_from_db()
+        self.other.refresh_from_db()
         self.module = Module.objects.create(
             week_number=1, title="Week 1", is_published=True
         )
@@ -2046,6 +2052,14 @@ class ModuleUnlockTests(APITestCase):
         self.client.force_login(self.student)
         self.assertTrue(self._modules_by_week()[3]["is_unlocked"])
 
+    def test_week0_intro_opens_with_week1(self):
+        Module.objects.create(week_number=0, title="Module 0 - Introduction", is_published=True)
+        self.client.force_login(self.student)
+        modules = self._modules_by_week()
+        self.assertTrue(modules[0]["is_unlocked"])
+        self.assertEqual(modules[0]["unlock_at"], modules[1]["unlock_at"])
+        self.assertEqual(list(modules)[0], 0)
+
     def test_locked_module_detail_returns_403(self):
         self.client.force_login(self.student)
         resp = self.client.get(f"/api/modules/{self.week3.pk}/")
@@ -2073,6 +2087,7 @@ class ForumArchiveTests(APITestCase):
     def setUp(self):
         self.student = User.objects.create_user(
             email="student@test.local", password="testpass",
+            forum_rules_accepted_at=timezone.now(),
         )
         self.module = Module.objects.create(week_number=1, title="Week 1", is_published=True)
         self.thread = ForumThread.objects.create(
@@ -2135,6 +2150,219 @@ class ForumArchiveTests(APITestCase):
 
 # ── Admin portal: dashboard stats ────────────────────────────────────────────────
 
+class ForumRulesTests(APITestCase):
+    def setUp(self):
+        self.student = User.objects.create_user(
+            email="student@test.local", password="testpass", full_name="Student One"
+        )
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass",
+            full_name="Admin User", role=User.Role.ADMIN,
+        )
+
+    def test_forum_blocked_until_rules_accepted(self):
+        self.client.force_login(self.student)
+        self.assertEqual(
+            self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN
+        )
+        self.assertEqual(
+            self.client.post(
+                "/api/forum/threads/", {"body": "Hi"}, content_type="application/json"
+            ).status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        self.assertFalse(self.client.get("/api/user/").data["user"]["forum_rules_accepted"])
+
+        resp = self.client.post("/api/forum/accept-rules/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(resp.data["user"]["forum_rules_accepted"])
+        self.student.refresh_from_db()
+        self.assertIsNotNone(self.student.forum_rules_accepted_at)
+        self.assertEqual(self.client.get("/api/forum/threads/").status_code, status.HTTP_200_OK)
+
+    def test_accepting_again_keeps_original_timestamp(self):
+        self.client.force_login(self.student)
+        self.client.post("/api/forum/accept-rules/")
+        self.student.refresh_from_db()
+        first = self.student.forum_rules_accepted_at
+        self.client.post("/api/forum/accept-rules/")
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.forum_rules_accepted_at, first)
+
+    def test_admin_not_required_to_accept(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get("/api/forum/threads/").status_code, status.HTTP_200_OK)
+
+    def test_accept_requires_login(self):
+        self.assertIn(
+            self.client.post("/api/forum/accept-rules/").status_code,
+            (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
+        )
+
+
+class ForumRulesBypassTests(APITestCase):
+    """Every route a student might use to reach the forum, or to mark the
+    rules as accepted without going through the accept endpoint."""
+
+    def setUp(self):
+        # A student who posted before the rules existed, so they own content
+        # they might try to edit or delete without having agreed.
+        self.student = User.objects.create_user(
+            email="student@test.local", password="testpass", full_name="Student One"
+        )
+        self.module = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+        self.thread = ForumThread.objects.create(
+            module=self.module, created_by=self.student, title="Old thread"
+        )
+        self.opening = ForumPost.objects.create(
+            thread=self.thread, author=self.student, body="Old opening", is_head_post=True
+        )
+        self.thread.opened_by = self.opening
+        self.thread.save(update_fields=["opened_by"])
+        self.reply = ForumPost.objects.create(
+            thread=self.thread, author=self.student, body="Old reply"
+        )
+
+    def _forum_requests(self):
+        t, op, r = self.thread.pk, self.opening.pk, self.reply.pk
+        return [
+            ("get", "/api/forum/threads/", None),
+            ("head", "/api/forum/threads/", None),
+            ("get", f"/api/forum/threads/{t}/", None),
+            ("get", f"/api/forum/threads/?module={self.module.pk}", None),
+            ("post", "/api/forum/threads/", {"body": "New"}),
+            ("patch", f"/api/forum/threads/{t}/", {"is_pinned": True}),
+            ("delete", f"/api/forum/threads/{t}/", None),
+            ("post", "/api/forum/posts/", {"thread": t, "body": "Reply"}),
+            ("patch", f"/api/forum/posts/{op}/", {"body": "Edited"}),
+            ("patch", f"/api/forum/posts/{r}/", {"body": "Edited"}),
+            ("delete", f"/api/forum/posts/{r}/", None),
+        ]
+
+    def _assert_all_blocked(self):
+        for method, url, data in self._forum_requests():
+            with self.subTest(method=method, url=url):
+                resp = getattr(self.client, method)(url, data, format="json")
+                self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+                if method != "head":
+                    self.assertIn("forum rules", str(resp.data["detail"]))
+        # Nothing was created, changed or deleted.
+        self.assertEqual(ForumThread.objects.count(), 1)
+        self.assertEqual(ForumPost.objects.filter(is_deleted=False).count(), 2)
+        self.opening.refresh_from_db()
+        self.reply.refresh_from_db()
+        self.thread.refresh_from_db()
+        self.assertEqual(self.opening.body, "Old opening")
+        self.assertEqual(self.reply.body, "Old reply")
+        self.assertFalse(self.thread.is_pinned)
+
+    def test_every_forum_endpoint_blocked_with_session_auth(self):
+        self.client.force_login(self.student)
+        self._assert_all_blocked()
+
+    def test_every_forum_endpoint_blocked_with_token_auth(self):
+        token = Token.objects.create(user=self.student)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        self._assert_all_blocked()
+
+    def test_anonymous_forum_access_blocked(self):
+        for method, url, data in self._forum_requests():
+            with self.subTest(method=method, url=url):
+                resp = getattr(self.client, method)(url, data, format="json")
+                self.assertIn(
+                    resp.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN)
+                )
+
+    def test_flag_cannot_be_set_through_profile_endpoints(self):
+        self.client.force_login(self.student)
+        payload = {
+            "display_name": "Sneaky",
+            "forum_rules_accepted_at": "2026-01-01T00:00:00Z",
+            "forum_rules_accepted": True,
+        }
+        self.client.patch("/api/profile/", payload, format="json")
+        self.client.patch(f"/api/users/{self.student.pk}/", payload, format="json")
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.display_name, "Sneaky")  # the request itself went through
+        self.assertIsNone(self.student.forum_rules_accepted_at)
+        self.assertEqual(
+            self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN
+        )
+
+    def test_flag_and_role_cannot_be_set_at_registration(self):
+        resp = self.client.post(
+            "/api/register/",
+            {
+                "email": "new@test.local", "full_name": "New", "password": "Calm-River-42!",
+                "forum_rules_accepted_at": "2026-01-01T00:00:00Z", "role": "admin",
+            },
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        new = User.objects.get(email="new@test.local")
+        self.assertIsNone(new.forum_rules_accepted_at)
+        self.assertEqual(new.role, User.Role.STUDENT)
+
+    def test_student_cannot_promote_self_to_admin_to_skip_rules(self):
+        self.client.force_login(self.student)
+        self.client.patch(
+            f"/api/users/{self.student.pk}/", {"role": "admin", "is_staff": True}, format="json"
+        )
+        self.client.patch("/api/profile/", {"role": "admin", "is_staff": True}, format="json")
+        self.student.refresh_from_db()
+        self.assertEqual(self.student.role, User.Role.STUDENT)
+        self.assertFalse(self.student.is_staff)
+        self.assertEqual(
+            self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN
+        )
+
+    def test_accept_endpoint_only_takes_post(self):
+        self.client.force_login(self.student)
+        for method in ("get", "put", "patch", "delete"):
+            with self.subTest(method=method):
+                resp = getattr(self.client, method)("/api/forum/accept-rules/")
+                self.assertEqual(resp.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+        self.student.refresh_from_db()
+        self.assertIsNone(self.student.forum_rules_accepted_at)
+
+    def test_accept_endpoint_enforces_csrf_for_session_logins(self):
+        # Stops another site from silently accepting on a logged-in student's behalf.
+        from rest_framework.test import APIClient
+
+        client = APIClient(enforce_csrf_checks=True)
+        client.force_login(self.student)
+        resp = client.post("/api/forum/accept-rules/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.student.refresh_from_db()
+        self.assertIsNone(self.student.forum_rules_accepted_at)
+
+    def test_acceptance_is_per_user(self):
+        other = User.objects.create_user(email="other@test.local", password="testpass")
+        self.client.force_login(other)
+        self.client.post("/api/forum/accept-rules/")
+        self.client.force_login(self.student)
+        self.assertEqual(
+            self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN
+        )
+
+    def test_demoted_admin_must_accept(self):
+        admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN
+        )
+        admin.role = User.Role.STUDENT
+        admin.save()
+        self.client.force_login(admin)
+        self.assertEqual(
+            self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN
+        )
+
+    def test_unaccepted_student_cannot_see_forum_stats(self):
+        self.client.force_login(self.student)
+        self.assertEqual(
+            self.client.get("/api/dashboard/stats/").status_code, status.HTTP_403_FORBIDDEN
+        )
+
+
 class DashboardStatsTests(APITestCase):
     def setUp(self):
         self.student = User.objects.create_user(
@@ -2184,6 +2412,144 @@ class DashboardStatsTests(APITestCase):
         self.assertEqual(resp.data["total_enrolled"], 1)
 
 
+class ModuleProgressTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.cohort = Cohort.objects.create(
+            name="Running", year=2026,
+            start_date=date.today() - timedelta(days=14),
+            end_date=date.today() + timedelta(days=42),
+        )
+        self.future_cohort = Cohort.objects.create(
+            name="Upcoming", year=2026,
+            start_date=date.today() + timedelta(days=14),
+            end_date=date.today() + timedelta(days=70),
+        )
+        self.done = User.objects.create_user(email="done@test.local", password="pw", full_name="Done")
+        self.partial = User.objects.create_user(email="partial@test.local", password="pw", full_name="Partial")
+        self.idle = User.objects.create_user(email="idle@test.local", password="pw", full_name="Idle")
+        self.later = User.objects.create_user(email="later@test.local", password="pw", full_name="Later")
+        self.pending = User.objects.create_user(email="pending@test.local", password="pw")
+        for user in (self.done, self.partial, self.idle):
+            Enrollment.objects.create(user=user, cohort=self.cohort, status=Enrollment.Status.ACTIVE)
+        Enrollment.objects.create(user=self.later, cohort=self.future_cohort, status=Enrollment.Status.ACTIVE)
+        Enrollment.objects.create(user=self.pending, cohort=self.cohort, status=Enrollment.Status.PENDING)
+
+        self.module = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+        self.a = ContentItem.objects.create(
+            module=self.module, title="A", type="video",
+            provider="youtube", embed_url="https://www.youtube.com/embed/x",
+        )
+        self.b = ContentItem.objects.create(
+            module=self.module, title="B", type="video",
+            provider="youtube", embed_url="https://www.youtube.com/embed/y",
+        )
+        ContentCompletion.objects.create(user=self.done, content_item=self.a)
+        ContentCompletion.objects.create(user=self.done, content_item=self.b)
+        ContentCompletion.objects.create(user=self.partial, content_item=self.a)
+        survey = Survey.objects.get(module=self.module, type=SurveyType.WEEKLY)
+        SurveyResponse.objects.create(user=self.done, survey=survey, answers={})
+
+    def _get(self, query=""):
+        self.client.force_login(self.admin)
+        return self.client.get(f"/api/modules/{self.module.pk}/progress/{query}")
+
+    def test_student_cannot_view_progress(self):
+        self.client.force_login(self.done)
+        resp = self.client.get(f"/api/modules/{self.module.pk}/progress/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_statuses_per_student(self):
+        resp = self._get()
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        by_email = {s["email"]: s for s in resp.data["students"]}
+        self.assertEqual(by_email["done@test.local"]["status"], "completed")
+        self.assertEqual(by_email["partial@test.local"]["status"], "in_progress")
+        self.assertEqual(by_email["idle@test.local"]["status"], "not_started")
+        self.assertEqual(by_email["later@test.local"]["status"], "locked")
+        self.assertEqual(by_email["partial@test.local"]["completed_item_ids"], [self.a.pk])
+        self.assertEqual(resp.data["item_count"], 2)
+
+    def test_only_active_students_listed(self):
+        emails = {s["email"] for s in self._get().data["students"]}
+        self.assertNotIn("pending@test.local", emails)
+        self.assertNotIn("admin@test.local", emails)
+
+    def test_survey_submission_reported(self):
+        by_email = {s["email"]: s for s in self._get().data["students"]}
+        self.assertTrue(by_email["done@test.local"]["survey_submitted"])
+        self.assertFalse(by_email["partial@test.local"]["survey_submitted"])
+
+    def test_cohort_filter(self):
+        resp = self._get(f"?cohort={self.future_cohort.pk}")
+        self.assertEqual([s["email"] for s in resp.data["students"]], ["later@test.local"])
+
+
+class UserOverviewTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.student = User.objects.create_user(email="stu@test.local", password="pw", full_name="Stu Dent")
+        self.cohort = Cohort.objects.create(
+            name="Running", year=2026,
+            start_date=date.today() - timedelta(days=3),
+            end_date=date.today() + timedelta(days=50),
+        )
+        Enrollment.objects.create(user=self.student, cohort=self.cohort, status=Enrollment.Status.ACTIVE)
+        self.week1 = Module.objects.create(week_number=1, title="Week 1", is_published=True)
+        self.week2 = Module.objects.create(week_number=2, title="Week 2", is_published=True)
+        Module.objects.create(week_number=3, title="Draft", is_published=False)
+        self.a = ContentItem.objects.create(
+            module=self.week1, title="A", type="video",
+            provider="youtube", embed_url="https://www.youtube.com/embed/x",
+        )
+        ContentItem.objects.create(
+            module=self.week1, title="B", type="video",
+            provider="youtube", embed_url="https://www.youtube.com/embed/y",
+        )
+        ContentCompletion.objects.create(user=self.student, content_item=self.a)
+        self.survey = Survey.objects.get(module=self.week1, type=SurveyType.WEEKLY)
+        SurveyResponse.objects.create(user=self.student, survey=self.survey, answers={})
+        thread = ForumThread.objects.create(created_by=self.student, title="Hello")
+        ForumPost.objects.create(thread=thread, author=self.student, body="Hello", is_head_post=True)
+        ForumPost.objects.create(thread=thread, author=self.student, body="A reply")
+        ForumPost.objects.create(thread=thread, author=self.student, body="Gone", is_deleted=True)
+
+    def _get(self, user=None):
+        self.client.force_login(user or self.admin)
+        return self.client.get(f"/api/users/{self.student.pk}/overview/")
+
+    def test_student_cannot_view_overview(self):
+        self.assertEqual(self._get(self.student).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_profile_and_enrollment(self):
+        data = self._get().data
+        self.assertEqual(data["user"]["full_name"], "Stu Dent")
+        self.assertEqual([e["cohort_name"] for e in data["enrollments"]], ["Running"])
+
+    def test_module_progress_published_only(self):
+        modules = {m["week_number"]: m for m in self._get().data["modules"]}
+        self.assertNotIn(3, modules)
+        self.assertEqual(modules[1]["status"], "in_progress")
+        self.assertEqual((modules[1]["completed_count"], modules[1]["item_count"]), (1, 2))
+        self.assertTrue(modules[1]["survey_submitted"])
+        # Week 2 opens 7 days after the cohort start, which is still 4 days away.
+        self.assertEqual(modules[2]["status"], "locked")
+
+    def test_surveys_marked_submitted(self):
+        surveys = {s["id"]: s for s in self._get().data["surveys"]}
+        self.assertIsNotNone(surveys[self.survey.pk]["submitted_at"])
+
+    def test_forum_activity_skips_deleted_posts(self):
+        forum = self._get().data["forum"]
+        self.assertEqual(forum["thread_count"], 1)
+        self.assertEqual(forum["post_count"], 1)
+        self.assertNotIn("Gone", [p["body"] for p in forum["recent_posts"]])
+
+
 # ── Notification tests (Issue #74) ─────────────────────────────────────────────
 
 def _make_user(email, password="pw"):
@@ -2202,10 +2568,10 @@ def _make_module(week=1, published=True):
     return Module.objects.create(week_number=week, title=f"Week {week}", is_published=published)
 
 
-def _make_audio_item(module, day_offset=0, title="Meditation"):
+def _make_audio_item(module, title="Meditation", display_order=1):
     return ContentItem.objects.create(
         module=module, title=title, type="audio", provider="soundcloud",
-        embed_url="https://soundcloud.com/x/y", display_order=1, day_offset=day_offset,
+        embed_url="https://soundcloud.com/x/y", display_order=display_order,
     )
 
 
@@ -2275,7 +2641,7 @@ class FailedSendRetriesNextRunTests(TestCase):
         self.cohort = _make_cohort(days_ago=0, duration=56)
         Enrollment.objects.create(user=self.user, cohort=self.cohort)
         self.module = _make_module(week=1)
-        self.item = _make_audio_item(self.module, day_offset=0)
+        self.item = _make_audio_item(self.module)
 
         today = datetime.date.today()
         scheduled_for = _perth_midnight_utc(today)
@@ -2328,25 +2694,66 @@ class PerthDateBoundaryTests(TestCase):
         self.assertEqual(scheduled_for, datetime.datetime(2024, 6, 14, 16, 0, 0, tzinfo=datetime.timezone.utc))
 
 
-class VerifyMissingOffsetTests(TestCase):
-    """T5: --verify exits non-zero when audio items have no day_offset."""
+class VerifyMissingMeditationTests(TestCase):
+    """T5: --verify exits non-zero when a published week has no audio item to remind about."""
 
     def setUp(self):
         self.user = _make_user("verify@test.local")
         cohort = _make_cohort(days_ago=7, duration=56)
         Enrollment.objects.create(user=self.user, cohort=cohort, status=Enrollment.Status.ACTIVE)
-        module = _make_module(week=1)
-        # Audio item with no day_offset (unscheduled).
+        self.module = _make_module(week=1)
         ContentItem.objects.create(
-            module=module, title="Unscheduled Audio", type="audio",
-            provider="soundcloud", embed_url="https://soundcloud.com/x/y",
-            display_order=1, day_offset=None,
+            module=self.module, title="Talk", type="video",
+            provider="youtube", embed_url="https://www.youtube.com/embed/x", display_order=1,
         )
 
-    def test_verify_exits_nonzero_for_unscheduled_audio(self):
+    def test_verify_exits_nonzero_for_week_without_audio(self):
         with self.assertRaises(SystemExit) as ctx:
             call_command("send_due_reminders", "--verify", stderr=StringIO(), stdout=StringIO())
         self.assertNotEqual(ctx.exception.code, 0)
+
+    def test_verify_passes_once_week_has_audio(self):
+        _make_audio_item(self.module)
+        out = StringIO()
+        call_command("send_due_reminders", "--verify", stderr=StringIO(), stdout=out)
+        self.assertIn("OK", out.getvalue())
+
+
+class DailyMeditationReminderTests(TestCase):
+    """Every day of a running week sends exactly one meditation reminder per student."""
+
+    def setUp(self):
+        self.user = _make_user("daily@test.local")
+        # Day 4 of week 1, so a reminder must not depend on it being the week's first day.
+        self.cohort = _make_cohort(days_ago=3, duration=56)
+        Enrollment.objects.create(user=self.user, cohort=self.cohort)
+        self.module = _make_module(week=1)
+        self.first = _make_audio_item(self.module, title="Body Scan", display_order=1)
+        self.second = _make_audio_item(self.module, title="Breathing", display_order=2)
+
+    def _run(self):
+        from zoneinfo import ZoneInfo
+        fake_now = datetime.datetime.combine(
+            datetime.date.today(), datetime.time(8, 0), tzinfo=ZoneInfo("Australia/Perth")
+        )
+        out = StringIO()
+        with patch("app.management.commands.send_due_reminders._perth_now", return_value=fake_now):
+            call_command("send_due_reminders", "--dry-run", stdout=out)
+        return [line for line in out.getvalue().splitlines() if "would send (" in line]
+
+    def test_one_reminder_on_any_day_of_the_week(self):
+        lines = self._run()
+        self.assertEqual(len(lines), 1)
+        self.assertIn("Body Scan", lines[0])
+
+    def test_still_reminded_after_completing_the_audio(self):
+        ContentCompletion.objects.create(user=self.user, content_item=self.first)
+        self.assertEqual(len(self._run()), 1)
+
+    def test_no_reminder_for_unpublished_week(self):
+        self.module.is_published = False
+        self.module.save()
+        self.assertEqual(self._run(), [])
 
 
 class S21NotifiesOnlyActiveCohortTests(TestCase):
@@ -2687,8 +3094,12 @@ class SurveyEdgeCaseTests(APITestCase):
 class ForumEdgeCaseTests(APITestCase):
     def test_pinned_thread_survives_author_deletion(self):
         admin = User.objects.create_user(email="admin@test.local", password="testpass", role=User.Role.ADMIN)
-        author = User.objects.create_user(email="author@test.local", password="testpass")
-        reader = User.objects.create_user(email="reader@test.local", password="testpass")
+        author = User.objects.create_user(
+            email="author@test.local", password="testpass", forum_rules_accepted_at=timezone.now()
+        )
+        reader = User.objects.create_user(
+            email="reader@test.local", password="testpass", forum_rules_accepted_at=timezone.now()
+        )
         self.client.force_login(author)
         tid = self.client.post("/api/forum/threads/", {"body": "Pinned by admin"}, format="json").data["id"]
         self.client.force_login(admin)
@@ -2827,6 +3238,10 @@ class SurveyAutoCreationTests(TestCase):
         self.assertEqual(
             Survey.objects.filter(module=module, type=SurveyType.WEEKLY).count(), 1
         )
+
+    def test_no_survey_for_week0_introduction(self):
+        module = Module.objects.create(week_number=0, title="Module 0 - Introduction")
+        self.assertFalse(Survey.objects.filter(module=module).exists())
 
     def test_signal_skips_when_raw(self):
         """Signal handler must do nothing when raw=True (fixture loading path)."""

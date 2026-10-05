@@ -1,17 +1,17 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import AdminLayout from "@/components/admin/AdminLayout";
 import DangerZone from "@/components/admin/DangerZone";
+import ModuleProgress from "@/components/admin/ModuleProgress";
 import ContentEmbed from "@/components/modules/ContentEmbed";
 import Card from "@/components/ui/Card";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import DragHandle, { ReorderHelp } from "@/components/ui/DragHandle";
 import { ErrorBanner, LoadingState } from "@/components/ui/feedback";
-import { Field, FormActions, FormError, TextAreaField, TextField } from "@/components/ui/form";
+import { FormActions, FormError, TextAreaField, TextField } from "@/components/ui/form";
 import { PencilIcon, TrashIcon } from "@/components/ui/icons";
 import Markdown from "@/components/ui/Markdown";
-import Select from "@/components/ui/Select";
 import { useAsync } from "@/hooks/useAsync";
 import { useDragReorder, type ReorderHandlers } from "@/hooks/useDragReorder";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
@@ -33,16 +33,9 @@ type ContentItemFormState = {
 	type: "video" | "audio";
 	provider: "youtube" | "soundcloud" | "";
 	embed_url: string;
-	day_offset: number | null;
 };
 
-// New audio items remind on Day 1 by default so reminders work without extra setup.
-const EMPTY_ITEM_FORM: ContentItemFormState = { title: "", type: "video", provider: "", embed_url: "", day_offset: 0 };
-
-const REMINDER_OPTIONS = [
-	{ value: "", label: "No reminder" },
-	...[0, 1, 2, 3, 4, 5, 6].map((day) => ({ value: String(day), label: `Day ${day + 1} of the week` })),
-];
+const EMPTY_ITEM_FORM: ContentItemFormState = { title: "", type: "video", provider: "", embed_url: "" };
 
 // Mirrors the backend's normalize_youtube_embed_url/normalize_soundcloud_embed_url
 // matching in app/models.py, so a link is classified the same way client-side.
@@ -94,11 +87,7 @@ function ContentItemForm({
 			setError("Enter a valid YouTube or SoundCloud link.");
 			return;
 		}
-		const isAudio = provider === "soundcloud";
-		// Reminders are only sent for audio items.
-		void run(() =>
-			onSubmit({ ...form, type: isAudio ? "audio" : "video", provider, day_offset: isAudio ? form.day_offset : null }),
-		);
+		void run(() => onSubmit({ ...form, type: provider === "soundcloud" ? "audio" : "video", provider }));
 	}
 
 	return (
@@ -124,17 +113,6 @@ function ContentItemForm({
 					onChange={(e) => setForm((f) => ({ ...f, embed_url: e.target.value }))}
 					placeholder="Paste a YouTube or SoundCloud link…"
 				/>
-				{previewProvider === "soundcloud" && (
-					<Field id="item-reminder-day" label="Reminder day">
-						<Select
-							id="item-reminder-day"
-							value={form.day_offset === null ? "" : String(form.day_offset)}
-							onChange={(value) => setForm((f) => ({ ...f, day_offset: value === "" ? null : Number(value) }))}
-							options={REMINDER_OPTIONS}
-							className="h-11 w-full"
-						/>
-					</Field>
-				)}
 				{previewProvider && previewUrl && (
 					<div className="rounded-xl border border-gray-100 bg-surface-muted p-3">
 						<p className="text-xs font-semibold uppercase tracking-wide text-muted">Preview</p>
@@ -157,8 +135,14 @@ export default function AdminModuleEditorPage() {
 	const moduleId = router.query.moduleId;
 	const validId = typeof moduleId === "string";
 
+	// Publish state as last saved, so a save that flips it can ask first.
+	const [savedPublished, setSavedPublished] = useState(false);
 	const { data: module, setData: setModule, loading, error } = useAsync(
-		() => getModuleAdmin(Number(moduleId)),
+		async () => {
+			const loaded = await getModuleAdmin(Number(moduleId));
+			setSavedPublished(loaded.is_published);
+			return loaded;
+		},
 		[moduleId],
 		null as AdminModule | null,
 		{ enabled: validId, errorFallback: "Failed to load module" },
@@ -171,6 +155,24 @@ export default function AdminModuleEditorPage() {
 	const [confirmingModuleDelete, setConfirmingModuleDelete] = useState(false);
 	const [moduleDeleting, setModuleDeleting] = useState(false);
 	const [deletingItem, setDeletingItem] = useState<AdminContentItem | null>(null);
+	const [confirmingPublish, setConfirmingPublish] = useState(false);
+	const [moduleDeleteError, setModuleDeleteError] = useState<string | null>(null);
+	const descriptionRef = useRef<HTMLTextAreaElement>(null);
+
+	// Grow the description box to fit its text so long descriptions aren't hidden behind a scrollbar.
+	const description = module?.description;
+	useEffect(() => {
+		const el = descriptionRef.current;
+		if (!el) return;
+		const fit = () => {
+			el.style.height = "auto";
+			el.style.height = `${el.scrollHeight + el.offsetHeight - el.clientHeight}px`;
+		};
+		fit();
+		// Text rewraps when the window width changes.
+		window.addEventListener("resize", fit);
+		return () => window.removeEventListener("resize", fit);
+	}, [description]);
 
 	// Edits the loaded module in place (the meta form is bound straight to it).
 	const patch = (changes: Partial<AdminModule>) => setModule((m) => m && { ...m, ...changes });
@@ -180,9 +182,19 @@ export default function AdminModuleEditorPage() {
 		setModule(await getModuleAdmin(module.id));
 	}
 
-	function handleMetaSave(e: FormEvent) {
+	function handleMetaSubmit(e: FormEvent) {
 		e.preventDefault();
 		if (!module) return;
+		if (module.is_published !== savedPublished) {
+			setConfirmingPublish(true);
+			return;
+		}
+		saveMeta();
+	}
+
+	function saveMeta() {
+		if (!module) return;
+		setConfirmingPublish(false);
 		void meta.run(async () => {
 			const updated = await updateModule(module.id, {
 				title: module.title,
@@ -192,6 +204,7 @@ export default function AdminModuleEditorPage() {
 				is_published: module.is_published,
 			});
 			patch(updated);
+			setSavedPublished(updated.is_published);
 		});
 	}
 
@@ -243,16 +256,19 @@ export default function AdminModuleEditorPage() {
 	async function handleDeleteModule() {
 		if (!module) return;
 		setConfirmingModuleDelete(false);
-		setDeleteError(null);
+		setModuleDeleteError(null);
 		setModuleDeleting(true);
 		try {
 			await deleteModule(module.id);
 			router.push("/admin/modules");
 		} catch (err) {
-			setDeleteError(errorMessage(err, "Failed to delete module"));
+			setModuleDeleteError(errorMessage(err, "Failed to delete module"));
 			setModuleDeleting(false);
 		}
 	}
+
+	// Matches send_due_reminders: the week's first audio item is the one students are reminded about each day.
+	const reminderItemId = module?.content_items.find((item) => item.type === "audio")?.id;
 
 	if (loading) {
 		return (
@@ -276,7 +292,7 @@ export default function AdminModuleEditorPage() {
 				<title>{module.title} — Admin</title>
 			</Head>
 
-			<Card as="form" variant="admin" onSubmit={handleMetaSave} className="p-5">
+			<Card as="form" variant="admin" onSubmit={handleMetaSubmit} className="p-5">
 				{meta.error && <ErrorBanner className="mb-4">{meta.error}</ErrorBanner>}
 				<div className="grid gap-4 sm:grid-cols-2">
 					<TextField
@@ -315,10 +331,11 @@ export default function AdminModuleEditorPage() {
 						id="meta-description"
 						label="Description (Markdown)"
 						size="md"
-						rows={8}
+						ref={descriptionRef}
+						rows={14}
 						value={module.description}
 						onChange={(e) => patch({ description: e.target.value })}
-						className="resize-y font-mono"
+						className="resize-y overflow-y-auto font-mono leading-relaxed"
 					/>
 					{module.description.trim() && (
 						<div className="rounded-xl border border-gray-100 bg-surface-muted p-3">
@@ -343,13 +360,6 @@ export default function AdminModuleEditorPage() {
 					{meta.submitting ? "Saving…" : "Save module"}
 				</button>
 			</Card>
-
-			<DangerZone
-				description="Permanently delete this module, its content items, and all student completion history for them."
-				actionLabel={moduleDeleting ? "Deleting…" : "Delete module"}
-				onAction={() => setConfirmingModuleDelete(true)}
-				disabled={moduleDeleting}
-			/>
 
 			{deleteError && <ErrorBanner className="mt-4">{deleteError}</ErrorBanner>}
 
@@ -381,7 +391,7 @@ export default function AdminModuleEditorPage() {
 					editingItem?.id === item.id ? (
 						<ContentItemForm
 							key={item.id}
-							initial={{ title: item.title, type: item.type, provider: item.provider, embed_url: item.embed_url, day_offset: item.day_offset }}
+							initial={{ title: item.title, type: item.type, provider: item.provider, embed_url: item.embed_url }}
 							onSubmit={handleEditItem}
 							onCancel={() => setEditingItem(null)}
 						/>
@@ -403,9 +413,12 @@ export default function AdminModuleEditorPage() {
 									{item.type}
 								</span>
 								<span className="min-w-0 wrap-anywhere text-sm font-semibold text-ink">{item.title}</span>
-								{item.type === "audio" && (
-									<span className="text-xs text-muted">
-										{item.day_offset === null ? "No reminder" : `Reminder: Day ${item.day_offset + 1}`}
+								{item.id === reminderItemId && (
+									<span
+										title="Students get a reminder for this meditation every day of the week"
+										className="shrink-0 rounded-full bg-brand-blue/10 px-2.5 py-0.5 text-xs font-semibold text-brand-blue"
+									>
+										Daily reminder
 									</span>
 								)}
 							</div>
@@ -424,10 +437,36 @@ export default function AdminModuleEditorPage() {
 
 			<ReorderHelp />
 
+			<ModuleProgress moduleId={module.id} items={module.content_items} />
+
+			<DangerZone
+				description="Permanently delete this module, its content items, and all student completion history for them."
+				actionLabel={moduleDeleting ? "Deleting…" : "Delete module"}
+				onAction={() => setConfirmingModuleDelete(true)}
+				disabled={moduleDeleting}
+				className="mt-8"
+			/>
+			{moduleDeleteError && <ErrorBanner className="mt-3">{moduleDeleteError}</ErrorBanner>}
+
+			{confirmingPublish && (
+				<ConfirmDialog
+					title={module.is_published ? `Publish "${module.title}"?` : `Unpublish "${module.title}"?`}
+					message={
+						module.is_published
+							? "Students will be able to see this module once their cohort reaches its week, and it will appear on the homepage."
+							: "Students will no longer be able to open this module, including anyone partway through it. Their completion history is kept."
+					}
+					confirmLabel={module.is_published ? "Publish" : "Unpublish"}
+					danger={!module.is_published}
+					onConfirm={saveMeta}
+					onCancel={() => setConfirmingPublish(false)}
+				/>
+			)}
+
 			{deletingItem && (
 				<ConfirmDialog
 					title={`Delete "${deletingItem.title}"?`}
-					message="Students lose their completion record for this item. This can't be undone."
+					message="This permanently deletes the content item and every student's completion record for it. This can't be undone."
 					confirmLabel="Delete item"
 					danger
 					onConfirm={handleDeleteItem}

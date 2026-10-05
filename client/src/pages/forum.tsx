@@ -1,5 +1,7 @@
 import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
 import Head from "next/head";
+import { useRouter } from "next/router";
+import ForumRulesModal, { ForumRulesSummary } from "@/components/forum/ForumRulesModal";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
 import Card from "@/components/ui/Card";
@@ -10,6 +12,7 @@ import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAsync } from "@/hooks/useAsync";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import {
+  acceptForumRules,
   createForumPost,
   createForumThread,
   deleteForumPost,
@@ -631,6 +634,10 @@ function ForumSidebar({ query, onQueryChange }: { query: string; onQueryChange: 
           />
         </div>
       </Card>
+      <Card className="p-5">
+        <p className="mb-3 text-sm font-bold text-ink">Forum rules</p>
+        <ForumRulesSummary />
+      </Card>
     </div>
   );
 }
@@ -645,7 +652,11 @@ const DELETE_PROMPTS = {
 } as const;
 
 export default function ForumPage() {
-  const { user, isLoading: authLoading } = useRequireAuth();
+  const router = useRouter();
+  const { user, isLoading: authLoading, updateUser } = useRequireAuth();
+  // Students must agree to the rules once (saved server-side) before the
+  // forum loads; the API rejects forum requests until they have.
+  const needsRules = !!user && !isAdminUser(user) && !user.forum_rules_accepted;
   // Bumped by "Try again" to re-run the initial load.
   const [attempt, setAttempt] = useState(0);
   const forum = useAsync(
@@ -653,9 +664,9 @@ export default function ForumPage() {
       const [threads, status] = await Promise.all([listForumThreads(), getProgramStatus()]);
       return { threads, isActive: status.is_active };
     },
-    [user, attempt],
+    [user, attempt, needsRules],
     { threads: [] as ForumThread[], isActive: true },
-    { enabled: !authLoading && !!user, errorFallback: "Failed to load forum" },
+    { enabled: !authLoading && !!user && !needsRules, errorFallback: "Failed to load forum" },
   );
   const { threads, isActive } = forum.data;
   const [selectedThread, setSelectedThread] = useState<ForumThreadDetail | null>(null);
@@ -663,7 +674,7 @@ export default function ForumPage() {
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
   const [query, setQuery] = useState("");
 
-  const loading = authLoading || (!!user && forum.loading);
+  const loading = authLoading || (!!user && !needsRules && forum.loading);
   const error = actionError ?? forum.error;
 
   useEffect(() => {
@@ -694,6 +705,11 @@ export default function ForumPage() {
   async function refreshThreads() {
     const updated = await listForumThreads();
     setThreads(() => updated);
+  }
+
+  async function handleAcceptRules() {
+    const { user: updated } = await acceptForumRules();
+    updateUser({ forum_rules_accepted: updated.forum_rules_accepted });
   }
 
   async function loadThread(id: number) {
@@ -782,6 +798,11 @@ export default function ForumPage() {
             <Card className="mx-auto max-w-md p-8 text-center">
               <p className="font-semibold text-ink">Please log in to access the forum.</p>
               <p className="mt-2 text-sm text-gray-400">Log in from the home page to continue.</p>
+            </Card>
+          ) : needsRules ? (
+            <Card className="mx-auto max-w-md p-8 text-center">
+              <p className="font-semibold text-ink">Please agree to the forum rules to continue.</p>
+              <ForumRulesModal isOpen onAccept={handleAcceptRules} onClose={() => router.push("/modules")} />
             </Card>
           ) : error ? (
             <div className="mx-auto max-w-md rounded-[10px] border border-red-200 bg-red-50 p-8 text-center">

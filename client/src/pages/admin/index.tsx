@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import Head from "next/head";
+import Link from "next/link";
 import AdminLayout from "@/components/admin/AdminLayout";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import SurveyExport from "@/components/admin/SurveyExport";
@@ -7,6 +8,7 @@ import Card from "@/components/ui/Card";
 import { LoadingState } from "@/components/ui/feedback";
 import { useAsync } from "@/hooks/useAsync";
 import { getDashboardStats } from "@/lib/api";
+import { weekLabel } from "@/lib/weeks";
 import type { DashboardStats } from "@/types/admin";
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
@@ -18,20 +20,29 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 	);
 }
 
-function Section({ title, children }: { title: string; children: ReactNode }) {
+function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
 	return (
 		<Card variant="admin" className="p-5">
-			<h2 className="text-sm font-bold uppercase tracking-wide text-muted">{title}</h2>
+			<div className="flex flex-wrap items-baseline justify-between gap-2">
+				<h2 className="text-sm font-bold uppercase tracking-wide text-muted">{title}</h2>
+				{hint && <span className="text-xs text-muted">{hint}</span>}
+			</div>
 			{children}
 		</Card>
 	);
 }
 
-function ProgressBar({ label, pct, detail }: { label: string; pct: number; detail: string }) {
+function ProgressBar({ label, pct, detail, href }: { label: string; pct: number; detail: string; href?: string }) {
 	return (
 		<div>
 			<div className="flex items-center justify-between gap-3 text-sm">
-				<span className="min-w-0 wrap-anywhere font-semibold text-ink">{label}</span>
+				{href ? (
+					<Link href={href} className="min-w-0 wrap-anywhere font-semibold text-ink hover:text-brand-blue hover:underline">
+						{label}
+					</Link>
+				) : (
+					<span className="min-w-0 wrap-anywhere font-semibold text-ink">{label}</span>
+				)}
 				<span className="shrink-0 text-muted">{detail}</span>
 			</div>
 			<div className="mt-1.5 h-2 rounded-full bg-gray-200">
@@ -67,7 +78,7 @@ export default function AdminDashboardPage() {
 						<StatCard label="Completed" value={stats.enrollment_status_breakdown.completed ?? 0} />
 					</div>
 
-					<Section title="Module completion">
+					<Section title="Module completion" hint="Select a module to see which students have finished it">
 						<div className="mt-4 space-y-4">
 							{stats.modules.length === 0 ? (
 								<p className="text-sm text-muted">No published modules yet.</p>
@@ -75,7 +86,8 @@ export default function AdminDashboardPage() {
 								stats.modules.map((m) => (
 									<ProgressBar
 										key={m.id}
-										label={`Week ${m.week_number}: ${m.title}`}
+										label={`${weekLabel(m.week_number)}: ${m.title}`}
+										href={`/admin/modules/${m.id}#progress`}
 										pct={m.completion_pct}
 										detail={`${m.completed_count}/${m.eligible_count} (${m.completion_pct}%)`}
 									/>

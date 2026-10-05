@@ -45,7 +45,7 @@ from .models import (
     User,
 )
 from .notifications import notify_survey_unlocked
-from .permissions import IsAdminOrSelf, IsAdminOrStaff, IsAuthorOrAdmin
+from .permissions import HasAcceptedForumRules, IsAdminOrSelf, IsAdminOrStaff, IsAuthorOrAdmin
 from .serializers import (
     AdditionalResourceSerializer,
     AdminUserSerializer,
@@ -74,7 +74,7 @@ from .serializers import (
     SurveySerializer,
     UserDisplayNameSerializer,
 )
-from .stats import dashboard_stats
+from .stats import dashboard_stats, module_student_progress, user_overview
 from .throttles import AuthRateThrottle
 from .utils import gravatar_url
 
@@ -117,6 +117,7 @@ def _user_payload(user):
         "avatar_url": gravatar_url(user.email),
         "auth_provider": user.auth_provider,
         "cohort_start_date": _iso_or_none(active_cohort_start_date(user)),
+        "forum_rules_accepted": user.forum_rules_accepted_at is not None,
     }
 
 
@@ -318,12 +319,18 @@ class ModuleViewSet(viewsets.ModelViewSet):
                 Module.objects.filter(pk=module_id).update(week_number=week)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @action(detail=True, methods=["get"])
+    def progress(self, request, pk=None):
+        """Which active students have (and haven't) worked through this module. ?cohort=<id> narrows it."""
+        module = self.get_object()
+        return Response(module_student_progress(module, cohort_id=_id_param(request, "cohort")))
+
     def get_permissions(self):
         # The home page lists the programme for logged-out visitors. This override replaces
         # the action's own permission_classes, so it has to allow it here.
         if self.action == "summary":
             return [AllowAny()]
-        if self.action in ("create", "update", "partial_update", "destroy", "reorder"):
+        if self.action in ("create", "update", "partial_update", "destroy", "reorder", "progress"):
             return [IsAuthenticated(), IsAdminOrStaff()]
         return [IsAuthenticated()]
 
@@ -522,8 +529,8 @@ class _ForumWriteMixin:
 
     def get_permissions(self):
         if self.action in ["partial_update", "destroy"]:
-            return [IsAuthenticated(), IsAuthorOrAdmin()]
-        return [IsAuthenticated()]
+            return [IsAuthenticated(), HasAcceptedForumRules(), IsAuthorOrAdmin()]
+        return [IsAuthenticated(), HasAcceptedForumRules()]
 
     def create(self, request, *args, **kwargs):
         serializer = self.create_serializer_class(data=request.data, context=self.get_serializer_context())
@@ -662,10 +669,15 @@ class UserProfileViewSet(
             return AdminUserSerializer
         return UserDisplayNameSerializer
 
+    @action(detail=True, methods=["get"])
+    def overview(self, request, pk=None):
+        """An admin's view of one person: profile, enrollments, module progress, surveys, forum activity."""
+        return Response(user_overview(self.get_object()))
+
     def get_permissions(self):
         if self.action in ("partial_update", "update"):
             return [IsAuthenticated(), IsAdminOrSelf()]
-        if self.action == "destroy":
+        if self.action in ("destroy", "overview"):
             return [IsAuthenticated(), IsAdminOrStaff()]
         return [IsAuthenticated()]
 
@@ -1005,6 +1017,16 @@ def change_password_view(request):
 @permission_classes([IsAuthenticated, IsAdminOrStaff])
 def dashboard_stats_view(request):
     return Response(dashboard_stats())
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def accept_forum_rules_view(request):
+    user = request.user
+    if user.forum_rules_accepted_at is None:
+        user.forum_rules_accepted_at = timezone.now()
+        user.save(update_fields=["forum_rules_accepted_at"])
+    return Response({"user": _user_payload(user)})
 
 
 @api_view(["GET"])

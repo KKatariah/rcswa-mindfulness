@@ -120,6 +120,8 @@ class User(AbstractUser):
     provider_uid = models.CharField(max_length=255, blank=True, null=True)  # noqa: DJ01 (so flake8 linting ignores null=True)
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.STUDENT)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Set once the user ticks "I agree" on the forum rules; null blocks forum access.
+    forum_rules_accepted_at = models.DateTimeField(null=True, blank=True)
     # Wrong passwords in a row, and when a lock from too many of them ends (see app/lockout.py).
     failed_login_count = models.PositiveSmallIntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
@@ -225,8 +227,13 @@ class Module(models.Model):
     class Meta:
         ordering = ["week_number"]
 
+    @property
+    def week_label(self):
+        """Display label for the week; week 0 is the programme introduction."""
+        return "Introduction" if self.week_number == 0 else f"Week {self.week_number}"
+
     def __str__(self):
-        return f"Week {self.week_number}: {self.title}"
+        return f"{self.week_label}: {self.title}"
 
 
 class ContentItem(models.Model):
@@ -250,8 +257,8 @@ class ContentItem(models.Model):
     provider = models.CharField(max_length=20, choices=Provider.choices, blank=True, default="")
     embed_url = models.URLField(blank=True, default="")
     display_order = models.PositiveSmallIntegerField(default=0)
-    # Day within the module's week (0 = first day). Null = never scheduled.
-    # Due date = cohort.start_date + timedelta((module.week_number-1)*7 + day_offset)
+    # Day within the module's week (0 = first day). Not used by daily reminders, which
+    # go out every day; kept for a planned feature.
     day_offset = models.PositiveSmallIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

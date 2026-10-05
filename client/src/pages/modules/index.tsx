@@ -10,6 +10,7 @@ import StatusIcon, { type ProgressStatus } from "@/components/ui/StatusIcon";
 import { useAsync } from "@/hooks/useAsync";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { listModules, listProgress, type ApiModule } from "@/lib/api";
+import { weekLabel } from "@/lib/weeks";
 
 type WeekRow = {
 	module: ApiModule;
@@ -137,7 +138,7 @@ export default function ModulesIndexPage() {
 										<div className={`flex items-center gap-4 px-6 py-4 ${idx !== 0 ? "border-t border-gray-100" : ""}`}>
 											<StatusIcon status={status} />
 											<span className={`flex-1 font-semibold ${isLocked ? "text-gray-400" : "text-ink"}`}>
-												Week {m.week_number}
+												{weekLabel(m.week_number)}
 											</span>
 											{!isLocked && (
 												<div className="h-2 w-40 max-w-[40%] overflow-hidden rounded-full bg-surface-muted">

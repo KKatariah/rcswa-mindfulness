@@ -14,8 +14,6 @@ export type AdminContentItem = {
 	provider: "youtube" | "soundcloud" | "";
 	embed_url: string;
 	display_order: number;
-	// Day of the module's week (0 = Day 1) that the audio reminder is sent; null = no reminder.
-	day_offset: number | null;
 };
 
 export type AdminModule = {
@@ -27,6 +25,77 @@ export type AdminModule = {
 	is_published: boolean;
 	is_unlocked: boolean;
 	content_items: AdminContentItem[];
+};
+
+export type ModuleProgressStatus = "completed" | "in_progress" | "not_started" | "locked";
+
+export type ModuleStudentProgress = {
+	user_id: number;
+	full_name: string;
+	email: string;
+	cohort_id: number;
+	cohort_name: string;
+	// When this module opened for the student's cohort (YYYY-MM-DD).
+	unlock_date: string;
+	status: ModuleProgressStatus;
+	completed_item_ids: number[];
+	viewed: boolean;
+	// null when the module has no weekly survey.
+	survey_submitted: boolean | null;
+	last_activity: string | null;
+};
+
+export type ModuleProgress = {
+	item_count: number;
+	survey: { id: number; title: string } | null;
+	students: ModuleStudentProgress[];
+};
+
+export type UserOverview = {
+	user: AdminUser & { avatar_url: string; forum_rules_accepted_at: string | null };
+	// Newest first.
+	enrollments: {
+		id: number;
+		cohort_id: number;
+		cohort_name: string;
+		cohort_start_date: string;
+		cohort_end_date: string;
+		status: Enrollment["status"];
+		enrolled_at: string;
+	}[];
+	// Published modules, by week.
+	modules: {
+		id: number;
+		week_number: number;
+		title: string;
+		item_count: number;
+		completed_count: number;
+		status: ModuleProgressStatus;
+		// null when the person has no active cohort.
+		unlock_date: string | null;
+		survey_submitted: boolean | null;
+		last_activity: string | null;
+	}[];
+	surveys: {
+		id: number;
+		title: string;
+		type: SurveyType;
+		week_number: number | null;
+		submitted_at: string | null;
+	}[];
+	forum: {
+		thread_count: number;
+		post_count: number;
+		recent_posts: { id: number; thread_title: string; body: string; is_head_post: boolean; created_at: string }[];
+	};
+	notifications: {
+		push_devices: number;
+		email_enabled: boolean;
+		push_denied: boolean;
+		reminder_time: string;
+		daily_content_reminder: boolean;
+		daily_survey_reminder: boolean;
+	};
 };
 
 export type AdminUser = {

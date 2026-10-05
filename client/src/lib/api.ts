@@ -11,6 +11,8 @@ import type {
 	AdminAdditionalResource,
 	AdminSurvey,
 	AdminSurveyResponse,
+	ModuleProgress,
+	UserOverview,
 } from "@/types/admin";
 
 const API_BASE_URL =
@@ -133,6 +135,11 @@ export function getCurrentUser(): Promise<{ user: AuthUser }> {
 
 export function updateProfile(payload: { display_name: string }): Promise<{ message: string; user: AuthUser }> {
 	return request("/profile/", { method: "PATCH", body: payload });
+}
+
+/** Records that the user has agreed to the forum rules. */
+export function acceptForumRules(): Promise<{ user: AuthUser }> {
+	return request("/forum/accept-rules/", { method: "POST" });
 }
 
 /** Changing the password replaces the API token; the new one is stored here. */
@@ -261,6 +268,11 @@ export function listUsers(): Promise<AdminUser[]> {
 	return request("/users/");
 }
 
+/** Admin view of one person: profile, enrollments, module progress, surveys and forum activity. */
+export function getUserOverview(id: number): Promise<UserOverview> {
+	return request(`/users/${id}/overview/`);
+}
+
 export function updateUser(
 	id: number,
 	data: Partial<{ email: string; full_name: string; display_name: string; role: AdminUser["role"] }>,
@@ -371,6 +383,11 @@ export function createModule(
 
 export function updateModule(id: number, data: Partial<ModuleInput>): Promise<AdminModule> {
 	return request(`/modules/${id}/`, { method: "PATCH", body: data });
+}
+
+/** Which active students have worked through a module. */
+export function getModuleProgress(id: number): Promise<ModuleProgress> {
+	return request(`/modules/${id}/progress/`);
 }
 
 export function deleteModule(id: number): Promise<void> {

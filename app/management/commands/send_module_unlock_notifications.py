@@ -65,11 +65,11 @@ class Command(BaseCommand):
                     user=user,
                     notification_type=NotificationLog.NotificationType.MODULE_ADDED,
                     payload_dict={
-                        "title": f"Week {module.week_number} is now available",
+                        "title": f"{module.week_label} is now available",
                         "body": module.title,
                         "url": f"/modules/{module.id}",
                     },
-                    subject=f"Week {module.week_number} is now available",
+                    subject=f"{module.week_label} is now available",
                     email_template="app/content_update_email.txt",
                     email_context={"user": user, "module": module},
                     module=module,

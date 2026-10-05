@@ -104,12 +104,12 @@ def additional_resource_post_delete(sender, instance, **kwargs):
 # Module has no content-vs-non-content distinction; all modules are content modules.
 @receiver(post_save, sender=Module)
 def create_weekly_survey(sender, instance, created, raw, **kwargs):
-    """Auto-create one weekly survey for every new module.
+    """Auto-create one weekly survey for every new module except the week 0 introduction.
 
     Skipped when raw=True (loaddata / fixtures) so existing fixture surveys
     are not duplicated.  Uses get_or_create so calling this twice is harmless.
     """
-    if not created or raw:
+    if not created or raw or instance.week_number == 0:
         return
     Survey.objects.get_or_create(
         module=instance,

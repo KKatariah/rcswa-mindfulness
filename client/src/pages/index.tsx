@@ -14,6 +14,7 @@ import {
 	HeadphonesIcon,
 	UsersIcon,
 } from "@/components/ui/icons";
+import { weekLabel } from "@/lib/weeks";
 
 const HOW_IT_WORKS = [
 	{
@@ -164,7 +165,7 @@ export default function Home() {
 										className="flex w-72 shrink-0 flex-col snap-start rounded-2xl bg-white p-6 sm:w-80"
 									>
 										<span className="inline-flex w-fit items-center rounded-full bg-brand-blue/10 px-3 py-1 text-xs font-bold uppercase tracking-wide text-brand-blue">
-											Week {week_number}
+											{weekLabel(week_number)}
 										</span>
 										<h3 className="mt-4 line-clamp-2 min-h-12 font-bold text-ink">{title}</h3>
 										<p className="mt-3 line-clamp-3 min-h-16 border-t border-gray-100 pt-3 text-sm text-muted">

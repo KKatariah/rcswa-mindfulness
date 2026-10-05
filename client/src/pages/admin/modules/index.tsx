@@ -17,6 +17,7 @@ import { useFormSubmit } from "@/hooks/useFormSubmit";
 import { listModulesAdmin, createModule, deleteModule, reorderModules } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { deleteModuleMessage } from "@/lib/modules";
+import { weekLabel } from "@/lib/weeks";
 import type { AdminModule } from "@/types/admin";
 
 type ModuleFormState = { week_number: string; title: string; description: string; is_published: boolean };
@@ -167,9 +168,9 @@ export default function AdminModulesPage() {
 							/>
 						</td>
 						<td className="px-5 py-3 font-semibold text-ink">
-							Week {weeks[index]}
+							{weekLabel(weeks[index])}
 							{weeks[index] !== m.week_number && (
-								<span className="ml-1 text-xs font-normal text-amber-700">(was {m.week_number})</span>
+								<span className="ml-1 text-xs font-normal text-amber-700">(was {weekLabel(m.week_number)})</span>
 							)}
 						</td>
 						<td className="px-5 py-3 text-ink-soft">{m.title}</td>

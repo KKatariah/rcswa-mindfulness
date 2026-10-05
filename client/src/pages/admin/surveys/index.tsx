@@ -13,6 +13,7 @@ import { useAsync } from "@/hooks/useAsync";
 import { createSurvey, listModulesAdmin, listSurveysAdmin } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { SURVEY_TYPE_LABELS } from "@/lib/surveys";
+import { weekLabel } from "@/lib/weeks";
 import type { AdminModule, AdminSurvey, SurveyType } from "@/types/admin";
 
 type SurveyFormState = { title: string; code: string; type: SurveyType; module: string; copyFrom: string };
@@ -103,7 +104,7 @@ export default function AdminSurveysPage() {
 						<td className="px-5 py-3 font-mono text-xs text-ink-soft">{s.code}</td>
 						<td className="px-5 py-3 text-ink-soft">{SURVEY_TYPE_LABELS[s.type]}</td>
 						<td className="px-5 py-3 text-ink-soft">
-							{s.module ? `Week ${weekOf(s.module) ?? "?"}` : "—"}
+							{s.module ? weekOf(s.module) === undefined ? "Week ?" : weekLabel(weekOf(s.module)!) : "—"}
 						</td>
 						<td className="px-5 py-3 text-ink-soft">{s.questions.length}</td>
 						<td className="px-5 py-3 text-ink-soft">{s.response_count}</td>
@@ -160,7 +161,7 @@ export default function AdminSurveysPage() {
 									onChange={(v) => setForm((f) => f && { ...f, module: v })}
 									options={[
 										{ value: "", label: "None" },
-										...modules.map((m) => ({ value: String(m.id), label: `Week ${m.week_number}: ${m.title}` })),
+										...modules.map((m) => ({ value: String(m.id), label: `${weekLabel(m.week_number)}: ${m.title}` })),
 									]}
 									className="h-12"
 								/>

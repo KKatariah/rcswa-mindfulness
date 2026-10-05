@@ -352,7 +352,7 @@ export default function AdminResourcesPage() {
 			{deleting && (
 				<ConfirmDialog
 					title={`Delete "${deleting.title}"?`}
-					message="It will no longer appear on the Resources page. This can't be undone."
+					message="Students will no longer see this resource. This can't be undone."
 					confirmLabel="Delete resource"
 					danger
 					onConfirm={handleDelete}

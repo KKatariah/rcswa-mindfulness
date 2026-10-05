@@ -1,142 +1,22 @@
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState } from "react";
 import Head from "next/head";
+import Link from "next/link";
 import AdminLayout from "@/components/admin/AdminLayout";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import AdminTable from "@/components/admin/AdminTable";
-import Modal from "@/components/main/Modal";
-import Badge, { type BadgeTone } from "@/components/ui/Badge";
+import { EnrollmentStatusBadge, RoleBadge } from "@/components/admin/Badges";
+import EditUserModal from "@/components/admin/EditUserModal";
 import Card from "@/components/ui/Card";
-import Select from "@/components/ui/Select";
-import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { LoadingState } from "@/components/ui/feedback";
-import { Field, FormActions, FormError, TextField } from "@/components/ui/form";
 import { PencilIcon } from "@/components/ui/icons";
+import Select from "@/components/ui/Select";
 import { useAsync } from "@/hooks/useAsync";
-import { useFormSubmit } from "@/hooks/useFormSubmit";
-import {
-	listCohorts,
-	listEnrollments,
-	listUsers,
-	updateUser,
-	createEnrollment,
-	updateEnrollment,
-	deleteEnrollment,
-} from "@/lib/api";
+import { listCohorts, listEnrollments, listUsers } from "@/lib/api";
 import type { AdminUser, Cohort, Enrollment } from "@/types/admin";
-
-const STATUS_TONES: Record<Enrollment["status"], BadgeTone> = {
-	pending: "amber",
-	active: "green",
-	completed: "blue",
-	withdrawn: "gray",
-};
-
-const ROLE_TONES: Record<AdminUser["role"], BadgeTone> = {
-	admin: "purple",
-	student: "gray",
-};
 
 function EnrollmentStatus({ enrollment }: { enrollment: Enrollment | undefined }) {
 	if (!enrollment) return <span className="text-xs text-muted">Not enrolled</span>;
-	return <Badge tone={STATUS_TONES[enrollment.status]}>{enrollment.status}</Badge>;
-}
-
-type EditFormState = {
-	full_name: string;
-	email: string;
-	role: AdminUser["role"];
-	cohort: string;
-};
-
-function EditUserForm({
-	initial,
-	cohorts,
-	onSubmit,
-	onCancel,
-}: {
-	initial: EditFormState;
-	cohorts: Cohort[];
-	onSubmit: (data: EditFormState) => Promise<void>;
-	onCancel: () => void;
-}) {
-	const [form, setForm] = useState(initial);
-	const { submitting, error, run } = useFormSubmit("Failed to save user");
-	const [confirmingPromote, setConfirmingPromote] = useState(false);
-
-	function handleSubmit(e: FormEvent) {
-		e.preventDefault();
-		void run(() => onSubmit(form));
-	}
-
-	return (
-		<form onSubmit={handleSubmit} className="flex flex-col gap-4">
-			<FormError message={error} />
-
-			<TextField
-				id="user-name"
-				label="Full name"
-				required
-				value={form.full_name}
-				onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
-			/>
-
-			<TextField
-				id="user-email"
-				label="Email"
-				type="email"
-				required
-				value={form.email}
-				onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-			/>
-
-			<Field id="user-role" label="Role">
-				<Select
-					id="user-role"
-					value={form.role}
-					onChange={(nextRole) => {
-						if (nextRole === "admin" && initial.role !== "admin") {
-							setConfirmingPromote(true);
-							return;
-						}
-						setForm((f) => ({ ...f, role: nextRole as AdminUser["role"] }));
-					}}
-					options={[
-						{ value: "student", label: "Student" },
-						{ value: "admin", label: "Admin" },
-					]}
-					className="h-12 w-full"
-				/>
-			</Field>
-
-			<Field id="user-cohort" label="Cohort">
-				<Select
-					id="user-cohort"
-					value={form.cohort}
-					onChange={(cohort) => setForm((f) => ({ ...f, cohort }))}
-					options={[
-						{ value: "", label: "Not enrolled" },
-						...cohorts.map((c) => ({ value: String(c.id), label: c.name })),
-					]}
-					className="h-12 w-full"
-				/>
-			</Field>
-
-			<FormActions submitting={submitting} onCancel={onCancel} />
-
-			{confirmingPromote && (
-				<ConfirmDialog
-					title="Promote to admin?"
-					message={`${initial.email} will gain full access to the admin dashboard, including managing users, cohorts, and content.`}
-					confirmLabel="Promote"
-					onConfirm={() => {
-						setForm((f) => ({ ...f, role: "admin" }));
-						setConfirmingPromote(false);
-					}}
-					onCancel={() => setConfirmingPromote(false)}
-				/>
-			)}
-		</form>
-	);
+	return <EnrollmentStatusBadge status={enrollment.status} />;
 }
 
 export default function AdminUsersPage() {
@@ -179,29 +59,14 @@ export default function AdminUsersPage() {
 		});
 	}, [users, roleFilter, search]);
 
-	async function handleSaveUser(form: EditFormState) {
-		if (!editingUser) return;
-
-		const updated = await updateUser(editingUser.id, { full_name: form.full_name, email: form.email, role: form.role });
-
-		const existing = enrollmentByUser.get(editingUser.id);
-		const nextCohortId = form.cohort ? Number(form.cohort) : null;
-		let nextEnrollment = existing ?? null;
-
-		if (nextCohortId === null && existing) {
-			await deleteEnrollment(existing.id);
-			nextEnrollment = null;
-		} else if (nextCohortId !== null && !existing) {
-			nextEnrollment = await createEnrollment({ user: editingUser.id, cohort: nextCohortId });
-		} else if (nextCohortId !== null && existing && existing.cohort !== nextCohortId) {
-			nextEnrollment = await updateEnrollment(existing.id, { cohort: nextCohortId });
-		}
-
+	function handleUserSaved(updated: AdminUser, nextEnrollment: Enrollment | null | undefined) {
 		setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-		setEnrollments((prev) => {
-			const withoutUser = prev.filter((e) => e.user !== editingUser.id);
-			return nextEnrollment ? [...withoutUser, nextEnrollment] : withoutUser;
-		});
+		if (nextEnrollment !== undefined) {
+			setEnrollments((prev) => {
+				const withoutUser = prev.filter((e) => e.user !== updated.id);
+				return nextEnrollment ? [...withoutUser, nextEnrollment] : withoutUser;
+			});
+		}
 		setEditingUser(null);
 	}
 
@@ -252,10 +117,10 @@ export default function AdminUsersPage() {
 							return (
 								<Card key={u.id} variant="admin" className="p-4">
 									<div className="flex items-start justify-between gap-3">
-										<div className="min-w-0">
-											<p className="truncate font-semibold text-ink">{u.full_name || u.display_name || "—"}</p>
+										<Link href={`/admin/users/${u.id}`} className="group min-w-0">
+											<p className="truncate font-semibold text-ink group-hover:text-brand-blue group-hover:underline">{u.full_name || u.display_name || "—"}</p>
 											<p className="truncate text-sm text-ink-soft">{u.email}</p>
-										</div>
+										</Link>
 										<button
 											type="button"
 											onClick={() => setEditingUser(u)}
@@ -267,7 +132,7 @@ export default function AdminUsersPage() {
 									</div>
 
 									<div className="mt-3 flex flex-wrap items-center gap-2">
-										<Badge tone={ROLE_TONES[u.role]}>{u.role}</Badge>
+										<RoleBadge role={u.role} />
 										<EnrollmentStatus enrollment={enrollment} />
 									</div>
 
@@ -288,9 +153,13 @@ export default function AdminUsersPage() {
 							const enrollment = enrollmentByUser.get(u.id);
 							return (
 								<tr key={u.id} className="border-b border-gray-100 last:border-0">
-									<td className="px-5 py-3 font-semibold text-ink">{u.full_name || u.display_name || "—"}</td>
-									<td className="px-5 py-3 text-ink-soft">{u.email}</td>
-									<td className="px-5 py-3"><Badge tone={ROLE_TONES[u.role]}>{u.role}</Badge></td>
+									<td className="px-5 py-3 font-semibold text-ink">
+										<Link href={`/admin/users/${u.id}`} className="hover:text-brand-blue hover:underline">{u.full_name || u.display_name || "—"}</Link>
+									</td>
+									<td className="px-5 py-3 text-ink-soft">
+										<Link href={`/admin/users/${u.id}`} className="hover:text-brand-blue hover:underline">{u.email}</Link>
+									</td>
+									<td className="px-5 py-3"><RoleBadge role={u.role} /></td>
 									<td className="px-5 py-3 text-ink-soft">{enrollment ? cohortName(enrollment.cohort) : "—"}</td>
 									<td className="px-5 py-3"><EnrollmentStatus enrollment={enrollment} /></td>
 									<td className="px-5 py-3 text-ink-soft">{new Date(u.created_at).toLocaleDateString()}</td>
@@ -306,21 +175,13 @@ export default function AdminUsersPage() {
 				</>
 			)}
 
-			<Modal isOpen={!!editingUser} onClose={() => setEditingUser(null)} title="Edit User">
-				{editingUser && (
-					<EditUserForm
-						initial={{
-							full_name: editingUser.full_name,
-							email: editingUser.email,
-							role: editingUser.role,
-							cohort: enrollmentByUser.get(editingUser.id)?.cohort.toString() ?? "",
-						}}
-						cohorts={cohorts}
-						onSubmit={handleSaveUser}
-						onCancel={() => setEditingUser(null)}
-					/>
-				)}
-			</Modal>
+			<EditUserModal
+				user={editingUser}
+				enrollment={editingUser ? enrollmentByUser.get(editingUser.id) ?? null : null}
+				cohorts={cohorts}
+				onClose={() => setEditingUser(null)}
+				onSaved={handleUserSaved}
+			/>
 		</AdminLayout>
 	);
 }

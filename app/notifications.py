@@ -265,7 +265,7 @@ def notify_content_update(module=None, content_item=None):
             user=user,
             notification_type=NotificationLog.NotificationType.CONTENT_UPDATE,
             payload_dict={
-                "title": f"New content: Week {module.week_number}",
+                "title": f"New content: {module.week_label}",
                 "body": module.title,
                 "url": f"/modules/{module.id}",
             },

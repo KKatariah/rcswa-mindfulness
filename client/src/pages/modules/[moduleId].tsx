@@ -20,6 +20,7 @@ import {
 	markModuleViewed,
 	type ApiModuleDetail,
 } from "@/lib/api";
+import { weekLabel } from "@/lib/weeks";
 import type { ContentBlock } from "@/types/module";
 
 // Background photo by Michael Metschl (Pexels): https://www.pexels.com/photo/18284929/
@@ -143,7 +144,7 @@ export default function ModulePage() {
 						embedded
 						title={module.title}
 						durationMinutes={module.content_items.length * 10}
-						description={`Week ${module.week_number}`}
+						description={weekLabel(module.week_number)}
 						viewed={data.viewed}
 					/>
 
