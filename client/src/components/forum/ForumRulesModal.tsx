@@ -52,7 +52,11 @@ function RuleNumber({ n, small = false }: { n: number; small?: boolean }) {
  *  the agree checkbox and buttons below it stay in view on short screens. */
 export function ForumRulesList() {
 	return (
-		<ol className="max-h-[45vh] divide-y divide-gray-200 overflow-y-auto overscroll-contain rounded-2xl bg-surface-muted px-4 text-left">
+		<ol
+			aria-label="Forum rules"
+			tabIndex={0}
+			className="max-h-[45vh] divide-y divide-gray-200 overflow-y-auto overscroll-contain rounded-2xl bg-surface-muted px-4 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
+		>
 			{FORUM_RULES.map((rule, i) => (
 				<li key={rule.title} className="flex gap-3 py-3">
 					<RuleNumber n={i + 1} />

@@ -208,7 +208,7 @@ export default function SurveyQuestions({
 			</Card>
 
 			<Card as="section" className="p-4 md:p-10">
-				<h2 className="text-sm font-bold text-ink md:text-base">Reflective Journal</h2>
+				<h2 id="journal-heading" className="text-sm font-bold text-ink md:text-base">Reflective Journal</h2>
 				<p className="mt-3 text-sm leading-5 text-ink md:mt-4 md:text-base">
 					Please write 100-250 words (4-5 sentences) reflecting on the following questions:
 				</p>
@@ -219,6 +219,7 @@ export default function SurveyQuestions({
 					rows={4}
 					placeholder="Enter reflection..."
 					maxLength={JOURNAL_MAX_CHARS}
+					aria-labelledby="journal-heading"
 					aria-describedby="journal-word-count"
 					className="mt-5 w-full resize-y rounded-xl border border-[#5b5a5a] bg-white px-3 py-3 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30 md:mt-6"
 					onChange={(event) => updateAnswer(13, event.target.value)}

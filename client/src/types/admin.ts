@@ -90,7 +90,6 @@ export type UserOverview = {
 	};
 	notifications: {
 		push_devices: number;
-		email_enabled: boolean;
 		push_denied: boolean;
 		reminder_time: string;
 		daily_content_reminder: boolean;
@@ -107,6 +106,8 @@ export type AdminUser = {
 	auth_provider: string;
 	is_staff: boolean;
 	created_at: string;
+	/** Their most recent enrollment, or null if they have never been enrolled. */
+	enrollment: { id: number; cohort: number; status: Enrollment["status"]; enrolled_at: string } | null;
 };
 
 export type Enrollment = {

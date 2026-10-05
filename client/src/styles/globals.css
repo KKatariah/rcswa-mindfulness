@@ -8,7 +8,8 @@
   --color-brand-blue-dark: #2f4f78;
   --color-ink: #111827;
   --color-ink-soft: #30302f;
-  --color-muted: #6b7280;
+  /* Darkened from #6b7280 to pass WCAG AA contrast on the light grey panels. */
+  --color-muted: #636b78;
   --color-surface-muted: #f5f5f7;
 }
 

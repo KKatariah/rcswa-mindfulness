@@ -11,11 +11,12 @@ current week's meditation: the first audio item (by display order) in the
 published module for that week, where the week is counted from cohort.start_date.
 
 Idempotency key: (user_id, content_item_id, perth_date) scoped to status=SENT.
-A failed log entry is NOT treated as sent — it will be retried on the next run.
-Running the command more than once on the same Perth day is safe for users who
-have already been successfully notified; those with a FAILED log will be retried.
+Skipped (no registered device) and failed log entries are NOT treated as sent,
+so they are retried on the next run. Running the command more than once on the
+same Perth day is safe for users who have already been successfully notified.
 """
 
+import logging
 import sys
 from dataclasses import dataclass, field
 from datetime import date, datetime, time as time_obj, timezone as stdlib_tz
@@ -38,6 +39,8 @@ from app.models import (
     SurveyResponse,
 )
 from app.notifications import deliver_and_log
+
+logger = logging.getLogger(__name__)
 
 PERTH_TZ = ZoneInfo("Australia/Perth")
 UTC = stdlib_tz.utc
@@ -85,7 +88,7 @@ class _Run:
     pref_hours: dict = field(default_factory=dict)
     completed_by_user: dict = field(default_factory=dict)
     subs_by_user: dict = field(default_factory=dict)
-    # (user_id, content_item_id) pairs already SENT today; FAILED ones are retried.
+    # (user_id, content_item_id) pairs already SENT today; others are retried.
     already_sent: set = field(default_factory=set)
     sent: int = 0
     skipped: int = 0
@@ -115,12 +118,21 @@ class _Run:
         # Users without a preference row default to 8am Perth.
         return self.pref_hours.get(user.id, 8)
 
-    def channel_for(self, user):
-        return "push" if self.subs_by_user.get(user.id) else "email"
-
-    def record(self, delivered):
-        if delivered:
+    def dry_run_send(self, stdout, user, what):
+        """Report and tally what a real run would do: push to the user's devices, or skip without one."""
+        if self.subs_by_user.get(user.id):
+            verb = "would send"
             self.sent += 1
+        else:
+            verb = "would skip (no device)"
+            self.skipped += 1
+        stdout.write(f"  [dry-run] {verb} {what}: user={user.email} day={self.today}")
+
+    def record(self, status):
+        if status == NotificationLog.Status.SENT:
+            self.sent += 1
+        elif status == NotificationLog.Status.SKIPPED:
+            self.skipped += 1
         else:
             self.errors += 1
 
@@ -181,6 +193,8 @@ class Command(BaseCommand):
         self.stdout.write(
             f"[send_due_reminders] done: sent={run.sent} skipped={run.skipped} errors={run.errors}"
         )
+        if run.errors:
+            logger.warning("Daily reminders: %d of %d failed to send", run.errors, run.sent + run.errors)
 
     # ── Daily meditation reminders ─────────────────────────────────────────────
 
@@ -209,16 +223,12 @@ class Command(BaseCommand):
         pref = getattr(user, "notification_preference", None)
         if run.preferred_hour(user) != run.hour:  # hourly cron: each user at their own hour
             return False
-        # push_denied=True means the user explicitly refused — no push, no email.
+        # push_denied=True means the user explicitly refused notifications.
         return not (pref and (not pref.daily_content_reminder or pref.push_denied))
 
     def _remind_content(self, run, user, item):
         if run.dry_run:
-            self.stdout.write(
-                f"  [dry-run] would send ({run.channel_for(user)}): "
-                f"user={user.email} item='{item.title}' day={run.today}"
-            )
-            run.sent += 1
+            run.dry_run_send(self.stdout, user, f"reminder for '{item.title}'")
             return
         run.record(deliver_and_log(
             user=user,
@@ -228,9 +238,6 @@ class Command(BaseCommand):
                 "body": item.title,
                 "url": f"/modules/{item.module_id}",
             },
-            subject=f"Your daily meditation: {item.title}",
-            email_template="app/reminder_email.txt",
-            email_context={"user": user, "item": item, "module": item.module},
             module=item.module,
             content_item=item,
             scheduled_for=run.scheduled_for,
@@ -287,11 +294,7 @@ class Command(BaseCommand):
 
     def _remind_survey(self, run, user, survey):
         if run.dry_run:
-            self.stdout.write(
-                f"  [dry-run] would send survey reminder ({run.channel_for(user)}): "
-                f"user={user.email} survey='{survey.title}' day={run.today}"
-            )
-            run.sent += 1
+            run.dry_run_send(self.stdout, user, f"survey reminder for '{survey.title}'")
             return
         run.record(deliver_and_log(
             user=user,
@@ -301,9 +304,6 @@ class Command(BaseCommand):
                 "body": survey.title,
                 "url": "/surveys",
             },
-            subject=f"Survey reminder: {survey.title}",
-            email_template="app/survey_reminder_email.txt",
-            email_context={"user": user, "survey": survey},
             module=survey.module,
             scheduled_for=run.scheduled_for,
             push_subs=run.subs_by_user.get(user.id, []),

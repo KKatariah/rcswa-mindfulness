@@ -89,6 +89,7 @@ export default function AdminSurveysPage() {
 
 			<AdminTable
 				columns={["Title", "Code", "Type", "Module", "Questions", "Responses"]}
+				scrollLabel="Surveys"
 				loading={loading}
 				error={error}
 				empty={surveys.length === 0}

@@ -1,4 +1,4 @@
-import { type FormEvent, type ReactNode, useEffect, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import ForumRulesModal, { ForumRulesSummary } from "@/components/forum/ForumRulesModal";
@@ -8,8 +8,11 @@ import Card from "@/components/ui/Card";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { ChevronLeftIcon, MessageCircleIcon, SearchIcon } from "@/components/ui/icons";
 import PageHeader from "@/components/ui/PageHeader";
+import { LoadMore } from "@/components/ui/paging";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAsync } from "@/hooks/useAsync";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { usePagedList } from "@/hooks/usePagedList";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import {
   acceptForumRules,
@@ -116,7 +119,7 @@ function AuthorLine({ name, createdAt, editedAt }: { name: string; createdAt: st
   return (
     <div className="flex min-w-0 items-baseline gap-2">
       <span className="min-w-0 truncate text-sm font-semibold text-ink">{name}</span>
-      <span className="text-xs text-gray-400">
+      <span className="text-xs text-muted">
         {formatRelativeTime(createdAt)}
         {editedAt && " (edited)"}
       </span>
@@ -127,7 +130,7 @@ function AuthorLine({ name, createdAt, editedAt }: { name: string; createdAt: st
 const ACTION_TONES = {
   pin: "text-amber-600",
   edit: "text-brand-blue",
-  delete: "text-red-500",
+  delete: "text-red-600",
 } as const;
 
 /** Small text button for Pin / Edit / Delete. */
@@ -271,7 +274,7 @@ function Composer({
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
       <div className="mt-3 flex items-center justify-between">
         {remaining > 0 ? (
-          <p className="text-xs text-gray-400">You can post again in {remaining}s</p>
+          <p className="text-xs text-muted">You can post again in {remaining}s</p>
         ) : (
           <span />
         )}
@@ -372,6 +375,7 @@ function ThreadDetailView({
 
   return (
     <div className="space-y-4">
+      <h1 className="sr-only">Forum thread</h1>
       <button
         type="button"
         onClick={onBack}
@@ -527,7 +531,7 @@ function ThreadRow({ thread, isFirst, isLast, isOnly, isAdmin, onSelect, onEdit,
 
             {pinError && <p className="mt-2 text-xs font-medium text-red-600">{pinError}</p>}
 
-            <div className="mt-3 flex items-center gap-1 text-gray-400">
+            <div className="mt-3 flex items-center gap-1 text-muted">
               <MessageCircleIcon className="size-3.5" />
               <span className="text-xs font-medium">
                 {thread.reply_count} {thread.reply_count === 1 ? "reply" : "replies"}
@@ -554,6 +558,8 @@ function ThreadRow({ thread, isFirst, isLast, isOnly, isAdmin, onSelect, onEdit,
 
 type FeedViewProps = {
   threads: ForumThread[];
+  searching: boolean;
+  more: ReactNode;
   onSelect: (id: number) => void;
   onCreateThread: (body: string) => Promise<void>;
   onEditThread: (id: number, body: string) => Promise<void>;
@@ -565,6 +571,8 @@ type FeedViewProps = {
 
 function FeedView({
   threads,
+  searching,
+  more,
   onSelect,
   onCreateThread,
   onEditThread,
@@ -595,7 +603,9 @@ function FeedView({
       )}
       <Card>
         {threads.length === 0 ? (
-          <p className="py-12 text-center text-sm text-gray-400">No threads yet. Be the first to start a conversation!</p>
+          <p className="py-12 text-center text-sm text-muted">
+            {searching ? "No threads match your search." : "No threads yet. Be the first to start a conversation!"}
+          </p>
         ) : (
           threads.map((thread, index) => (
             <ThreadRow
@@ -613,26 +623,37 @@ function FeedView({
           ))
         )}
       </Card>
+      {more}
     </div>
   );
 }
 
 // ── Right column ────────────────────────────────────────────────────────────
 
-function ForumSidebar({ query, onQueryChange }: { query: string; onQueryChange: (v: string) => void }) {
+type SearchProps = { query: string; onQueryChange: (v: string) => void };
+
+function ForumSearchField({ query, onQueryChange, className = "" }: SearchProps & { className?: string }) {
+  return (
+    <div className={`flex items-center gap-2 rounded-xl border border-gray-200 bg-surface-muted px-3 py-2 focus-within:ring-2 focus-within:ring-brand-blue ${className}`}>
+      <SearchIcon className="size-4 shrink-0 text-gray-400" />
+      <input
+        type="search"
+        aria-label="Search forum threads"
+        value={query}
+        onChange={(e) => onQueryChange(e.target.value)}
+        placeholder="Search for keyword…"
+        className="w-full bg-transparent text-sm text-ink placeholder:text-gray-400 focus:outline-none"
+      />
+    </div>
+  );
+}
+
+function ForumSidebar({ query, onQueryChange }: SearchProps) {
   return (
     <div className="hidden min-w-0 space-y-4 xl:block">
       <Card className="p-5">
         <p className="text-sm font-bold text-ink">Search</p>
-        <div className="mt-3 flex items-center gap-2 rounded-xl border border-gray-200 bg-surface-muted px-3 py-2">
-          <SearchIcon className="size-4 shrink-0 text-gray-400" />
-          <input
-            value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
-            placeholder="Search for keyword…"
-            className="w-full bg-transparent text-sm text-ink placeholder:text-gray-400 focus:outline-none"
-          />
-        </div>
+        <ForumSearchField query={query} onQueryChange={onQueryChange} className="mt-3" />
       </Card>
       <Card className="p-5">
         <p className="mb-3 text-sm font-bold text-ink">Forum rules</p>
@@ -659,23 +680,28 @@ export default function ForumPage() {
   const needsRules = !!user && !isAdminUser(user) && !user.forum_rules_accepted;
   // Bumped by "Try again" to re-run the initial load.
   const [attempt, setAttempt] = useState(0);
-  const forum = useAsync(
-    async () => {
-      const [threads, status] = await Promise.all([listForumThreads(), getProgramStatus()]);
-      return { threads, isActive: status.is_active };
-    },
-    [user, attempt, needsRules],
-    { threads: [] as ForumThread[], isActive: true },
-    { enabled: !authLoading && !!user && !needsRules, errorFallback: "Failed to load forum" },
-  );
-  const { threads, isActive } = forum.data;
+  const [query, setQuery] = useState("");
+  const search = useDebouncedValue(query.trim());
+  const canLoad = !authLoading && !!user && !needsRules;
+  // Threads come a page at a time, and the search runs on the server so it covers every thread.
+  const threadList = usePagedList((page) => listForumThreads({ search, ...page }), [user, attempt, needsRules, search], {
+    enabled: canLoad,
+    errorFallback: "Failed to load forum",
+  });
+  const programStatus = useAsync(getProgramStatus, [user, attempt, needsRules], { is_active: true }, {
+    enabled: canLoad,
+    errorFallback: "Failed to load forum",
+  });
+  const threads = threadList.items;
+  const isActive = programStatus.data.is_active;
   const [selectedThread, setSelectedThread] = useState<ForumThreadDetail | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
-  const [query, setQuery] = useState("");
 
-  const loading = authLoading || (!!user && !needsRules && forum.loading);
-  const error = actionError ?? forum.error;
+  // A new search keeps the current list on screen until its results arrive.
+  const firstLoad = threadList.loading && threads.length === 0 && !search;
+  const loading = authLoading || (!!user && !needsRules && (programStatus.loading || firstLoad));
+  const error = actionError ?? threadList.error ?? programStatus.error;
 
   useEffect(() => {
     const handleForumReset = () => {
@@ -686,25 +712,10 @@ export default function ForumPage() {
     return () => window.removeEventListener("forum:reset", handleForumReset);
   }, []);
 
-  const filteredThreads = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return threads;
-    return threads.filter(
-      (t) =>
-        t.body.toLowerCase().includes(q) ||
-        t.author_name.toLowerCase().includes(q),
-    );
-  }, [threads, query]);
-
-  function setThreads(update: (prev: ForumThread[]) => ForumThread[]) {
-    forum.setData((d) => ({ ...d, threads: update(d.threads) }));
-  }
-
   // Re-fetch rather than patching the list locally: the server sorts threads
   // (pinned ones first) and owns each thread's reply_count.
   async function refreshThreads() {
-    const updated = await listForumThreads();
-    setThreads(() => updated);
+    await threadList.reload();
   }
 
   async function handleAcceptRules() {
@@ -768,7 +779,7 @@ export default function ForumPage() {
         await refreshThreads();
       } else {
         await deleteForumThread(id);
-        setThreads((prev) => prev.filter((t) => t.id !== id));
+        threadList.removeItem(id);
         if (selectedThread?.id === id) setSelectedThread(null);
       }
     } catch (e) {
@@ -792,12 +803,12 @@ export default function ForumPage() {
         <section aria-label="Forum" className="flex min-w-0 flex-col gap-4">
           {loading ? (
             <div className="flex justify-center py-20">
-              <span className="text-sm text-gray-400">Loading…</span>
+              <span className="text-sm text-muted">Loading…</span>
             </div>
           ) : !user ? (
             <Card className="mx-auto max-w-md p-8 text-center">
               <p className="font-semibold text-ink">Please log in to access the forum.</p>
-              <p className="mt-2 text-sm text-gray-400">Log in from the home page to continue.</p>
+              <p className="mt-2 text-sm text-muted">Log in from the home page to continue.</p>
             </Card>
           ) : needsRules ? (
             <Card className="mx-auto max-w-md p-8 text-center">
@@ -830,6 +841,8 @@ export default function ForumPage() {
                       title="Forum"
                       description="Connect, share, and support each other on your wellness journeys"
                     />
+                    {/* The sidebar (with its search box) only shows on wide screens. */}
+                    <ForumSearchField query={query} onQueryChange={setQuery} className="mt-4 xl:hidden" />
                   </div>
                 )}
 
@@ -851,7 +864,16 @@ export default function ForumPage() {
                   />
                 ) : (
                   <FeedView
-                    threads={filteredThreads}
+                    threads={threads}
+                    searching={!!search}
+                    more={
+                      <LoadMore
+                        hasMore={threadList.hasMore}
+                        loading={threadList.loadingMore}
+                        error={threadList.loadMoreError}
+                        onLoadMore={threadList.loadMore}
+                      />
+                    }
                     onSelect={loadThread}
                     onCreateThread={handleCreateThread}
                     onEditThread={handleEditThreadFromFeed}

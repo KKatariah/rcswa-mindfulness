@@ -150,7 +150,10 @@ export default function Home() {
 				) : (
 					<div
 						ref={weeksRef}
-						className="mx-auto mt-12 flex max-w-6xl snap-x snap-mandatory gap-6 overflow-x-auto scrollbar-none pb-4"
+						role="region"
+						aria-label="Programme weeks"
+						tabIndex={0}
+						className="mx-auto mt-12 flex max-w-6xl snap-x snap-mandatory gap-6 overflow-x-auto scrollbar-none pb-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 					>
 						{weeksLoading
 							? Array.from({ length: 4 }).map((_, index) => (

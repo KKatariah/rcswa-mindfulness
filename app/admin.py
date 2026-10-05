@@ -190,8 +190,8 @@ class ContentItemAdmin(admin.ModelAdmin):
 
 @admin.register(NotificationPreference)
 class NotificationPreferenceAdmin(admin.ModelAdmin):
-    list_display = ("user", "email_enabled", "inapp_enabled", "push_denied", "reminder_time")
-    list_filter = ("email_enabled", "push_denied")
+    list_display = ("user", "inapp_enabled", "push_denied", "reminder_time")
+    list_filter = ("push_denied",)
     search_fields = ("user__email",)
 
 

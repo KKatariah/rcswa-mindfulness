@@ -42,7 +42,7 @@ export default function Footer() {
         <div className="grid grid-cols-2 gap-8 sm:gap-16">
           {FOOTER_COLUMNS.map((column) => (
             <div key={column.title} className="flex flex-col gap-3">
-              <h3 className="text-sm font-bold text-white">{column.title}</h3>
+              <h2 className="text-sm font-bold text-white">{column.title}</h2>
               <ul className="flex flex-col gap-2.5">
                 {column.links.map((link) => (
                   <li key={link.label}>

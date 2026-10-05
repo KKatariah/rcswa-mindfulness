@@ -1,4 +1,5 @@
 import datetime
+import json
 from datetime import date, timedelta
 from io import StringIO
 from unittest.mock import patch
@@ -416,7 +417,7 @@ class ForumTests(APITestCase):
         self.client.force_login(self.student)
         resp = self.client.get("/api/forum/threads/")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        thread_data = next(t for t in resp.data if t["id"] == self.thread.pk)
+        thread_data = next(t for t in resp.data["results"] if t["id"] == self.thread.pk)
         # 2 posts total (opening + reply), reply_count = 1
         self.assertEqual(thread_data["reply_count"], 1)
 
@@ -428,7 +429,7 @@ class ForumTests(APITestCase):
         self.client.force_login(self.student)
         resp = self.client.get("/api/forum/threads/")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        thread_data = next(t for t in resp.data if t["id"] == new_thread.pk)
+        thread_data = next(t for t in resp.data["results"] if t["id"] == new_thread.pk)
         self.assertEqual(thread_data["reply_count"], 0)
 
     # ── S26: replies nested under thread detail ────────────────────────────────
@@ -543,7 +544,7 @@ class ForumTests(APITestCase):
         self.thread.save()
         self.client.force_login(self.student)
         resp = self.client.get("/api/forum/threads/")
-        thread_data = next(t for t in resp.data if t["id"] == self.thread.pk)
+        thread_data = next(t for t in resp.data["results"] if t["id"] == self.thread.pk)
         self.assertEqual(thread_data["author_name"], "Deleted user")
 
     # ── Fix 5: title derived from body ────────────────────────────────────────
@@ -578,13 +579,13 @@ class ForumTests(APITestCase):
     def test_can_edit_true_for_author(self):
         self.client.force_login(self.student)
         resp = self.client.get("/api/forum/threads/")
-        thread_data = next(t for t in resp.data if t["id"] == self.thread.pk)
+        thread_data = next(t for t in resp.data["results"] if t["id"] == self.thread.pk)
         self.assertTrue(thread_data["can_edit"])
 
     def test_can_edit_false_for_non_author(self):
         self.client.force_login(self.other)
         resp = self.client.get("/api/forum/threads/")
-        thread_data = next(t for t in resp.data if t["id"] == self.thread.pk)
+        thread_data = next(t for t in resp.data["results"] if t["id"] == self.thread.pk)
         self.assertFalse(thread_data["can_edit"])
 
     def test_admin_can_edit_all_content(self):
@@ -768,14 +769,14 @@ class ForumTests(APITestCase):
         self.client.force_login(self.student)
         resp = self.client.get("/api/forum/threads/")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        ids = [t["id"] for t in resp.data]
+        ids = [t["id"] for t in resp.data["results"]]
         self.assertEqual(ids[0], self.thread.pk)
 
     def test_is_pinned_in_list_response(self):
         self.client.force_login(self.student)
         resp = self.client.get("/api/forum/threads/")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        thread_data = next(t for t in resp.data if t["id"] == self.thread.pk)
+        thread_data = next(t for t in resp.data["results"] if t["id"] == self.thread.pk)
         self.assertIn("is_pinned", thread_data)
         self.assertFalse(thread_data["is_pinned"])
 
@@ -908,7 +909,7 @@ class ForumTests(APITestCase):
         self.client.force_login(self.admin)
         resp = self.client.get("/api/forum/threads/")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        ids = [t["id"] for t in resp.data if t["is_pinned"]]
+        ids = [t["id"] for t in resp.data["results"] if t["is_pinned"]]
         self.assertEqual(ids, [second.pk, first.pk])
 
     @override_settings(FORUM_MAX_PINNED_THREADS=2)
@@ -1572,8 +1573,8 @@ class UserManagementAdminTests(APITestCase):
         self.client.force_login(self.student)
         resp = self.client.get("/api/users/")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertEqual([u["id"] for u in resp.data], [self.student.pk])
-        self.assertNotIn("role", resp.data[0])
+        self.assertEqual([u["id"] for u in resp.data["results"]], [self.student.pk])
+        self.assertNotIn("role", resp.data["results"][0])
 
     def test_student_cannot_make_themselves_admin(self):
         self.client.force_login(self.student)
@@ -1599,7 +1600,7 @@ class UserManagementAdminTests(APITestCase):
         self.client.force_login(self.admin)
         resp = self.client.get("/api/users/")
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        by_email = {u["email"]: u for u in resp.data}
+        by_email = {u["email"]: u for u in resp.data["results"]}
         self.assertEqual(set(by_email), {"student@test.local", "other@test.local", "admin@test.local"})
         self.assertEqual(by_email["admin@test.local"]["role"], "admin")
 
@@ -1693,10 +1694,10 @@ class ApprovalsAdminTests(APITestCase):
         Enrollment.objects.create(user=other, cohort=self.cohort, status=Enrollment.Status.ACTIVE)
         self.client.force_login(self.admin)
 
-        pending = self.client.get("/api/enrollments/?status=pending").data
+        pending = self.client.get("/api/enrollments/?status=pending").data["results"]
         self.assertEqual([e["user_email"] for e in pending], ["student@test.local"])
         in_cohort = self.client.get(f"/api/enrollments/?cohort={self.cohort.pk}").data
-        self.assertEqual(len(in_cohort), 2)
+        self.assertEqual(in_cohort["count"], 2)
 
     def test_student_cannot_list_or_approve_enrollments(self):
         enrollment = Enrollment.objects.create(
@@ -2609,26 +2610,33 @@ class PushSubscriptionEndpointReuseTests(APITestCase):
         self.assertEqual(sub.user_id, self.user_b.pk)
 
 
-class PushDeniedNoEmailFallbackTests(TestCase):
-    """T2: push_denied=True skips both push and email."""
+@override_settings(VAPID_PRIVATE_KEY="test-key")
+class DeliverySkipTests(TestCase):
+    """T2: nothing is sent, and the attempt is logged as SKIPPED, when there is nowhere to send it."""
 
     def test_deliver_skips_when_push_denied(self):
+        from app.notifications import deliver
         user = _make_user("denied@test.local")
-        NotificationPreference.objects.create(user=user, push_denied=True, email_enabled=True)
+        NotificationPreference.objects.create(user=user, push_denied=True)
+        PushSubscription.objects.create(user=user, endpoint="https://push.example/a", p256dh="k", auth="a")
 
-        with patch("app.notifications.send_mail") as mock_mail:
-            from app.notifications import deliver
-            channel, success = deliver(
-                user=user,
-                payload_dict={"title": "test"},
-                subject="Test",
-                email_template="app/reminder_email.txt",
-                email_context={"user": user, "item": None, "module": None},
-            )
+        with patch("pywebpush.webpush") as mock_push:
+            result = deliver(user=user, payload_dict={"title": "test"})
 
-        self.assertFalse(success)
-        self.assertIsNone(channel)
-        mock_mail.assert_not_called()
+        self.assertEqual(result, NotificationLog.Status.SKIPPED)
+        mock_push.assert_not_called()
+
+    def test_user_without_a_device_is_logged_as_skipped(self):
+        from app.notifications import deliver_and_log
+        user = _make_user("nodevice@test.local")
+
+        result = deliver_and_log(
+            user=user, notification_type=NotificationLog.NotificationType.CONTENT_UPDATE, payload_dict={"title": "t"},
+        )
+
+        self.assertEqual(result, NotificationLog.Status.SKIPPED)
+        log = NotificationLog.objects.get(user=user)
+        self.assertEqual((log.status, log.sent_at), (NotificationLog.Status.SKIPPED, None))
 
 
 class FailedSendRetriesNextRunTests(TestCase):
@@ -2650,7 +2658,7 @@ class FailedSendRetriesNextRunTests(TestCase):
             type=NotificationLog.NotificationType.CONTENT_REMINDER,
             content_item=self.item,
             module=self.module,
-            channel=NotificationLog.Channel.EMAIL,
+            channel=NotificationLog.Channel.PUSH,
             scheduled_for=scheduled_for,
             status=NotificationLog.Status.FAILED,
         )
@@ -2738,7 +2746,7 @@ class DailyMeditationReminderTests(TestCase):
         out = StringIO()
         with patch("app.management.commands.send_due_reminders._perth_now", return_value=fake_now):
             call_command("send_due_reminders", "--dry-run", stdout=out)
-        return [line for line in out.getvalue().splitlines() if "would send (" in line]
+        return [line for line in out.getvalue().splitlines() if "[dry-run]" in line]
 
     def test_one_reminder_on_any_day_of_the_week(self):
         lines = self._run()
@@ -2780,10 +2788,8 @@ class S21NotifiesOnlyActiveCohortTests(TestCase):
         self.module = _make_module(week=1)
 
     def test_only_active_cohort_users_notified(self):
-        # Suppress SMTP; console backend is fine since we just check the log rows.
-        with self.settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
-            from app.notifications import notify_content_update
-            notify_content_update(module=self.module)
+        from app.notifications import notify_content_update
+        notify_content_update(module=self.module)
 
         logs = NotificationLog.objects.filter(
             type=NotificationLog.NotificationType.CONTENT_UPDATE
@@ -2795,9 +2801,8 @@ class S21NotifiesOnlyActiveCohortTests(TestCase):
     def test_users_with_module_still_locked_not_notified(self):
         # Active cohort started 7 days ago, so week 3 opens in 7 days.
         locked_module = _make_module(week=3)
-        with self.settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
-            from app.notifications import notify_content_update
-            notify_content_update(module=locked_module)
+        from app.notifications import notify_content_update
+        notify_content_update(module=locked_module)
 
         self.assertFalse(
             NotificationLog.objects.filter(
@@ -2961,9 +2966,8 @@ class EnrollmentEdgeCaseTests(APITestCase):
         Enrollment.objects.create(user=self.student, cohort=self.new, status=Enrollment.Status.ACTIVE)
         with patch("app.signals._fire_async"):
             module = Module.objects.create(week_number=1, title="W1", is_published=True)
-        with self.settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend"):
-            from app.notifications import notify_content_update
-            notify_content_update(module=module)
+        from app.notifications import notify_content_update
+        notify_content_update(module=module)
         self.assertEqual(
             NotificationLog.objects.filter(user=self.student, type=NotificationLog.NotificationType.CONTENT_UPDATE).count(), 1,
         )
@@ -2999,7 +3003,6 @@ class CohortStartDateTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
 
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 class UnlockNotificationEdgeCaseTests(TestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="s@test.local", password="testpass")
@@ -3108,7 +3111,7 @@ class ForumEdgeCaseTests(APITestCase):
         self.client.force_login(reader)
         listing = self.client.get("/api/forum/threads/")
         self.assertEqual(listing.status_code, status.HTTP_200_OK)
-        self.assertTrue(listing.data[0]["is_pinned"])
+        self.assertTrue(listing.data["results"][0]["is_pinned"])
         detail = self.client.get(f"/api/forum/threads/{tid}/")
         self.assertEqual(detail.status_code, status.HTTP_200_OK)
         self.assertEqual(detail.data["body"], "Pinned by admin")
@@ -3126,24 +3129,34 @@ class ForumEdgeCaseTests(APITestCase):
                 self.assertFalse(rest and rest[0] in ("‍", "\U0001F3FD"), (filler, title))
 
 
-@override_settings(VAPID_PRIVATE_KEY="test-key", EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
-class PushFallbackTests(TestCase):
-    def test_expired_subscription_is_removed_and_email_sent(self):
-        from django.core import mail
+@override_settings(VAPID_PRIVATE_KEY="test-key")
+class PushFailureTests(TestCase):
+    def test_expired_subscription_is_removed_and_send_fails(self):
         from pywebpush import WebPushException
         from .notifications import deliver
         user = User.objects.create_user(email="s@test.local", password="testpass")
         PushSubscription.objects.create(user=user, endpoint="https://push.example/gone", p256dh="k", auth="a")
         gone = WebPushException("gone", response=type("R", (), {"status_code": 410})())
         with patch("pywebpush.webpush", side_effect=gone):
-            channel, success = deliver(
-                user=user, payload_dict={"title": "t"}, subject="Hello",
-                email_template="app/content_update_email.txt",
-                email_context={"user": user, "module": type("M", (), {"title": "W1", "week_number": 1})()},
-            )
-        self.assertTrue(success)
+            result = deliver(user=user, payload_dict={"title": "t"})
+        self.assertEqual(result, NotificationLog.Status.FAILED)
         self.assertFalse(PushSubscription.objects.filter(user=user).exists())
-        self.assertEqual([m.subject for m in mail.outbox], ["Hello"])
+
+    def test_one_working_device_is_enough(self):
+        from pywebpush import WebPushException
+        from .notifications import deliver
+        user = User.objects.create_user(email="s@test.local", password="testpass")
+        PushSubscription.objects.create(user=user, endpoint="https://push.example/gone", p256dh="k", auth="a")
+        PushSubscription.objects.create(user=user, endpoint="https://push.example/ok", p256dh="k", auth="a")
+        gone = WebPushException("gone", response=type("R", (), {"status_code": 410})())
+
+        def webpush(subscription_info, **kwargs):
+            if subscription_info["endpoint"].endswith("gone"):
+                raise gone
+
+        with patch("pywebpush.webpush", side_effect=webpush):
+            self.assertEqual(deliver(user=user, payload_dict={"title": "t"}), NotificationLog.Status.SENT)
+        self.assertEqual(list(PushSubscription.objects.values_list("endpoint", flat=True)), ["https://push.example/ok"])
 
 
 class ReminderTimeTests(APITestCase):
@@ -3593,7 +3606,12 @@ class SurveyAdminTests(APITestCase):
             self.client.get("/api/surveys/manage/")
 
 
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def _pushed_titles(mock_push):
+    """(title, url) of every push a patched pywebpush.webpush was asked to send."""
+    return [(json.loads(c.kwargs["data"])["title"], json.loads(c.kwargs["data"])["url"]) for c in mock_push.call_args_list]
+
+
+@override_settings(VAPID_PRIVATE_KEY="test-key")
 class ReminderDeliveryTests(TestCase):
     """Real (non dry-run) sends from send_due_reminders and notify_survey_unlocked."""
 
@@ -3611,6 +3629,10 @@ class ReminderDeliveryTests(TestCase):
             self.item = _make_audio_item(self.module, title="Body scan")
         # 08:00 Perth: the default reminder hour.
         self.fake_now = datetime.datetime.combine(today, datetime.time(8, 0), tzinfo=ZoneInfo("Australia/Perth"))
+        PushSubscription.objects.create(user=self.user, endpoint="https://push.example/a", p256dh="k", auth="a")
+        push_patch = patch("pywebpush.webpush")
+        self.push = push_patch.start()
+        self.addCleanup(push_patch.stop)
 
     def _run(self):
         with patch("app.management.commands.send_due_reminders._perth_now", return_value=self.fake_now):
@@ -3619,17 +3641,23 @@ class ReminderDeliveryTests(TestCase):
     def _logs(self, notification_type):
         return NotificationLog.objects.filter(user=self.user, type=notification_type)
 
-    def test_content_reminder_is_emailed_and_logged_once_per_day(self):
-        from django.core import mail
+    def test_content_reminder_is_pushed_and_logged_once_per_day(self):
         self._run()
         self._run()
         logs = self._logs(NotificationLog.NotificationType.CONTENT_REMINDER)
         self.assertEqual(
             list(logs.values_list("status", "channel", "content_item_id")),
-            [(NotificationLog.Status.SENT, NotificationLog.Channel.EMAIL, self.item.pk)],
+            [(NotificationLog.Status.SENT, NotificationLog.Channel.PUSH, self.item.pk)],
         )
-        self.assertEqual([m.subject for m in mail.outbox], ["Your daily meditation: Body scan"])
-        self.assertIn(f"/modules/{self.module.pk}", mail.outbox[0].body)
+        self.assertEqual(_pushed_titles(self.push), [("Time for your daily meditation", f"/modules/{self.module.pk}")])
+
+    def test_reminder_without_a_device_is_skipped_and_retried(self):
+        PushSubscription.objects.all().delete()
+        self._run()
+        self._run()
+        logs = self._logs(NotificationLog.NotificationType.CONTENT_REMINDER)
+        self.assertEqual(list(logs.values_list("status", flat=True)), [NotificationLog.Status.SKIPPED] * 2)
+        self.push.assert_not_called()
 
     def test_completed_item_is_still_reminded_daily(self):
         # Meditation is a daily practice: ticking the audio off doesn't stop the reminders.
@@ -3638,18 +3666,15 @@ class ReminderDeliveryTests(TestCase):
         self.assertTrue(self._logs(NotificationLog.NotificationType.CONTENT_REMINDER).exists())
 
     def test_survey_reminder_for_unlocked_unanswered_survey(self):
-        from django.core import mail
         NotificationPreference.objects.create(
             user=self.user, daily_content_reminder=False, daily_survey_reminder=True
         )
         ContentCompletion.objects.create(user=self.user, content_item=self.item)
-        survey = Survey.objects.get(module=self.module, type=SurveyType.WEEKLY)
         self._run()
         self._run()
         logs = self._logs(NotificationLog.NotificationType.SURVEY_PROMPT)
         self.assertEqual(list(logs.values_list("status", "module_id")), [(NotificationLog.Status.SENT, self.module.pk)])
-        self.assertEqual([m.subject for m in mail.outbox], [f"Survey reminder: {survey.title}"])
-        self.assertIn(f"Your survey '{survey.title}' is ready to complete.", mail.outbox[0].body)
+        self.assertEqual(_pushed_titles(self.push), [("Don't forget your survey", "/surveys")])
 
     def test_survey_reminder_skips_locked_and_answered_surveys(self):
         NotificationPreference.objects.create(
@@ -3662,30 +3687,28 @@ class ReminderDeliveryTests(TestCase):
         self._run()  # unlocked but already answered
         self.assertFalse(self._logs(NotificationLog.NotificationType.SURVEY_PROMPT).exists())
 
-    @override_settings(VAPID_PRIVATE_KEY="test-key")
     def test_dead_push_endpoint_shared_by_two_reminders(self):
         """The meditation reminder prunes the endpoint; the survey reminder in the same run must skip it, not crash."""
-        from django.core import mail
         from pywebpush import WebPushException
         NotificationPreference.objects.create(user=self.user, daily_survey_reminder=True)
         ContentCompletion.objects.create(user=self.user, content_item=self.item)
-        PushSubscription.objects.create(user=self.user, endpoint="https://push.example/gone", p256dh="k", auth="a")
-        gone = WebPushException("gone", response=type("R", (), {"status_code": 410})())
-        with patch("pywebpush.webpush", side_effect=gone):
-            self._run()
+        self.push.side_effect = WebPushException("gone", response=type("R", (), {"status_code": 410})())
+        self._run()
         self.assertFalse(PushSubscription.objects.filter(user=self.user).exists())
-        self.assertEqual(len(mail.outbox), 2)
+        self.assertEqual(self.push.call_count, 1)
+        self.assertEqual(
+            sorted(NotificationLog.objects.filter(user=self.user).values_list("status", flat=True)),
+            [NotificationLog.Status.FAILED] * 2,
+        )
 
     def test_survey_unlocked_notice_when_last_item_completed(self):
-        from django.core import mail
         NotificationPreference.objects.create(user=self.user, survey_unlocked_reminder=True)
-        survey = Survey.objects.get(module=self.module, type=SurveyType.WEEKLY)
         self.client.force_login(self.user)
         resp = self.client.post("/api/progress/", {"content_item": self.item.pk})
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
         logs = self._logs(NotificationLog.NotificationType.SURVEY_PROMPT)
         self.assertEqual(list(logs.values_list("status", flat=True)), [NotificationLog.Status.SENT])
-        self.assertEqual([m.subject for m in mail.outbox], [f"Survey available: {survey.title}"])
+        self.assertEqual(_pushed_titles(self.push), [("Your survey is now available", "/surveys")])
 
     def test_no_survey_unlocked_notice_without_opt_in(self):
         self.client.force_login(self.user)
@@ -3883,7 +3906,7 @@ class SecurityHardeningTests(APITestCase):
 
     def test_forum_responses_never_include_emails(self):
         self.client.force_authenticate(self.student)
-        listing = self.client.get("/api/forum/threads/").data
+        listing = self.client.get("/api/forum/threads/").data["results"]
         detail = self.client.get(f"/api/forum/threads/{self.thread.pk}/").data
         self.assertNotIn("s@test.local", str(listing) + str(detail))
         self.assertNotIn("author_email", listing[0])
@@ -3960,7 +3983,7 @@ class SecurityHardeningTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
 
 
-@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+@override_settings(VAPID_PRIVATE_KEY="test-key")
 class ReminderRunCharacterisationTests(TestCase):
     """One full hourly run covering every skip rule; pins the exact counts the command reports."""
 
@@ -3976,9 +3999,11 @@ class ReminderRunCharacterisationTests(TestCase):
             item_a = _make_audio_item(module, title="A", display_order=1)
             item_b = _make_audio_item(module, title="B", display_order=2)
         users = {name: _make_user(f"{name}@test.local") for name in
-                 ("plain", "nine", "optout", "denied", "half", "logged", "surveyor", "later")}
+                 ("plain", "nine", "optout", "denied", "half", "logged", "surveyor", "later", "nodevice")}
         for name, user in users.items():
             Enrollment.objects.create(user=user, cohort=future if name == "later" else running)
+            if name != "nodevice":
+                PushSubscription.objects.create(user=user, endpoint=f"https://push.example/{name}", p256dh="k", auth="a")
         NotificationPreference.objects.create(user=users["nine"], reminder_time=datetime.time(9, 0))
         NotificationPreference.objects.create(user=users["optout"], daily_content_reminder=False)
         NotificationPreference.objects.create(user=users["denied"], push_denied=True)
@@ -3988,35 +4013,161 @@ class ReminderRunCharacterisationTests(TestCase):
             ContentCompletion.objects.create(user=users["surveyor"], content_item=item)
         NotificationLog.objects.create(
             user=users["logged"], type=NotificationLog.NotificationType.CONTENT_REMINDER, content_item=item_a,
-            module=module, channel=NotificationLog.Channel.EMAIL, scheduled_for=_perth_midnight_utc(today),
+            module=module, channel=NotificationLog.Channel.PUSH, scheduled_for=_perth_midnight_utc(today),
             status=NotificationLog.Status.SENT,
         )
         fake_now = datetime.datetime.combine(today, datetime.time(8, 0), tzinfo=ZoneInfo("Australia/Perth"))
 
         def run(*args):
             out = StringIO()
-            with patch("app.management.commands.send_due_reminders._perth_now", return_value=fake_now):
+            with patch("app.management.commands.send_due_reminders._perth_now", return_value=fake_now), \
+                    patch("pywebpush.webpush") as push:
                 call_command("send_due_reminders", *args, stdout=out, stderr=StringIO())
+            pushes.extend(_pushed_titles(push))
             return out.getvalue()
+
+        pushes = []
 
         midnight = _perth_midnight_utc(today).isoformat()
         self.assertEqual(run("--dry-run"), (
             f"[send_due_reminders] date={today} hour=8 (Australia/Perth) scheduled_for={midnight} dry_run=True\n"
             # One reminder a day, for the week's first audio item (A), even if already completed.
-            f"  [dry-run] would send (email): user=plain@test.local item='A' day={today}\n"
-            f"  [dry-run] would send (email): user=half@test.local item='A' day={today}\n"
-            f"  [dry-run] would send (email): user=surveyor@test.local item='A' day={today}\n"
-            f"  [dry-run] would send survey reminder (email): user=surveyor@test.local survey='Week 1' day={today}\n"
-            "[send_due_reminders] done: sent=4 skipped=4 errors=0\n"
+            f"  [dry-run] would send reminder for 'A': user=plain@test.local day={today}\n"
+            f"  [dry-run] would send reminder for 'A': user=half@test.local day={today}\n"
+            f"  [dry-run] would send reminder for 'A': user=surveyor@test.local day={today}\n"
+            f"  [dry-run] would skip (no device) reminder for 'A': user=nodevice@test.local day={today}\n"
+            f"  [dry-run] would send survey reminder for 'Week 1': user=surveyor@test.local day={today}\n"
+            "[send_due_reminders] done: sent=4 skipped=5 errors=0\n"
         ))
-        self.assertTrue(run().endswith("[send_due_reminders] done: sent=4 skipped=4 errors=0\n"))
+        self.assertEqual(pushes, [])
+        self.assertTrue(run().endswith("[send_due_reminders] done: sent=4 skipped=5 errors=0\n"))
         sent = NotificationLog.objects.filter(status=NotificationLog.Status.SENT)
         self.assertEqual(
             sorted((log.user.email.split("@")[0], log.type, getattr(log.content_item, "title", None)) for log in sent),
             [("half", "content_reminder", "A"), ("logged", "content_reminder", "A"), ("plain", "content_reminder", "A"),
              ("surveyor", "content_reminder", "A"), ("surveyor", "survey_prompt", None)],
         )
-        from django.core import mail
-        self.assertEqual(sorted(m.subject for m in mail.outbox), [
-            "Survey reminder: Week 1", "Your daily meditation: A", "Your daily meditation: A", "Your daily meditation: A",
+        self.assertEqual(sorted(title for title, _ in pushes), [
+            "Don't forget your survey", "Time for your daily meditation", "Time for your daily meditation",
+            "Time for your daily meditation",
         ])
+        self.assertTrue(NotificationLog.objects.filter(user=users["nodevice"], status=NotificationLog.Status.SKIPPED).exists())
+
+
+class HealthCheckTests(APITestCase):
+    def test_ok_without_logging_in(self):
+        resp = self.client.get("/api/health/")
+        self.assertEqual((resp.status_code, resp.data), (status.HTTP_200_OK, {"status": "ok"}))
+
+    def test_503_when_database_unreachable(self):
+        from django.db import OperationalError
+        with patch("app.views.connection.ensure_connection", side_effect=OperationalError("down")), \
+                self.assertLogs("app.views", level="ERROR"):
+            resp = self.client.get("/api/health/")
+        self.assertEqual(resp.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+
+
+class PaginationTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="pw", full_name="Ada Admin", role=User.Role.ADMIN,
+            forum_rules_accepted_at=timezone.now(),
+        )
+        self.client.force_authenticate(self.admin)
+
+    def test_users_are_paged_newest_first(self):
+        for i in range(30):
+            User.objects.create_user(email=f"s{i}@test.local", password="pw")
+        first = self.client.get("/api/users/").data
+        self.assertEqual((first["count"], len(first["results"])), (31, 25))
+        self.assertEqual(first["results"][0]["email"], "s29@test.local")
+        rest = self.client.get("/api/users/?limit=25&offset=25").data["results"]
+        self.assertEqual(len(rest), 6)
+        self.assertEqual(rest[-1]["email"], "admin@test.local")
+        self.assertEqual(len(self.client.get("/api/users/?limit=1000").data["results"]), 31)  # capped at 100
+
+    def test_users_search_and_role_filter(self):
+        User.objects.create_user(email="jo@test.local", password="pw", full_name="Jo Bloggs", display_name="Sunny")
+        User.objects.create_user(email="sam@test.local", password="pw", full_name="Sam")
+
+        def emails(params):
+            return [u["email"] for u in self.client.get(f"/api/users/?{params}").data["results"]]
+
+        self.assertEqual(emails("search=bloggs"), ["jo@test.local"])
+        self.assertEqual(emails("search=SUNNY"), ["jo@test.local"])
+        self.assertEqual(emails("search=sam@"), ["sam@test.local"])
+        self.assertEqual(emails("role=admin"), ["admin@test.local"])
+
+    def test_users_include_their_latest_enrollment_without_extra_queries(self):
+        old, new = _cohort(100), _cohort(10)
+        for i in range(5):
+            user = User.objects.create_user(email=f"s{i}@test.local", password="pw")
+            Enrollment.objects.create(user=user, cohort=old, status=Enrollment.Status.WITHDRAWN)
+            Enrollment.objects.create(user=user, cohort=new, status=Enrollment.Status.ACTIVE)
+        with self.assertNumQueries(3):  # count, page of users, their enrollments
+            results = self.client.get("/api/users/").data["results"]
+        by_email = {u["email"]: u for u in results}
+        self.assertEqual(
+            (by_email["s0@test.local"]["enrollment"]["cohort"], by_email["s0@test.local"]["enrollment"]["status"]),
+            (new.pk, "active"),
+        )
+        self.assertIsNone(by_email["admin@test.local"]["enrollment"])
+
+    def test_enrollments_are_paged(self):
+        cohort = _cohort(10)
+        for i in range(30):
+            Enrollment.objects.create(user=User.objects.create_user(email=f"s{i}@test.local", password="pw"), cohort=cohort)
+        data = self.client.get(f"/api/enrollments/?cohort={cohort.pk}&limit=1").data
+        self.assertEqual((data["count"], len(data["results"])), (30, 1))
+
+    def _thread(self, author, body):
+        thread = ForumThread.objects.create(title=body[:20], created_by=author)
+        ForumPost.objects.create(thread=thread, author=author, body=body, is_head_post=True)
+        return thread
+
+    def test_forum_threads_are_paged(self):
+        for i in range(30):
+            self._thread(self.admin, f"Thread {i}")
+        data = self.client.get("/api/forum/threads/?limit=10&offset=20").data
+        self.assertEqual((data["count"], len(data["results"])), (30, 10))
+
+    def test_forum_search_matches_body_and_shown_author_name(self):
+        student = User.objects.create_user(
+            email="s@test.local", password="pw", full_name="Real Name", display_name="Moonbeam",
+            forum_rules_accepted_at=timezone.now(),
+        )
+        self._thread(student, "Breathing helped me today")
+        self._thread(self.admin, "Welcome everyone")
+
+        def bodies(params):
+            return [t["body"] for t in self.client.get(f"/api/forum/threads/?{params}").data["results"]]
+
+        self.assertEqual(bodies("search=breathing"), ["Breathing helped me today"])
+        self.assertEqual(bodies("search=moonbeam"), ["Breathing helped me today"])
+        # Admins see "Moonbeam (Real Name)", so they can search by the real name too.
+        self.assertEqual(bodies("search=real name"), ["Breathing helped me today"])
+
+        Enrollment.objects.create(user=student, cohort=_cohort(10), status=Enrollment.Status.ACTIVE)
+        self.client.force_authenticate(student)
+        # Students only see the display name, so searching the real name must not find the thread.
+        self.assertEqual(bodies("search=real name"), [])
+        self.assertEqual(bodies("search=moonbeam"), ["Breathing helped me today"])
+        self.assertEqual(bodies("search=ada admin"), ["Welcome everyone"])  # no display name: full name is shown
+
+
+class MediaServingTests(TestCase):
+    """Uploaded cover images are served whether or not DEBUG is on (tests run with DEBUG off)."""
+
+    def test_uploaded_file_is_served_as_an_inert_image(self):
+        import tempfile
+        from pathlib import Path
+        with tempfile.TemporaryDirectory() as media_root, self.settings(MEDIA_ROOT=media_root):
+            (Path(media_root) / "resource_covers").mkdir()
+            (Path(media_root) / "resource_covers" / "c.png").write_bytes(b"\x89PNG\r\n\x1a\n")
+            resp = self.client.get("/media/resource_covers/c.png")
+            self.assertEqual(resp.status_code, 200)
+            self.assertEqual(resp["Content-Type"], "image/png")
+            self.assertEqual(resp["Content-Security-Policy"], "default-src 'none'; sandbox")
+            self.assertEqual(resp["X-Content-Type-Options"], "nosniff")
+            self.assertEqual(self.client.get("/media/resource_covers/missing.png").status_code, 404)
+            self.assertIn(self.client.get("/media/../server/settings.py").status_code, (400, 404))

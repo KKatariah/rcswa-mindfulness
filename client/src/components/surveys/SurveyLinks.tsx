@@ -34,7 +34,7 @@ export default function SurveyLinks({ items }: { items: SurveyLinkItem[] }) {
 							) : (
 								<Link
 									href={item.href ?? "#"}
-									className={`${rowClassName} transition-colors hover:bg-brand-blue/5 focus-visible:bg-brand-blue/10 focus-visible:outline-none`}
+									className={`${rowClassName} transition-colors hover:bg-brand-blue/5 focus-visible:bg-brand-blue/10 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-brand-blue`}
 									aria-current={item.status === "current" ? "page" : undefined}
 								>
 									{content}

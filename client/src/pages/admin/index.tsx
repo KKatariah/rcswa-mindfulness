@@ -97,7 +97,7 @@ export default function AdminDashboardPage() {
 					</Section>
 
 					<Section title="Cohorts">
-						<div className="mt-4 overflow-x-auto">
+						<div role="region" aria-label="Cohorts table" tabIndex={0} className="mt-4 overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
 							<table className="w-full text-left text-sm">
 								<thead>
 									<tr className="text-xs font-semibold uppercase tracking-wide text-muted">

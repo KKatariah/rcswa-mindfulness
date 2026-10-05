@@ -291,6 +291,8 @@ export default function AdminModuleEditorPage() {
 			<Head>
 				<title>{module.title} — Admin</title>
 			</Head>
+			{/* The page is all form fields; screen readers still need a page title. */}
+			<h1 className="sr-only">Edit module: {module.title}</h1>
 
 			<Card as="form" variant="admin" onSubmit={handleMetaSubmit} className="p-5">
 				{meta.error && <ErrorBanner className="mb-4">{meta.error}</ErrorBanner>}

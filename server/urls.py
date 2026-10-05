@@ -1,7 +1,7 @@
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import path, include
+from django.urls import path, include, re_path
+from django.views.static import serve
 from rest_framework.routers import DefaultRouter
 
 from app.views import (
@@ -45,7 +45,18 @@ urlpatterns = [
     path('api/notifications/vapid-public-key/', vapid_public_key_view, name='vapid-public-key'),
 ]
 
-if settings.DEBUG:
-    # Dev-only: serves uploaded media (e.g. additional-resource cover images).
-    # Production needs real media storage (S3/persistent volume) — not configured yet.
-    urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+def serve_media(request, path):
+    """An uploaded file (resource cover images). Light enough for this app's traffic;
+    with SERVE_MEDIA=False a reverse proxy serves MEDIA_ROOT at /media/ instead."""
+    response = serve(request, path, document_root=settings.MEDIA_ROOT)
+    # Uploads are only ever shown as images: never let one run as a page on this origin.
+    response["Content-Security-Policy"] = "default-src 'none'; sandbox"
+    response["X-Content-Type-Options"] = "nosniff"
+    # A new upload gets a new file name, so a day of caching is safe.
+    response["Cache-Control"] = "public, max-age=86400"
+    return response
+
+
+if settings.SERVE_MEDIA:
+    urlpatterns += [re_path(rf"^{settings.MEDIA_URL.lstrip('/')}(?P<path>.+)$", serve_media)]

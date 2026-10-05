@@ -1,11 +1,14 @@
 """Per-account lock after repeated wrong passwords, on top of the per-IP rate limit."""
 
+import logging
 import math
 from datetime import timedelta
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.backends import ModelBackend
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 # This many wrong passwords in a row locks the account for LOCK_DURATION.
 MAX_FAILED_LOGINS = 5
@@ -25,6 +28,7 @@ def _record_failure(user):
     if count >= MAX_FAILED_LOGINS:
         # The count restarts, so after the lock ends there are another few attempts before the next one.
         user.failed_login_count, user.locked_until = 0, timezone.now() + LOCK_DURATION
+        logger.warning("User %s locked out after %d wrong passwords", user.pk, MAX_FAILED_LOGINS)
     else:
         user.failed_login_count = count
     user.save(update_fields=["failed_login_count", "locked_until"])

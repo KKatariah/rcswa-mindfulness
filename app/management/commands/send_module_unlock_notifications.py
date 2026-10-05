@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, time
 
 from django.core.management.base import BaseCommand
@@ -6,6 +7,8 @@ from django.utils import timezone
 from app.models import Enrollment, Module, NotificationLog
 from app.access import module_unlock_date
 from app.notifications import deliver_and_log
+
+logger = logging.getLogger(__name__)
 
 
 class Command(BaseCommand):
@@ -49,7 +52,7 @@ class Command(BaseCommand):
                     continue
 
                 # A successful notification must never be sent twice.
-                # FAILED attempts remain retryable on the next command run.
+                # SKIPPED and FAILED attempts are retried on the next command run.
                 already_sent = NotificationLog.objects.filter(
                     user=user,
                     module=module,
@@ -61,7 +64,7 @@ class Command(BaseCommand):
                     skipped += 1
                     continue
 
-                success = deliver_and_log(
+                status = deliver_and_log(
                     user=user,
                     notification_type=NotificationLog.NotificationType.MODULE_ADDED,
                     payload_dict={
@@ -69,15 +72,14 @@ class Command(BaseCommand):
                         "body": module.title,
                         "url": f"/modules/{module.id}",
                     },
-                    subject=f"{module.week_label} is now available",
-                    email_template="app/content_update_email.txt",
-                    email_context={"user": user, "module": module},
                     module=module,
                     scheduled_for=timezone.make_aware(datetime.combine(unlock_date, time.min)),
                 )
 
-                if success:
+                if status == NotificationLog.Status.SENT:
                     sent += 1
+                elif status == NotificationLog.Status.SKIPPED:
+                    skipped += 1
                 else:
                     failed += 1
 
@@ -87,3 +89,5 @@ class Command(BaseCommand):
                 f"sent={sent} skipped={skipped} failed={failed}"
             )
         )
+        if failed:
+            logger.warning("Module unlock notifications: %d of %d failed to send", failed, sent + failed)

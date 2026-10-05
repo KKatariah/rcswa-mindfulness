@@ -41,17 +41,10 @@ needs to exist on the server at runtime. This survives ephemeral filesystem rede
 | `VAPID_PRIVATE_KEY`   | Raw base64url private key — the string printed by the extraction command above |
 | `VAPID_PUBLIC_KEY`    | The `Application Server Key` printed by `vapid --gen`                          |
 | `VAPID_ADMIN_EMAIL`   | Your admin email (included in the VAPID `sub` claim)                           |
-| `EMAIL_BACKEND`       | `django.core.mail.backends.smtp.EmailBackend` in production                    |
-| `EMAIL_HOST`          | SMTP host                                                                      |
-| `EMAIL_PORT`          | `587`                                                                          |
-| `EMAIL_HOST_USER`     | SMTP username                                                                  |
-| `EMAIL_HOST_PASSWORD` | SMTP password                                                                  |
-| `DEFAULT_FROM_EMAIL`  | Sender address shown to students                                               |
-| `FRONTEND_URL`        | Frontend URL for email links (default `http://localhost:3000`)                 |
 
-In development `EMAIL_BACKEND` defaults to the console backend (emails are printed to
-stdout, no SMTP needed) and `VAPID_*` default to empty strings (push is skipped with
-a warning).
+In development `VAPID_*` default to empty strings (push is skipped with a warning).
+Notifications are push only: a student with no registered device gets a
+`status=SKIPPED` log entry, which is retried on the next run like a failure.
 
 **Windows note:** PowerShell's `>` operator writes UTF-16LE, which breaks pip on Linux
 CI. Always regenerate `requirements.txt` with:
@@ -148,6 +141,32 @@ python manage.py push_adoption --csv    # machine-readable
   and only `status=SENT` entries prevent re-delivery. A server restart during a cron
   run simply leaves the failed users with a `status=FAILED` log entry that the next
   hourly run will retry.
+
+---
+
+## Production server settings
+
+These are separate from the secrets (`SECRET_KEY`, Google and VAPID keys) set up for production.
+
+| Variable             | Value                                                                                  |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| `DJANGO_DEBUG`       | `False` in production (defaults to `True` for development)                             |
+| `MEDIA_ROOT`         | Folder for uploaded cover images. Must survive redeploys (persistent volume or disk)   |
+| `SERVE_MEDIA`        | Leave unset and Django serves `/media/`; `False` if a reverse proxy serves that folder |
+| `LOG_LEVEL`          | `INFO` by default; `WARNING` for quieter logs                                          |
+| `SENTRY_DSN`         | Optional. Reports unhandled errors (web requests and cron commands) to Sentry          |
+| `SENTRY_ENVIRONMENT` | Optional label shown in Sentry, e.g. `production` or `staging`                         |
+
+- Run `python manage.py collectstatic --noinput` on each deploy so the Django admin's CSS
+  and JS are served (by WhiteNoise) with `DJANGO_DEBUG=False`.
+- Logs go to the console (stderr); gunicorn, systemd, Docker and cron all capture it.
+  Users appear in logs by id, never by email. Sentry is sent no emails, IP addresses or
+  request bodies (survey answers).
+- `GET /api/health/` returns `200 {"status": "ok"}` when the API can reach its database
+  (`503` otherwise) and needs no login. Point an uptime monitor at it.
+- List endpoints that grow over time (`/api/users/`, `/api/enrollments/`,
+  `/api/forum/threads/`) are paged: `?limit=&offset=` (25 by default, at most 100), and
+  respond with `{count, next, previous, results}`.
 
 ---
 

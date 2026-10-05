@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import AdminLayout from "@/components/admin/AdminLayout";
@@ -9,64 +9,67 @@ import EditUserModal from "@/components/admin/EditUserModal";
 import Card from "@/components/ui/Card";
 import { LoadingState } from "@/components/ui/feedback";
 import { PencilIcon } from "@/components/ui/icons";
+import { Pager } from "@/components/ui/paging";
 import Select from "@/components/ui/Select";
 import { useAsync } from "@/hooks/useAsync";
-import { listCohorts, listEnrollments, listUsers } from "@/lib/api";
+import { useDebouncedValue } from "@/hooks/useDebouncedValue";
+import { listCohorts, listUsers, type Page } from "@/lib/api";
 import type { AdminUser, Cohort, Enrollment } from "@/types/admin";
 
-function EnrollmentStatus({ enrollment }: { enrollment: Enrollment | undefined }) {
+const PAGE_SIZE = 25;
+
+function EnrollmentStatus({ enrollment }: { enrollment: AdminUser["enrollment"] }) {
 	if (!enrollment) return <span className="text-xs text-muted">Not enrolled</span>;
 	return <EnrollmentStatusBadge status={enrollment.status} />;
 }
 
 export default function AdminUsersPage() {
-	const usersState = useAsync(listUsers, [], [] as AdminUser[], { errorFallback: "Failed to load users" });
-	const cohortsState = useAsync(listCohorts, [], [] as Cohort[], { errorFallback: "Failed to load users" });
-	const enrollmentsState = useAsync(() => listEnrollments(), [], [] as Enrollment[], { errorFallback: "Failed to load users" });
-	const { data: users, setData: setUsers } = usersState;
-	const cohorts = cohortsState.data;
-	const { data: enrollments, setData: setEnrollments } = enrollmentsState;
-	const loading = usersState.loading || cohortsState.loading || enrollmentsState.loading;
-	const error = usersState.error ?? cohortsState.error ?? enrollmentsState.error;
 	const [roleFilter, setRoleFilter] = useState<string>("");
 	const [search, setSearch] = useState("");
+	const [offset, setOffset] = useState(0);
 	const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+	const debouncedSearch = useDebouncedValue(search.trim());
 
-	// A user can have more than one enrollment record over time (e.g. withdrawn
-	// from one cohort, later enrolled in another) — always keep the most recent
-	// one by enrolled_at rather than whichever the API happens to return last,
-	// so this doesn't silently depend on the endpoint's default ordering.
-	const enrollmentByUser = useMemo(() => {
-		const map = new Map<number, Enrollment>();
-		for (const e of enrollments) {
-			const existing = map.get(e.user);
-			if (!existing || new Date(e.enrolled_at) > new Date(existing.enrolled_at)) {
-				map.set(e.user, e);
-			}
-		}
-		return map;
-	}, [enrollments]);
+	// Searching and filtering happen on the server, which sends one page at a time.
+	const usersState = useAsync(
+		() => listUsers({ search: debouncedSearch, role: roleFilter, limit: PAGE_SIZE, offset }),
+		[debouncedSearch, roleFilter, offset],
+		{ count: 0, results: [] } as Page<AdminUser>,
+		{ errorFallback: "Failed to load users" },
+	);
+	const cohortsState = useAsync(listCohorts, [], [] as Cohort[], { errorFallback: "Failed to load users" });
+	const { results: users, count } = usersState.data;
+	const cohorts = cohortsState.data;
+	const loading = usersState.loading || cohortsState.loading;
+	const error = usersState.error ?? cohortsState.error;
+
+	// A new search or filter starts again from the first page.
+	const [shownFilters, setShownFilters] = useState({ debouncedSearch, roleFilter });
+	if (shownFilters.debouncedSearch !== debouncedSearch || shownFilters.roleFilter !== roleFilter) {
+		setShownFilters({ debouncedSearch, roleFilter });
+		setOffset(0);
+	}
 
 	const cohortName = (id: number) => cohorts.find((c) => c.id === id)?.name ?? `#${id}`;
 
-	const filtered = useMemo(() => {
-		const q = search.trim().toLowerCase();
-		return users.filter((u) => {
-			if (roleFilter && u.role !== roleFilter) return false;
-			const name = u.full_name || u.display_name;
-			if (q && !name.toLowerCase().includes(q) && !u.email.toLowerCase().includes(q)) return false;
-			return true;
-		});
-	}, [users, roleFilter, search]);
-
 	function handleUserSaved(updated: AdminUser, nextEnrollment: Enrollment | null | undefined) {
-		setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
-		if (nextEnrollment !== undefined) {
-			setEnrollments((prev) => {
-				const withoutUser = prev.filter((e) => e.user !== updated.id);
-				return nextEnrollment ? [...withoutUser, nextEnrollment] : withoutUser;
-			});
-		}
+		usersState.setData((page) => ({
+			...page,
+			results: page.results.map((u) => {
+				if (u.id !== updated.id) return u;
+				// The save response has no enrollment; keep theirs unless the cohort changed.
+				const enrollment =
+					nextEnrollment === undefined
+						? u.enrollment
+						: nextEnrollment && {
+								id: nextEnrollment.id,
+								cohort: nextEnrollment.cohort,
+								status: nextEnrollment.status,
+								enrolled_at: nextEnrollment.enrolled_at,
+							};
+				return { ...u, ...updated, enrollment };
+			}),
+		}));
 		setEditingUser(null);
 	}
 
@@ -77,7 +80,7 @@ export default function AdminUsersPage() {
 			</Head>
 
 			<AdminPageHeader title="Users">
-				<span className="text-sm text-muted">{filtered.length} of {users.length}</span>
+				<span className="text-sm text-muted">{count} {debouncedSearch || roleFilter ? "found" : "total"}</span>
 			</AdminPageHeader>
 
 			<div className="mt-6 flex flex-wrap gap-3">
@@ -86,6 +89,7 @@ export default function AdminUsersPage() {
 					value={search}
 					onChange={(e) => setSearch(e.target.value)}
 					placeholder="Search by name or email"
+					aria-label="Search users by name or email"
 					className="h-11 min-w-[220px] flex-1 rounded-xl border border-gray-200 px-4 text-[14px] text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
 				/>
 				<Select
@@ -106,14 +110,14 @@ export default function AdminUsersPage() {
 				</Card>
 			) : error ? (
 				<Card as="p" variant="admin" className="mt-6 p-6 text-sm text-red-600">{error}</Card>
-			) : filtered.length === 0 ? (
+			) : users.length === 0 ? (
 				<Card as="p" variant="admin" className="mt-6 p-6 text-sm text-muted">No users found.</Card>
 			) : (
 				<>
 					{/* Mobile: stacked cards */}
 					<div className="mt-6 flex flex-col gap-3 md:hidden">
-						{filtered.map((u) => {
-							const enrollment = enrollmentByUser.get(u.id);
+						{users.map((u) => {
+							const enrollment = u.enrollment;
 							return (
 								<Card key={u.id} variant="admin" className="p-4">
 									<div className="flex items-start justify-between gap-3">
@@ -149,8 +153,8 @@ export default function AdminUsersPage() {
 
 					{/* Desktop: table */}
 					<AdminTable columns={["Name", "Email", "Role", "Cohort", "Status", "Joined", ""]} className="mt-6 hidden md:block">
-						{filtered.map((u) => {
-							const enrollment = enrollmentByUser.get(u.id);
+						{users.map((u) => {
+							const enrollment = u.enrollment;
 							return (
 								<tr key={u.id} className="border-b border-gray-100 last:border-0">
 									<td className="px-5 py-3 font-semibold text-ink">
@@ -172,12 +176,14 @@ export default function AdminUsersPage() {
 							);
 						})}
 					</AdminTable>
+
+					<Pager offset={offset} pageSize={PAGE_SIZE} count={count} onChange={setOffset} className="mt-4" />
 				</>
 			)}
 
 			<EditUserModal
 				user={editingUser}
-				enrollment={editingUser ? enrollmentByUser.get(editingUser.id) ?? null : null}
+				enrollment={editingUser?.enrollment ?? null}
 				cohorts={cohorts}
 				onClose={() => setEditingUser(null)}
 				onSaved={handleUserSaved}

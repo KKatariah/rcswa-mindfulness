@@ -296,7 +296,6 @@ export default function AdminUserProfilePage() {
 							<Detail label="Reminder time">{formatTime(notifications.reminder_time)}</Detail>
 							<Detail label="Daily meditation reminder"><YesNo value={notifications.daily_content_reminder} /></Detail>
 							<Detail label="Daily survey reminder"><YesNo value={notifications.daily_survey_reminder} /></Detail>
-							<Detail label="Email fallback"><YesNo value={notifications.email_enabled} /></Detail>
 							<Detail label="Push notifications">
 								{notifications.push_denied
 									? "Blocked"

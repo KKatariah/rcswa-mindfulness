@@ -32,7 +32,7 @@ export default function SurveyExport(props: Props) {
 
 	return (
 		<div>
-			<h3 className="text-sm font-bold text-ink">Export responses</h3>
+			<h2 className="text-sm font-bold text-ink">Export responses</h2>
 			<div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
 				{props.surveys && (
 					<Select

@@ -20,6 +20,7 @@ export default function AdminTable({
 	empty = false,
 	emptyMessage,
 	className = "mt-6",
+	scrollLabel,
 	children,
 }: {
 	columns: AdminTableColumn[];
@@ -28,10 +29,18 @@ export default function AdminTable({
 	empty?: boolean;
 	emptyMessage?: string;
 	className?: string;
+	/** Names the table and lets keyboard users focus it to scroll sideways; needed when its rows hold no buttons or links. */
+	scrollLabel?: string;
 	children?: ReactNode;
 }) {
+	const scrollable = scrollLabel
+		? ({ role: "region", "aria-label": scrollLabel, tabIndex: 0 } as const)
+		: {};
 	return (
-		<div className={`overflow-x-auto rounded-2xl border border-gray-200 bg-white ${className}`}>
+		<div
+			{...scrollable}
+			className={`relative overflow-x-auto rounded-2xl border border-gray-200 bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue ${className}`}
+		>
 			{loading ? (
 				<LoadingState />
 			) : error ? (
@@ -45,7 +54,7 @@ export default function AdminTable({
 							{columns.map((column, index) =>
 								typeof column === "string" ? (
 									<th key={index} className="px-5 py-3">
-										{column}
+										{column || <span className="sr-only">Actions</span>}
 									</th>
 								) : (
 									<th key={index} className={column.className ?? "px-5 py-3"}>

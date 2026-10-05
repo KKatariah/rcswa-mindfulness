@@ -24,7 +24,6 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
         model = NotificationPreference
         fields = [
             "id",
-            "email_enabled",
             "inapp_enabled",
             "reminder_time",
             "push_denied",

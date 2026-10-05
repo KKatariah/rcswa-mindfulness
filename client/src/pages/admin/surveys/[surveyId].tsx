@@ -214,7 +214,7 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 				<>
 					<Card variant="admin" className="p-5">
 						<h2 className="text-sm font-bold uppercase tracking-wide text-muted">Summary</h2>
-						<div className="mt-3 overflow-x-auto">
+						<div role="region" aria-label="Summary table" tabIndex={0} className="mt-3 overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
 							<table className="w-full text-left text-sm">
 								<thead>
 									<tr className="text-xs font-semibold uppercase tracking-wide text-muted">
@@ -241,7 +241,7 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 						</div>
 					</Card>
 
-					<Card variant="admin" className="overflow-x-auto">
+					<Card variant="admin" role="region" aria-label="Responses table" tabIndex={0} className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
 						<table className="w-full text-left text-sm">
 							<thead>
 								<tr className="border-b border-gray-200 text-xs font-semibold uppercase tracking-wide text-muted">

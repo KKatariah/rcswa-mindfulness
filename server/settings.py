@@ -12,6 +12,8 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+import sys
+import warnings
 
 from pathlib import Path
 from dotenv import load_dotenv
@@ -31,7 +33,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = 'REMOVED#'
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Set DJANGO_DEBUG=False there.
+DEBUG = os.environ.get("DJANGO_DEBUG", "True") == "True"
 
 
 def _env_list(name, default=""):
@@ -69,6 +72,8 @@ AUTHENTICATION_BACKENDS = ['app.lockout.LockoutModelBackend']
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    # Serves the Django admin's CSS/JS when DEBUG is off (after `manage.py collectstatic`).
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -151,30 +156,16 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+# `manage.py collectstatic` copies the admin's files here for WhiteNoise to serve.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
-# Media files (user uploads, e.g. additional-resource cover images)
-# Served via server/urls.py only when DEBUG=True; production needs real
-# media storage (S3/persistent volume) — not configured yet.
+# Media files (user uploads: additional-resource cover images).
+# In production point MEDIA_ROOT at storage that survives redeploys (a persistent
+# volume or mounted disk), or uploads are lost. Django serves them at /media/
+# (server/urls.py); set SERVE_MEDIA=False if a reverse proxy serves that folder instead.
 MEDIA_URL = 'media/'
-MEDIA_ROOT = BASE_DIR / 'media'
-
-# ── Email ──────────────────────────────────────────────────────────────────────
-# In development, emails are printed to the console (no SMTP needed).
-# Override all EMAIL_* vars and EMAIL_BACKEND in production.
-EMAIL_BACKEND = os.environ.get(
-    "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
-)
-EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
-EMAIL_PORT = int(os.environ.get("EMAIL_PORT", 587))
-EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "True") == "True"
-EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
-EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
-DEFAULT_FROM_EMAIL = os.environ.get(
-    "DEFAULT_FROM_EMAIL", "noreply@mindfulness.example.com"
-)
-
-# Base URL of the Next.js frontend, used for links in notification emails.
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000").rstrip("/")
+MEDIA_ROOT = Path(os.environ.get('MEDIA_ROOT') or BASE_DIR / 'media')
+SERVE_MEDIA = os.environ.get('SERVE_MEDIA', 'True') == 'True'
 
 # ── Web Push (VAPID) ───────────────────────────────────────────────────────────
 # Generate a keypair: python -m pywebpush --info
@@ -205,3 +196,41 @@ REST_FRAMEWORK = {
         "auth": os.environ.get("AUTH_THROTTLE_RATE", "10/min"),
     },
 }
+
+# ── Logging ────────────────────────────────────────────────────────────────────
+# Everything goes to the console (stderr), which gunicorn, systemd, Docker and cron
+# all capture. Server errors are logged by "django.request" with a traceback.
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "standard": {"format": "%(asctime)s %(levelname)s %(name)s: %(message)s"},
+    },
+    "handlers": {
+        "console": {"class": "logging.StreamHandler", "formatter": "standard"},
+    },
+    "root": {"handlers": ["console"], "level": os.environ.get("LOG_LEVEL", "INFO")},
+    "loggers": {
+        "django": {"handlers": ["console"], "level": "INFO", "propagate": False},
+    },
+}
+if sys.argv[1:2] == ["test"]:
+    # Tests deliberately trigger errors and refusals; keep their output readable.
+    LOGGING["handlers"]["console"]["level"] = "CRITICAL"
+    # Tests run with DEBUG off but never need collectstatic's output.
+    warnings.filterwarnings("ignore", message="No directory at")
+
+# ── Error tracking ─────────────────────────────────────────────────────────────
+# Optional: with SENTRY_DSN set, unhandled errors (web requests and the cron
+# commands) and ERROR log lines are reported to Sentry. Nothing is sent otherwise.
+SENTRY_DSN = os.environ.get("SENTRY_DSN", "")
+if SENTRY_DSN:
+    import sentry_sdk
+
+    sentry_sdk.init(
+        dsn=SENTRY_DSN,
+        environment=os.environ.get("SENTRY_ENVIRONMENT", "production"),
+        # Participants' emails, IPs and request bodies (survey answers) stay out of Sentry.
+        send_default_pii=False,
+        max_request_body_size="never",
+    )

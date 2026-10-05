@@ -54,11 +54,11 @@ export default function ContentEmbed({
 								type="checkbox"
 								checked={completed}
 								onChange={onToggleComplete}
+								aria-label={completed ? "Mark as not complete" : "Mark as complete"}
 								className="peer sr-only"
 							/>
 							<label
 								htmlFor={checkboxId}
-								aria-label={completed ? "Mark as not complete" : "Mark as complete"}
 								className="flex size-5 shrink-0 cursor-pointer items-center justify-center rounded-full border-2 border-gray-300 text-transparent peer-checked:border-brand-blue peer-checked:bg-brand-blue peer-checked:text-white peer-focus-visible:outline peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-brand-blue"
 							>
 								<CheckIcon className="size-3" strokeWidth={3} />

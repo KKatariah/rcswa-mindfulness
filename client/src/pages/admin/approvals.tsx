@@ -5,13 +5,15 @@ import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import AdminTable from "@/components/admin/AdminTable";
 import Select from "@/components/ui/Select";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { LoadMore } from "@/components/ui/paging";
 import { useAsync } from "@/hooks/useAsync";
+import { usePagedList } from "@/hooks/usePagedList";
 import { listCohorts, listEnrollments, updateEnrollment, deleteUser } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import type { Cohort, Enrollment } from "@/types/admin";
 
 export default function AdminApprovalsPage() {
-	const pending = useAsync(() => listEnrollments({ status: "pending" }), [], [] as Enrollment[], {
+	const pending = usePagedList((page) => listEnrollments({ status: "pending", ...page }), [], {
 		errorFallback: "Failed to load pending signups",
 	});
 	const cohorts = useAsync(listCohorts, [], [] as Cohort[], { errorFallback: "Failed to load pending signups" });
@@ -21,8 +23,8 @@ export default function AdminApprovalsPage() {
 	const [rejecting, setRejecting] = useState<Enrollment | null>(null);
 	const [approving, setApproving] = useState<Enrollment | null>(null);
 
-	const pendingEnrollments = pending.data;
-	const removeFromList = (id: number) => pending.setData((prev) => prev.filter((e) => e.id !== id));
+	const pendingEnrollments = pending.items;
+	const removeFromList = pending.removeItem;
 
 	const chosenCohortId = (e: Enrollment) => Number(selectedCohort[e.id] ?? e.cohort);
 	const cohortName = (id: number) => cohorts.data.find((c) => c.id === id)?.name ?? `#${id}`;
@@ -64,7 +66,7 @@ export default function AdminApprovalsPage() {
 			</Head>
 
 			<AdminPageHeader title="Approvals">
-				<span className="text-sm text-muted">{pendingEnrollments.length} pending</span>
+				<span className="text-sm text-muted">{pending.count} pending</span>
 			</AdminPageHeader>
 
 			<AdminTable
@@ -109,6 +111,14 @@ export default function AdminApprovalsPage() {
 					</tr>
 				))}
 			</AdminTable>
+
+			<LoadMore
+				hasMore={pending.hasMore}
+				loading={pending.loadingMore}
+				error={pending.loadMoreError}
+				onLoadMore={pending.loadMore}
+				className="mt-4"
+			/>
 
 			{approving && (
 				<ConfirmDialog

@@ -1,16 +1,17 @@
+import logging
 import re
 import unicodedata
 
 from django.conf import settings
 from django.contrib.auth import authenticate
-from django.db import transaction
-from django.db.models import Count, Prefetch, ProtectedError
+from django.db import DatabaseError, connection, transaction
+from django.db.models import Count, Prefetch, ProtectedError, Q
 from django.http import HttpResponse
 from django.utils import timezone
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from rest_framework import mixins, status, viewsets
-from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
+from rest_framework.decorators import action, api_view, authentication_classes, permission_classes, throttle_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -45,6 +46,7 @@ from .models import (
     User,
 )
 from .notifications import notify_survey_unlocked
+from .pagination import ListPagination
 from .permissions import HasAcceptedForumRules, IsAdminOrSelf, IsAdminOrStaff, IsAuthorOrAdmin
 from .serializers import (
     AdditionalResourceSerializer,
@@ -77,6 +79,8 @@ from .serializers import (
 from .stats import dashboard_stats, module_student_progress, user_overview
 from .throttles import AuthRateThrottle
 from .utils import gravatar_url
+
+logger = logging.getLogger(__name__)
 
 
 def _created_or_ok(data, created):
@@ -399,10 +403,11 @@ class AdditionalResourceViewSet(viewsets.ModelViewSet):
 class EnrollmentViewSet(viewsets.ModelViewSet):
     serializer_class = EnrollmentSerializer
     permission_classes = [IsAuthenticated, IsAdminOrStaff]
+    pagination_class = ListPagination
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
-        qs = Enrollment.objects.select_related("user", "cohort").order_by("-enrolled_at")
+        qs = Enrollment.objects.select_related("user", "cohort").order_by("-enrolled_at", "-pk")
         cohort_id = _id_param(self.request, "cohort")
         if cohort_id:
             qs = qs.filter(cohort_id=cohort_id)
@@ -549,16 +554,21 @@ class ForumThreadViewSet(_ForumWriteMixin, viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     create_serializer_class = ForumThreadCreateSerializer
     output_serializer_class = ForumThreadSerializer
+    pagination_class = ListPagination
 
     def get_queryset(self):
-        return (
+        qs = (
             ForumThread.objects
             .prefetch_related(
                 Prefetch("posts", queryset=ForumPost.objects.select_related("author"))
             )
             .select_related("created_by")
-            .order_by("-is_pinned", "pin_order", "-updated_at")
+            .order_by("-is_pinned", "pin_order", "-updated_at", "-pk")
         )
+        search = self.request.query_params.get("search", "").strip()
+        if self.action == "list" and search:
+            qs = qs.filter(_thread_search(search, is_admin(self.request.user)))
+        return qs
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -593,6 +603,24 @@ class ForumThreadViewSet(_ForumWriteMixin, viewsets.ModelViewSet):
             )
             thread.opened_by = head_post
             thread.save(update_fields=["opened_by"])
+
+
+def _thread_search(text, viewer_is_admin):
+    """Threads whose opening post or shown author name contains *text*.
+
+    Matches only the name the viewer would see (serializers.forum._forum_author_name), so a
+    student can't find someone's real name behind their display name by searching for it.
+    """
+    opening_post = ForumPost.objects.filter(is_head_post=True, body__icontains=text)
+    match = Q(pk__in=opening_post.values("thread_id"))
+    if viewer_is_admin:
+        match |= Q(created_by__display_name__icontains=text) | Q(created_by__full_name__icontains=text)
+    else:
+        match |= Q(created_by__display_name__icontains=text)
+        match |= Q(created_by__display_name="", created_by__full_name__icontains=text)
+    if text.lower() in "deleted user":
+        match |= Q(created_by__isnull=True)
+    return match
 
 
 class ForumPostViewSet(
@@ -653,13 +681,27 @@ class UserProfileViewSet(
 ):
     permission_classes = [IsAuthenticated]
     serializer_class = UserDisplayNameSerializer
+    pagination_class = ListPagination
     http_method_names = ["get", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
         u = self.request.user
-        if is_admin(u):
-            return User.objects.all()
-        return User.objects.filter(pk=u.pk)
+        if not is_admin(u):
+            return User.objects.filter(pk=u.pk)
+        qs = User.objects.prefetch_related(
+            # Newest first, so AdminUserSerializer's enrollment is the most recent one.
+            Prefetch("enrollments", queryset=Enrollment.objects.order_by("-enrolled_at", "-pk"))
+        ).order_by("-created_at", "-pk")
+        if self.action == "list":
+            search = self.request.query_params.get("search", "").strip()
+            if search:
+                qs = qs.filter(
+                    Q(full_name__icontains=search) | Q(display_name__icontains=search) | Q(email__icontains=search)
+                )
+            role = self.request.query_params.get("role")
+            if role:
+                qs = qs.filter(role=role)
+        return qs
 
     def get_serializer_class(self):
         admin = is_admin(self.request.user)
@@ -1027,6 +1069,19 @@ def accept_forum_rules_view(request):
         user.forum_rules_accepted_at = timezone.now()
         user.save(update_fields=["forum_rules_accepted_at"])
     return Response({"user": _user_payload(user)})
+
+
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def health_view(request):
+    """For uptime monitors: 200 when the app can reach its database, 503 when it can't."""
+    try:
+        connection.ensure_connection()
+    except DatabaseError:
+        logger.exception("Health check could not reach the database")
+        return Response({"status": "error"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return Response({"status": "ok"})
 
 
 @api_view(["GET"])

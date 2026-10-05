@@ -21,8 +21,6 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
-from django.core.mail import send_mail
-from django.template.loader import render_to_string
 from django.utils import timezone
 
 from .access import module_content_completed, module_is_unlocked
@@ -54,18 +52,17 @@ def send_push(user, payload_dict, push_subs):
     Attempt to deliver a push notification to all of the user's registered
     endpoints. Prunes endpoints that return 404 or 410 (gone).
 
-    Returns NotificationLog.Channel.PUSH if at least one delivery succeeded,
-    otherwise None.
+    Returns True if at least one device accepted it.
     """
     try:
         from pywebpush import webpush, WebPushException
     except ImportError:
-        logger.warning("pywebpush not installed — push skipped for %s", user.email)
-        return None
+        logger.warning("pywebpush not installed — push skipped for user %s", user.pk)
+        return False
 
     if not settings.VAPID_PRIVATE_KEY:
         logger.warning("VAPID_PRIVATE_KEY not configured — push skipped")
-        return None
+        return False
 
     payload = json.dumps(payload_dict)
     sent_any = False
@@ -90,106 +87,69 @@ def send_push(user, payload_dict, push_subs):
             resp = getattr(exc, "response", None)
             if resp is not None and resp.status_code in (404, 410):
                 sub.delete()
-                logger.info("Pruned dead push endpoint for %s", user.email)
+                logger.info("Pruned dead push endpoint for user %s", user.pk)
             else:
-                logger.warning("Push failed for %s: %s", user.email, exc)
+                logger.warning("Push failed for user %s: %s", user.pk, exc)
         except Exception as exc:
-            logger.warning("Push error for %s: %s", user.email, exc)
+            logger.warning("Push error for user %s: %s", user.pk, exc)
 
-    return NotificationLog.Channel.PUSH if sent_any else None
+    return sent_any
 
 
-def send_email_notification(user, subject, template, context):
+def deliver(user, payload_dict, push_subs=None):
     """
-    Render *template* with *context* and send to the user's email address.
-    Returns NotificationLog.Channel.EMAIL on success, None on failure.
-    """
-    try:
-        body = render_to_string(template, {"frontend_url": settings.FRONTEND_URL, **context})
-        send_mail(
-            subject=subject,
-            message=body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False,
-        )
-        return NotificationLog.Channel.EMAIL
-    except Exception as exc:
-        logger.warning("Email failed for %s: %s", user.email, exc)
-        return None
-
-
-def deliver(user, payload_dict, subject, email_template, email_context, push_subs=None):
-    """
-    Deliver a notification to *user* via push (primary) or email (fallback).
-
-    Push-denied semantics:
-        push_denied=True  → skip entirely (user explicitly refused)
-        No subscription   → email fallback (user hasn't subscribed yet)
-        Push broken       → email fallback (404/410 pruned; other errors)
+    Send *payload_dict* as a web push to every device *user* has registered.
 
     *push_subs* lets a caller that has already loaded the user's subscriptions
     pass them in; otherwise they are fetched here.
 
-    Returns (channel, success) where channel is the Channel used or None.
+    Returns the NotificationLog.Status for the attempt:
+        SKIPPED  the user refused notifications or has no registered device
+        SENT     at least one device accepted it
+        FAILED   they have devices but none accepted it (or push isn't configured)
     """
     pref = _get_pref(user)
-
     if pref and pref.push_denied:
-        return None, False
+        return NotificationLog.Status.SKIPPED
 
     if push_subs is None:
         push_subs = list(PushSubscription.objects.filter(user=user))
-    if push_subs:
-        channel = send_push(user, payload_dict, push_subs)
-        if channel:
-            return channel, True
+    if not push_subs:
+        return NotificationLog.Status.SKIPPED
 
-    # Fall back to email only if push permission hasn't been explicitly denied.
-    if pref is None or pref.email_enabled:
-        channel = send_email_notification(user, subject, email_template, email_context)
-        return channel, channel is not None
-
-    return None, False
+    if send_push(user, payload_dict, push_subs):
+        return NotificationLog.Status.SENT
+    return NotificationLog.Status.FAILED
 
 
 def deliver_and_log(
     user,
     notification_type,
     payload_dict,
-    subject,
-    email_template,
-    email_context,
     module=None,
     content_item=None,
     scheduled_for=None,
     push_subs=None,
 ):
-    """deliver(), then record the attempt in NotificationLog as SENT or FAILED.
+    """deliver(), then record the attempt in NotificationLog.
 
-    FAILED rows are not treated as sent, so callers retry them on their next run.
-    Returns True if the notification was delivered.
+    Only SENT rows count as delivered, so callers retry SKIPPED and FAILED ones on
+    their next run (a user may register a device in between).
+    Returns the status.
     """
-    channel, success = deliver(
-        user=user,
-        payload_dict=payload_dict,
-        subject=subject,
-        email_template=email_template,
-        email_context=email_context,
-        push_subs=push_subs,
-    )
+    status = deliver(user=user, payload_dict=payload_dict, push_subs=push_subs)
     now = timezone.now()
     NotificationLog.objects.create(
         user=user,
         type=notification_type,
         module=module,
         content_item=content_item,
-        channel=channel or NotificationLog.Channel.PUSH,
+        channel=NotificationLog.Channel.PUSH,
         scheduled_for=scheduled_for or now,
-        sent_at=now if success else None,
-        status=NotificationLog.Status.SENT if success else NotificationLog.Status.FAILED,
+        sent_at=now if status == NotificationLog.Status.SENT else None,
+        status=status,
     )
-    return success
+    return status
 
 
 # ── S21: content added / changed ───────────────────────────────────────────────
@@ -269,12 +229,9 @@ def notify_content_update(module=None, content_item=None):
                 "body": module.title,
                 "url": f"/modules/{module.id}",
             },
-            subject=f"New mindfulness content: {module.title}",
-            email_template="app/content_update_email.txt",
-            email_context={"user": user, "module": module},
             module=module,
             scheduled_for=scheduled_for,
-        ):
+        ) == NotificationLog.Status.SENT:
             sent += 1
 
     logger.info("S21 content-update: module=%s sent=%d", module, sent)
@@ -331,11 +288,8 @@ def notify_survey_unlocked(user, module):
                 "body": survey.title,
                 "url": "/surveys",
             },
-            subject=f"Survey available: {survey.title}",
-            email_template="app/content_update_email.txt",
-            email_context={"user": user, "module": module},
             module=module,
-        ):
+        ) == NotificationLog.Status.SENT:
             sent_any = True
 
     return sent_any

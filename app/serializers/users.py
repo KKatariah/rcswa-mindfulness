@@ -49,6 +49,9 @@ class UserDisplayNameSerializer(serializers.ModelSerializer):
 
 
 class AdminUserSerializer(serializers.ModelSerializer):
+    # Their most recent enrollment, so the Users list needs no separate enrollments request.
+    enrollment = serializers.SerializerMethodField()
+
     class Meta:
         model = User
         fields = [
@@ -60,8 +63,17 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "auth_provider",
             "is_staff",
             "created_at",
+            "enrollment",
         ]
         read_only_fields = fields
+
+    def get_enrollment(self, obj):
+        # UserProfileViewSet prefetches enrollments newest first; sorting here keeps any other caller correct too.
+        enrollments = sorted(obj.enrollments.all(), key=lambda e: (e.enrolled_at, e.pk), reverse=True)
+        if not enrollments:
+            return None
+        e = enrollments[0]
+        return {"id": e.id, "cohort": e.cohort_id, "status": e.status, "enrolled_at": e.enrolled_at}
 
 
 class AdminUserUpdateSerializer(serializers.ModelSerializer):

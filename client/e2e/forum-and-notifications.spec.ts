@@ -20,8 +20,10 @@ test("a student posts a thread that another student can read but not edit", asyn
 
 	// The API refuses the edit too, not just the UI.
 	const studentToken = await apiToken(request, STUDENT);
-	const threads = await (await request.get(`${API}/forum/threads/`, { headers: { Authorization: `Token ${studentToken}` } })).json();
-	const thread = threads.find((t: { body: string }) => t.body === body);
+	const threads = await (
+		await request.get(`${API}/forum/threads/?search=${encodeURIComponent(body)}`, { headers: { Authorization: `Token ${studentToken}` } })
+	).json();
+	const thread = threads.results.find((t: { body: string }) => t.body === body);
 	const detail = await (await request.get(`${API}/forum/threads/${thread.id}/`, { headers: { Authorization: `Token ${studentToken}` } })).json();
 	const res = await request.patch(`${API}/forum/posts/${detail.opening_post.id}/`, {
 		headers: { Authorization: `Token ${otherToken}` },

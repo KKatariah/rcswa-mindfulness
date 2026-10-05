@@ -89,6 +89,10 @@ async function request<T>(path: string, options?: RequestOptions): Promise<T> {
 	return res.json() as Promise<T>;
 }
 
+/** One page of a long list (users, enrollments, forum threads); `count` is the total across all pages. */
+export type Page<T> = { count: number; results: T[] };
+export type PageParams = { limit?: number; offset?: number };
+
 function query(params: Record<string, string | number | undefined>): string {
 	const search = new URLSearchParams();
 	for (const [key, value] of Object.entries(params)) {
@@ -226,8 +230,9 @@ export function markModuleViewed(moduleId: number): Promise<ApiModuleView> {
 
 // ── Forum ──────────────────────────────────────────────────────────────────────
 
-export function listForumThreads(): Promise<ForumThread[]> {
-	return request("/forum/threads/");
+/** Threads matching `search` (opening post or author name), pinned first. */
+export function listForumThreads(params: { search?: string } & PageParams = {}): Promise<Page<ForumThread>> {
+	return request(`/forum/threads/${query(params)}`);
 }
 
 export function getForumThread(id: number): Promise<ForumThreadDetail> {
@@ -264,8 +269,9 @@ export function getProgramStatus(): Promise<{ is_active: boolean }> {
 
 // ── Admin: users, cohorts & enrollments ────────────────────────────────────────
 
-export function listUsers(): Promise<AdminUser[]> {
-	return request("/users/");
+/** Newest first; `search` matches name, display name or email. */
+export function listUsers(params: { search?: string; role?: string } & PageParams = {}): Promise<Page<AdminUser>> {
+	return request(`/users/${query(params)}`);
 }
 
 /** Admin view of one person: profile, enrollments, module progress, surveys and forum activity. */
@@ -302,7 +308,9 @@ export function deleteCohort(id: number): Promise<void> {
 	return request(`/cohorts/${id}/`, { method: "DELETE" });
 }
 
-export function listEnrollments(params: { cohort?: number; status?: Enrollment["status"] } = {}): Promise<Enrollment[]> {
+export function listEnrollments(
+	params: { cohort?: number; status?: Enrollment["status"] } & PageParams = {},
+): Promise<Page<Enrollment>> {
 	return request(`/enrollments/${query(params)}`);
 }
 
@@ -516,7 +524,6 @@ export function submitSurveyResponse(payload: {
 
 export type NotificationPreferences = {
 	id: number;
-	email_enabled: boolean;
 	inapp_enabled: boolean;
 	reminder_time: string;
 	push_denied: boolean;

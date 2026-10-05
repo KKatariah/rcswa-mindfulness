@@ -131,8 +131,9 @@ export default function AdminCohortsPage() {
 		setDeleteError(null);
 		setCheckingEnrollments(true);
 		try {
-			const enrollments = await listEnrollments({ cohort: cohort.id });
-			setDeletingEnrollmentCount(enrollments.length);
+			// Only the total is needed, not the rows.
+			const { count } = await listEnrollments({ cohort: cohort.id, limit: 1 });
+			setDeletingEnrollmentCount(count);
 		} catch {
 			// If the count fails to load, fall back to a generic warning rather
 			// than blocking the delete flow entirely.
