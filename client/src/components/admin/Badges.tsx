@@ -1,15 +1,16 @@
+import Badge, { type BadgeTone } from "@/components/ui/Badge";
 import type { AdminUser, Enrollment, ModuleProgressStatus } from "@/types/admin";
 
-const ENROLLMENT_STYLES: Record<Enrollment["status"], string> = {
-	pending: "bg-amber-100 text-amber-700",
-	active: "bg-green-100 text-green-700",
-	completed: "bg-blue-100 text-blue-700",
-	withdrawn: "bg-gray-100 text-gray-600",
+const ENROLLMENT_TONES: Record<Enrollment["status"], BadgeTone> = {
+	pending: "amber",
+	active: "green",
+	completed: "blue",
+	withdrawn: "gray",
 };
 
-const ROLE_STYLES: Record<AdminUser["role"], string> = {
-	admin: "bg-purple-100 text-purple-700",
-	student: "bg-gray-100 text-gray-600",
+const ROLE_TONES: Record<AdminUser["role"], BadgeTone> = {
+	admin: "purple",
+	student: "gray",
 };
 
 export const PROGRESS_LABELS: Record<ModuleProgressStatus, string> = {
@@ -19,23 +20,21 @@ export const PROGRESS_LABELS: Record<ModuleProgressStatus, string> = {
 	locked: "Not unlocked yet",
 };
 
-const PROGRESS_STYLES: Record<ModuleProgressStatus, string> = {
-	completed: "bg-green-100 text-green-700",
-	in_progress: "bg-amber-100 text-amber-700",
-	not_started: "bg-red-100 text-red-700",
-	locked: "bg-gray-100 text-gray-600",
+const PROGRESS_TONES: Record<ModuleProgressStatus, BadgeTone> = {
+	completed: "green",
+	in_progress: "amber",
+	not_started: "red",
+	locked: "gray",
 };
 
-const badge = "inline-block whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-semibold";
-
 export function EnrollmentStatusBadge({ status }: { status: Enrollment["status"] }) {
-	return <span className={`${badge} capitalize ${ENROLLMENT_STYLES[status]}`}>{status}</span>;
+	return <Badge tone={ENROLLMENT_TONES[status]}>{status}</Badge>;
 }
 
 export function RoleBadge({ role }: { role: AdminUser["role"] }) {
-	return <span className={`${badge} capitalize ${ROLE_STYLES[role]}`}>{role}</span>;
+	return <Badge tone={ROLE_TONES[role]}>{role}</Badge>;
 }
 
 export function ProgressStatusBadge({ status }: { status: ModuleProgressStatus }) {
-	return <span className={`${badge} ${PROGRESS_STYLES[status]}`}>{PROGRESS_LABELS[status]}</span>;
+	return <Badge tone={PROGRESS_TONES[status]}>{PROGRESS_LABELS[status]}</Badge>;
 }

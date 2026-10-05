@@ -18,6 +18,14 @@ class IsAdminOrSelf(BasePermission):
         return bool(u and u.is_authenticated and (obj.pk == u.pk or is_admin(u)))
 
 
+class HasAcceptedForumRules(BasePermission):
+    message = "You must agree to the forum rules before using the forum."
+
+    def has_permission(self, request, view):
+        # Admins moderate the forum and aren't asked to accept the rules.
+        return is_admin(request.user) or request.user.forum_rules_accepted_at is not None
+
+
 class IsAuthorOrAdmin(BasePermission):
     """Forum threads and posts: only their author or an admin may change them."""
 

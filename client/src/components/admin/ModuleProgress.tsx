@@ -4,6 +4,7 @@ import Select from "@/components/ui/Select";
 import { CheckIcon } from "@/components/ui/icons";
 import { ProgressStatusBadge, PROGRESS_LABELS } from "@/components/admin/Badges";
 import { getModuleProgress } from "@/lib/api";
+import { errorMessage } from "@/lib/errors";
 import type { AdminContentItem, ModuleProgress as Progress, ModuleProgressStatus, ModuleStudentProgress } from "@/types/admin";
 
 const STATUS_ORDER: ModuleProgressStatus[] = ["completed", "in_progress", "not_started", "locked"];
@@ -64,16 +65,15 @@ export default function ModuleProgress({ moduleId, items }: { moduleId: number; 
 	const itemKey = items.map((i) => i.id).join();
 	useEffect(() => {
 		let cancelled = false;
-		const token = localStorage.getItem("token") ?? "";
 		(async () => {
 			try {
-				const data = await getModuleProgress(moduleId, token);
+				const data = await getModuleProgress(moduleId);
 				if (!cancelled) {
 					setProgress(data);
 					setError(null);
 				}
 			} catch (e) {
-				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load student progress");
+				if (!cancelled) setError(errorMessage(e, "Failed to load student progress"));
 			}
 		})();
 		return () => { cancelled = true; };

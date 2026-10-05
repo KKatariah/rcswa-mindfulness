@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import Modal from "@/components/main/Modal";
+import { errorMessage } from "@/lib/errors";
 
 export const FORUM_RULES: { title: string; body: string }[] = [
 	{
@@ -110,7 +111,7 @@ export default function ForumRulesModal({ isOpen, onClose, onAccept }: ForumRule
 		try {
 			await onAccept();
 		} catch (e) {
-			setError(e instanceof Error ? e.message : "Something went wrong");
+			setError(errorMessage(e, "Something went wrong"));
 		} finally {
 			setSubmitting(false);
 		}

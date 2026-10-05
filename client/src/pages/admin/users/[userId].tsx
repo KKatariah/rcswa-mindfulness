@@ -8,6 +8,7 @@ import EditUserModal from "@/components/admin/EditUserModal";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { CheckIcon, ChevronLeftIcon, PencilIcon } from "@/components/ui/icons";
 import { getUserOverview, listCohorts } from "@/lib/api";
+import { errorMessage } from "@/lib/errors";
 import { SURVEY_TYPE_LABELS } from "@/lib/surveys";
 import type { Cohort, UserOverview } from "@/types/admin";
 
@@ -64,16 +65,15 @@ export default function AdminUserProfilePage() {
 	useEffect(() => {
 		if (!userId || Array.isArray(userId)) return;
 		let cancelled = false;
-		const token = localStorage.getItem("token") ?? "";
 		(async () => {
 			try {
-				const [overview, cohortList] = await Promise.all([getUserOverview(Number(userId), token), listCohorts(token)]);
+				const [overview, cohortList] = await Promise.all([getUserOverview(Number(userId)), listCohorts()]);
 				if (!cancelled) {
 					setData(overview);
 					setCohorts(cohortList);
 				}
 			} catch (e) {
-				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load user");
+				if (!cancelled) setError(errorMessage(e, "Failed to load user"));
 			}
 		})();
 		return () => { cancelled = true; };
@@ -104,9 +104,9 @@ export default function AdminUserProfilePage() {
 	async function handleSaved() {
 		setEditing(false);
 		try {
-			setData(await getUserOverview(data!.user.id, localStorage.getItem("token") ?? ""));
+			setData(await getUserOverview(data!.user.id));
 		} catch (e) {
-			setError(e instanceof Error ? e.message : "Failed to reload user");
+			setError(errorMessage(e, "Failed to reload user"));
 		}
 	}
 

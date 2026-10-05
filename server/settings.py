@@ -201,6 +201,7 @@ REST_FRAMEWORK = {
     "DEFAULT_THROTTLE_RATES": {
         # Matches the client cooldown in client/src/pages/forum.tsx (3 posts per 30s).
         "forum_post": "6/min",
-        "auth": "10/min",
+        # Logins/sign-ups per IP. Only the e2e test servers override this (they log in many test users).
+        "auth": os.environ.get("AUTH_THROTTLE_RATE", "10/min"),
     },
 }

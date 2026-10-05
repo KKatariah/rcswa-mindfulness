@@ -44,6 +44,8 @@ export default defineConfig({
 			env: {
 				DJANGO_DB_PATH: "e2e.sqlite3",
 				CORS_ALLOWED_ORIGINS: WEB_URL,
+				// One run logs in more test users than the normal 10 a minute allows.
+				AUTH_THROTTLE_RATE: "1000/min",
 			},
 			reuseExistingServer: false,
 			timeout: 120_000,

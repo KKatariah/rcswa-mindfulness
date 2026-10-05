@@ -1,4 +1,4 @@
-import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
+import type { ComponentProps, InputHTMLAttributes, ReactNode } from "react";
 
 type FieldSize = "md" | "lg";
 
@@ -50,10 +50,8 @@ export function TextField({ id, label, size = "lg", className = "", ...input }: 
 	);
 }
 
-type TextAreaFieldProps = { id: string; label: ReactNode; size?: FieldSize } & Omit<
-	TextareaHTMLAttributes<HTMLTextAreaElement>,
-	"id"
->;
+// ComponentProps (not TextareaHTMLAttributes) so a ref can be passed through.
+type TextAreaFieldProps = { id: string; label: ReactNode; size?: FieldSize } & Omit<ComponentProps<"textarea">, "id">;
 
 export function TextAreaField({ id, label, size = "lg", className = "resize-none", ...textarea }: TextAreaFieldProps) {
 	return (

@@ -8,7 +8,6 @@ from django.core.management import call_command
 from django.core.cache import cache
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
-from django.utils import timezone
 from django.test import TestCase as DjangoTestCase, override_settings
 from django.utils import timezone
 from rest_framework import status
@@ -2261,8 +2260,8 @@ class ForumRulesBypassTests(APITestCase):
         self._assert_all_blocked()
 
     def test_every_forum_endpoint_blocked_with_token_auth(self):
-        token = Token.objects.create(user=self.student)
-        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+        from .models import AuthToken
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {AuthToken.issue(self.student)}")
         self._assert_all_blocked()
 
     def test_anonymous_forum_access_blocked(self):
@@ -3609,7 +3608,7 @@ class ReminderDeliveryTests(TestCase):
         Enrollment.objects.create(user=self.user, cohort=cohort)
         with patch("app.signals._fire_async"):
             self.module = _make_module(week=1)
-            self.item = _make_audio_item(self.module, day_offset=0, title="Body scan")
+            self.item = _make_audio_item(self.module, title="Body scan")
         # 08:00 Perth: the default reminder hour.
         self.fake_now = datetime.datetime.combine(today, datetime.time(8, 0), tzinfo=ZoneInfo("Australia/Perth"))
 
@@ -3632,10 +3631,11 @@ class ReminderDeliveryTests(TestCase):
         self.assertEqual([m.subject for m in mail.outbox], ["Your daily meditation: Body scan"])
         self.assertIn(f"/modules/{self.module.pk}", mail.outbox[0].body)
 
-    def test_completed_item_is_not_reminded(self):
+    def test_completed_item_is_still_reminded_daily(self):
+        # Meditation is a daily practice: ticking the audio off doesn't stop the reminders.
         ContentCompletion.objects.create(user=self.user, content_item=self.item)
         self._run()
-        self.assertFalse(self._logs(NotificationLog.NotificationType.CONTENT_REMINDER).exists())
+        self.assertTrue(self._logs(NotificationLog.NotificationType.CONTENT_REMINDER).exists())
 
     def test_survey_reminder_for_unlocked_unanswered_survey(self):
         from django.core import mail
@@ -3664,11 +3664,11 @@ class ReminderDeliveryTests(TestCase):
 
     @override_settings(VAPID_PRIVATE_KEY="test-key")
     def test_dead_push_endpoint_shared_by_two_reminders(self):
-        """The first send prunes the endpoint; the second must skip it, not crash."""
+        """The meditation reminder prunes the endpoint; the survey reminder in the same run must skip it, not crash."""
         from django.core import mail
         from pywebpush import WebPushException
-        with patch("app.signals._fire_async"):
-            _make_audio_item(self.module, day_offset=0, title="Breathing")
+        NotificationPreference.objects.create(user=self.user, daily_survey_reminder=True)
+        ContentCompletion.objects.create(user=self.user, content_item=self.item)
         PushSubscription.objects.create(user=self.user, endpoint="https://push.example/gone", p256dh="k", auth="a")
         gone = WebPushException("gone", response=type("R", (), {"status_code": 410})())
         with patch("pywebpush.webpush", side_effect=gone):
@@ -3868,7 +3868,9 @@ class SecurityHardeningTests(APITestCase):
         self.cohort = Cohort.objects.create(
             name="C", year=today.year, start_date=today - timedelta(days=7), end_date=today + timedelta(days=49),
         )
-        self.student = User.objects.create_user(email="s@test.local", password="testpass", full_name="Stu")
+        self.student = User.objects.create_user(
+            email="s@test.local", password="testpass", full_name="Stu", forum_rules_accepted_at=timezone.now(),
+        )
         Enrollment.objects.create(user=self.student, cohort=self.cohort)
         self.thread = ForumThread.objects.create(created_by=self.student, title="t")
         self.opening = ForumPost.objects.create(thread=self.thread, author=self.student, body="hi", is_head_post=True)
@@ -3971,8 +3973,8 @@ class ReminderRunCharacterisationTests(TestCase):
         )
         with patch("app.signals._fire_async"):
             module = _make_module(week=1)
-            item_a = _make_audio_item(module, day_offset=0, title="A")
-            item_b = _make_audio_item(module, day_offset=0, title="B")
+            item_a = _make_audio_item(module, title="A", display_order=1)
+            item_b = _make_audio_item(module, title="B", display_order=2)
         users = {name: _make_user(f"{name}@test.local") for name in
                  ("plain", "nine", "optout", "denied", "half", "logged", "surveyor", "later")}
         for name, user in users.items():
@@ -4000,22 +4002,21 @@ class ReminderRunCharacterisationTests(TestCase):
         midnight = _perth_midnight_utc(today).isoformat()
         self.assertEqual(run("--dry-run"), (
             f"[send_due_reminders] date={today} hour=8 (Australia/Perth) scheduled_for={midnight} dry_run=True\n"
+            # One reminder a day, for the week's first audio item (A), even if already completed.
             f"  [dry-run] would send (email): user=plain@test.local item='A' day={today}\n"
-            f"  [dry-run] would send (email): user=plain@test.local item='B' day={today}\n"
-            f"  [dry-run] would send (email): user=half@test.local item='B' day={today}\n"
-            f"  [dry-run] would send (email): user=logged@test.local item='B' day={today}\n"
+            f"  [dry-run] would send (email): user=half@test.local item='A' day={today}\n"
+            f"  [dry-run] would send (email): user=surveyor@test.local item='A' day={today}\n"
             f"  [dry-run] would send survey reminder (email): user=surveyor@test.local survey='Week 1' day={today}\n"
-            "[send_due_reminders] done: sent=5 skipped=7 errors=0\n"
+            "[send_due_reminders] done: sent=4 skipped=4 errors=0\n"
         ))
-        self.assertTrue(run().endswith("[send_due_reminders] done: sent=5 skipped=7 errors=0\n"))
+        self.assertTrue(run().endswith("[send_due_reminders] done: sent=4 skipped=4 errors=0\n"))
         sent = NotificationLog.objects.filter(status=NotificationLog.Status.SENT)
         self.assertEqual(
             sorted((log.user.email.split("@")[0], log.type, getattr(log.content_item, "title", None)) for log in sent),
-            [("half", "content_reminder", "B"), ("logged", "content_reminder", "A"), ("logged", "content_reminder", "B"),
-             ("plain", "content_reminder", "A"), ("plain", "content_reminder", "B"), ("surveyor", "survey_prompt", None)],
+            [("half", "content_reminder", "A"), ("logged", "content_reminder", "A"), ("plain", "content_reminder", "A"),
+             ("surveyor", "content_reminder", "A"), ("surveyor", "survey_prompt", None)],
         )
         from django.core import mail
         self.assertEqual(sorted(m.subject for m in mail.outbox), [
-            "Survey reminder: Week 1", "Your daily meditation: A", "Your daily meditation: B",
-            "Your daily meditation: B", "Your daily meditation: B",
+            "Survey reminder: Week 1", "Your daily meditation: A", "Your daily meditation: A", "Your daily meditation: A",
         ])

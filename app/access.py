@@ -51,10 +51,15 @@ def _cached_cohort_start_date(user):
     return user._cohort_start_date
 
 
+def unlock_date_for(cohort_start, week_number):
+    """Week N opens (N-1) weeks after the cohort starts; the week 0 introduction opens with week 1."""
+    return cohort_start + timedelta(weeks=max(week_number - 1, 0))
+
+
 def module_unlock_date(module, user):
-    """Week N opens (N-1) weeks after the user's cohort starts. None when the user has no active cohort."""
+    """When the module opens for this user; None when they have no active cohort."""
     start = _cached_cohort_start_date(user)
-    return start + timedelta(weeks=module.week_number - 1) if start else None
+    return unlock_date_for(start, module.week_number) if start else None
 
 
 def module_is_unlocked(module, user):
