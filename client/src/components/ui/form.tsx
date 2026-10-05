@@ -1,17 +1,17 @@
 import type { InputHTMLAttributes, ReactNode, TextareaHTMLAttributes } from "react";
 
-export type FieldSize = "md" | "lg";
+type FieldSize = "md" | "lg";
 
 const TEXT_SIZES: Record<FieldSize, string> = { md: "text-sm", lg: "text-[15px]" };
 const FOCUS = "rounded-xl border border-gray-200 text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue";
 
 /** Classes for a text input. `md` suits inline admin forms, `lg` modals. */
-export function inputClass(size: FieldSize = "lg", extra = "") {
+function inputClass(size: FieldSize = "lg", extra = "") {
 	return `${size === "md" ? "h-11" : "h-12"} px-4 ${TEXT_SIZES[size]} ${FOCUS} ${extra}`.trim();
 }
 
 /** Classes for a textarea; pass resize-none or resize-y in `extra`. Text lines up with inputs (px-4). */
-export function textareaClass(size: FieldSize = "lg", extra = "") {
+function textareaClass(size: FieldSize = "lg", extra = "") {
 	return `px-4 py-2.5 ${TEXT_SIZES[size]} ${FOCUS} ${extra}`.trim();
 }
 

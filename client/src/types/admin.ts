@@ -27,7 +27,6 @@ export type AdminModule = {
 	is_published: boolean;
 	is_unlocked: boolean;
 	content_items: AdminContentItem[];
-	resources: unknown[];
 };
 
 export type AdminUser = {

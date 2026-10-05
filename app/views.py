@@ -280,7 +280,6 @@ class ModuleViewSet(viewsets.ModelViewSet):
                     "content_items",
                     queryset=ContentItem.objects.order_by("display_order", "id"),
                 ),
-                "resources",
             )
         )
         u = self.request.user

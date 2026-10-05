@@ -131,7 +131,7 @@ function NumberQuestion({ label, onChange }: { label: ReactNode; onChange: (valu
 	);
 }
 
-// Matches LONGTEXT_MAX_CHARS in app/serializers.py.
+// Matches LONGTEXT_MAX_CHARS in app/serializers/surveys.py.
 const JOURNAL_MAX_CHARS = 5000;
 
 export default function SurveyQuestions({

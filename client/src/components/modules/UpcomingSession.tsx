@@ -12,7 +12,7 @@ type SessionModule = {
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Earliest module the server still reports as locked. */
-export function findUpcomingModule<T extends SessionModule>(modules: T[]): T | undefined {
+function findUpcomingModule<T extends SessionModule>(modules: T[]): T | undefined {
 	return modules
 		.filter((module) => !module.is_unlocked && module.unlock_at)
 		.sort((a, b) => Date.parse(a.unlock_at!) - Date.parse(b.unlock_at!))[0];

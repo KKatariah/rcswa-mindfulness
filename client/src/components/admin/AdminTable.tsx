@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { LoadingState } from "@/components/ui/feedback";
 
-export type AdminTableColumn = string | { label: ReactNode; className?: string };
+type AdminTableColumn = string | { label: ReactNode; className?: string };
 
 /** Header cell for a column of drag handles. */
 export const REORDER_COLUMN: AdminTableColumn = {

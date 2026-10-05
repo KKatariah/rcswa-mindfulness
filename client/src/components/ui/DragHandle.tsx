@@ -1,7 +1,7 @@
 import type { KeyboardEvent, PointerEvent } from "react";
 import { GripIcon } from "@/components/ui/icons";
 
-export const REORDER_HELP_ID = "reorder-help";
+const REORDER_HELP_ID = "reorder-help";
 
 /** Screen-reader instructions for DragHandle; render once per page that uses it. */
 export function ReorderHelp() {

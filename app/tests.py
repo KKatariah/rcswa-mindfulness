@@ -3541,3 +3541,66 @@ class SecurityHardeningTests(APITestCase):
             "/api/additional-resources/", {"category": "book", "title": "Ok", "cover_image": ok}, format="multipart",
         )
         self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class ReminderRunCharacterisationTests(TestCase):
+    """One full hourly run covering every skip rule; pins the exact counts the command reports."""
+
+    def test_full_run_counts(self):
+        from zoneinfo import ZoneInfo
+        today = timezone.localdate()
+        running = Cohort.objects.create(name="Now", year=today.year, start_date=today, end_date=today + timedelta(days=56))
+        future = Cohort.objects.create(
+            name="Later", year=today.year, start_date=today + timedelta(days=30), end_date=today + timedelta(days=86),
+        )
+        with patch("app.signals._fire_async"):
+            module = _make_module(week=1)
+            item_a = _make_audio_item(module, day_offset=0, title="A")
+            item_b = _make_audio_item(module, day_offset=0, title="B")
+        users = {name: _make_user(f"{name}@test.local") for name in
+                 ("plain", "nine", "optout", "denied", "half", "logged", "surveyor", "later")}
+        for name, user in users.items():
+            Enrollment.objects.create(user=user, cohort=future if name == "later" else running)
+        NotificationPreference.objects.create(user=users["nine"], reminder_time=datetime.time(9, 0))
+        NotificationPreference.objects.create(user=users["optout"], daily_content_reminder=False)
+        NotificationPreference.objects.create(user=users["denied"], push_denied=True)
+        NotificationPreference.objects.create(user=users["surveyor"], daily_survey_reminder=True)
+        ContentCompletion.objects.create(user=users["half"], content_item=item_a)
+        for item in (item_a, item_b):
+            ContentCompletion.objects.create(user=users["surveyor"], content_item=item)
+        NotificationLog.objects.create(
+            user=users["logged"], type=NotificationLog.NotificationType.CONTENT_REMINDER, content_item=item_a,
+            module=module, channel=NotificationLog.Channel.EMAIL, scheduled_for=_perth_midnight_utc(today),
+            status=NotificationLog.Status.SENT,
+        )
+        fake_now = datetime.datetime.combine(today, datetime.time(8, 0), tzinfo=ZoneInfo("Australia/Perth"))
+
+        def run(*args):
+            out = StringIO()
+            with patch("app.management.commands.send_due_reminders._perth_now", return_value=fake_now):
+                call_command("send_due_reminders", *args, stdout=out, stderr=StringIO())
+            return out.getvalue()
+
+        midnight = _perth_midnight_utc(today).isoformat()
+        self.assertEqual(run("--dry-run"), (
+            f"[send_due_reminders] date={today} hour=8 (Australia/Perth) scheduled_for={midnight} dry_run=True\n"
+            f"  [dry-run] would send (email): user=plain@test.local item='A' day={today}\n"
+            f"  [dry-run] would send (email): user=plain@test.local item='B' day={today}\n"
+            f"  [dry-run] would send (email): user=half@test.local item='B' day={today}\n"
+            f"  [dry-run] would send (email): user=logged@test.local item='B' day={today}\n"
+            f"  [dry-run] would send survey reminder (email): user=surveyor@test.local survey='Week 1' day={today}\n"
+            "[send_due_reminders] done: sent=5 skipped=7 errors=0\n"
+        ))
+        self.assertTrue(run().endswith("[send_due_reminders] done: sent=5 skipped=7 errors=0\n"))
+        sent = NotificationLog.objects.filter(status=NotificationLog.Status.SENT)
+        self.assertEqual(
+            sorted((log.user.email.split("@")[0], log.type, getattr(log.content_item, "title", None)) for log in sent),
+            [("half", "content_reminder", "B"), ("logged", "content_reminder", "A"), ("logged", "content_reminder", "B"),
+             ("plain", "content_reminder", "A"), ("plain", "content_reminder", "B"), ("surveyor", "survey_prompt", None)],
+        )
+        from django.core import mail
+        self.assertEqual(sorted(m.subject for m in mail.outbox), [
+            "Survey reminder: Week 1", "Your daily meditation: A", "Your daily meditation: B",
+            "Your daily meditation: B", "Your daily meditation: B",
+        ])

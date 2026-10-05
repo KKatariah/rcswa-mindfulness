@@ -34,8 +34,8 @@ def _fire_async(module_pk: int) -> None:
             return
         try:
             notify_content_update(module=mod)
-        except Exception as exc:
-            logger.error("S21 delivery error for module pk=%s: %s", module_pk, exc)
+        except Exception:
+            logger.exception("S21 delivery error for module pk=%s", module_pk)
 
     threading.Thread(target=_run, daemon=True).start()
 

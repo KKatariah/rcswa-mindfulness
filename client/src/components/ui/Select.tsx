@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { ChevronDownIcon } from "@/components/ui/icons";
 
-export type SelectOption = { value: string; label: string };
+type SelectOption = { value: string; label: string };
 
 export default function Select({
 	value,

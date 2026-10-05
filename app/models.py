@@ -271,33 +271,10 @@ class ContentItem(models.Model):
         return self.title
 
 
-class Resource(models.Model):
-    # SET_NULL: supplementary resources are not destroyed when a module is removed.
-    module = models.ForeignKey(
-        Module,
-        on_delete=models.SET_NULL,
-        related_name="resources",
-        null=True,
-        blank=True,
-    )
-    title = models.CharField(max_length=200)
-    url = models.URLField()
-    resource_type = models.CharField(max_length=100)
-    display_order = models.PositiveSmallIntegerField(default=0)
-
-    class Meta:
-        ordering = ["display_order"]
-
-    def __str__(self):
-        return self.title
-
-
 class AdditionalResource(models.Model):
     """Books/documentaries/online programs shown on the Resources page (logged-in users only).
 
-    Distinct from `Resource` above, which is a per-module supplementary link —
-    this model backs a standalone, admin-managed reading-list page
-    and is not tied to a Module.
+    A standalone, admin-managed reading list; not tied to a Module.
     """
 
     class Category(models.TextChoices):

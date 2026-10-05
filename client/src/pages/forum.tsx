@@ -44,7 +44,7 @@ function isAdminUser(user: AuthUser | null) {
   return user?.role === "admin";
 }
 
-// Matches FORUM_POST_MAX_CHARS in app/serializers.py.
+// Matches FORUM_POST_MAX_CHARS in app/serializers/forum.py.
 const POST_MAX_CHARS = 5000;
 
 // Keep in step with the "forum_post" throttle rate in server/settings.py (6/min).
