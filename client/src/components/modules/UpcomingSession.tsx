@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import NextSession from "@/components/modules/NextSession";
-import { listModules } from "@/lib/api";
+import { getToken, listModules } from "@/lib/api";
 
 type SessionModule = {
 	id: number;
@@ -57,11 +57,10 @@ export default function UpcomingSession({ modules }: { modules?: SessionModule[]
 
 	useEffect(() => {
 		if (modules) return;
-		const token = localStorage.getItem("token");
-		if (!token) return;
+		if (!getToken()) return;
 
 		let cancelled = false;
-		listModules(token)
+		listModules()
 			.then((data) => { if (!cancelled) setFetched(data); })
 			.catch((error) => console.error("Failed to load next session:", error));
 		return () => { cancelled = true; };

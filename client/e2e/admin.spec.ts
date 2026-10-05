@@ -56,8 +56,8 @@ test("admin deletes a resource", async ({ page, request }) => {
 	await expect(firstDelete).toBeVisible();
 	const before = await page.getByRole("button", { name: "Delete resource" }).count();
 
-	page.once("dialog", (dialog) => dialog.accept());
 	await firstDelete.click();
+	await page.getByRole("alertdialog").getByRole("button", { name: "Delete resource" }).click();
 	await expect(page.getByRole("button", { name: "Delete resource" })).toHaveCount(before - 1);
 });
 

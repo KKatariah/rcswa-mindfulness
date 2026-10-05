@@ -3,7 +3,6 @@ export type ForumPost = {
   thread: number;
   parent_post: number | null;
   author_name: string;
-  author_email?: string | null;
   author_avatar_url?: string | null;
   body: string;
   created_at: string;
@@ -18,7 +17,6 @@ export type ForumThread = {
   module: number | null;
   content_item: number | null;
   author_name: string;
-  author_email?: string | null;
   author_avatar_url?: string | null;
   created_at: string;
   updated_at: string;

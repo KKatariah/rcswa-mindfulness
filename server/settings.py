@@ -55,7 +55,6 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
-    'rest_framework.authtoken',
     'corsheaders',
 
     'app',
@@ -63,6 +62,9 @@ INSTALLED_APPS = [
 
 # Custom user model (must be set before the first migration is created).
 AUTH_USER_MODEL = 'app.User'
+
+# Locks an account after repeated wrong passwords (API login and Django admin alike).
+AUTHENTICATION_BACKENDS = ['app.lockout.LockoutModelBackend']
 
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
@@ -192,7 +194,8 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
+        # One token per device, expiring after 7 days unused (app/authentication.py).
+        'app.authentication.ExpiringTokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
     "DEFAULT_THROTTLE_RATES": {

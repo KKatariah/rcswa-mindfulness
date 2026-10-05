@@ -1,16 +1,29 @@
-import { useEffect, useState } from "react";
+import type { ReactNode } from "react";
 import Head from "next/head";
 import AdminLayout from "@/components/admin/AdminLayout";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import SurveyExport from "@/components/admin/SurveyExport";
+import Card from "@/components/ui/Card";
+import { LoadingState } from "@/components/ui/feedback";
+import { useAsync } from "@/hooks/useAsync";
 import { getDashboardStats } from "@/lib/api";
 import type { DashboardStats } from "@/types/admin";
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
 	return (
-		<div className="rounded-2xl border border-gray-200 bg-white p-5">
+		<Card variant="admin" className="p-5">
 			<p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
 			<p className="mt-2 text-2xl font-extrabold text-ink">{value}</p>
-		</div>
+		</Card>
+	);
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+	return (
+		<Card variant="admin" className="p-5">
+			<h2 className="text-sm font-bold uppercase tracking-wide text-muted">{title}</h2>
+			{children}
+		</Card>
 	);
 }
 
@@ -29,25 +42,9 @@ function ProgressBar({ label, pct, detail }: { label: string; pct: number; detai
 }
 
 export default function AdminDashboardPage() {
-	const [stats, setStats] = useState<DashboardStats | null>(null);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
-
-	useEffect(() => {
-		let cancelled = false;
-		const token = localStorage.getItem("token") ?? "";
-		(async () => {
-			try {
-				const data = await getDashboardStats(token);
-				if (!cancelled) setStats(data);
-			} catch (e) {
-				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load dashboard");
-			} finally {
-				if (!cancelled) setLoading(false);
-			}
-		})();
-		return () => { cancelled = true; };
-	}, []);
+	const { data: stats, loading, error } = useAsync(getDashboardStats, [], null as DashboardStats | null, {
+		errorFallback: "Failed to load dashboard",
+	});
 
 	return (
 		<AdminLayout>
@@ -55,12 +52,10 @@ export default function AdminDashboardPage() {
 				<title>Dashboard — Admin</title>
 			</Head>
 
-			<h1 className="text-2xl font-extrabold text-ink">Dashboard</h1>
+			<AdminPageHeader title="Dashboard" />
 
 			{loading ? (
-				<div className="flex justify-center py-16">
-					<span className="text-sm text-muted">Loading…</span>
-				</div>
+				<LoadingState />
 			) : error ? (
 				<p className="mt-6 text-sm text-red-600">{error}</p>
 			) : stats ? (
@@ -72,8 +67,7 @@ export default function AdminDashboardPage() {
 						<StatCard label="Completed" value={stats.enrollment_status_breakdown.completed ?? 0} />
 					</div>
 
-					<div className="rounded-2xl border border-gray-200 bg-white p-5">
-						<h2 className="text-sm font-bold uppercase tracking-wide text-muted">Module completion</h2>
+					<Section title="Module completion">
 						<div className="mt-4 space-y-4">
 							{stats.modules.length === 0 ? (
 								<p className="text-sm text-muted">No published modules yet.</p>
@@ -88,10 +82,9 @@ export default function AdminDashboardPage() {
 								))
 							)}
 						</div>
-					</div>
+					</Section>
 
-					<div className="rounded-2xl border border-gray-200 bg-white p-5">
-						<h2 className="text-sm font-bold uppercase tracking-wide text-muted">Cohorts</h2>
+					<Section title="Cohorts">
 						<div className="mt-4 overflow-x-auto">
 							<table className="w-full text-left text-sm">
 								<thead>
@@ -118,10 +111,9 @@ export default function AdminDashboardPage() {
 								</tbody>
 							</table>
 						</div>
-					</div>
+					</Section>
 
-					<div className="rounded-2xl border border-gray-200 bg-white p-5">
-						<h2 className="text-sm font-bold uppercase tracking-wide text-muted">Survey response rates</h2>
+					<Section title="Survey response rates">
 						<div className="mt-4 space-y-4">
 							{stats.survey_response_rates.length === 0 ? (
 								<p className="text-sm text-muted">No surveys yet.</p>
@@ -141,7 +133,7 @@ export default function AdminDashboardPage() {
 								surveys={stats.survey_response_rates.map((s) => ({ id: s.survey_id, title: s.title }))}
 							/>
 						</div>
-					</div>
+					</Section>
 
 					<div className="grid gap-4 sm:grid-cols-3">
 						<StatCard label="Forum threads" value={stats.forum_activity.thread_count} />

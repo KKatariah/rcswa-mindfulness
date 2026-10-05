@@ -1,64 +1,35 @@
-import { useEffect, useState} from "react";
 import Head from "next/head";
-import { useRouter } from "next/router";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
+import { FullPageMessage } from "@/components/ui/feedback";
 import PageHeader from "@/components/ui/PageHeader";
-import SurveyLinks, {type SurveyLinkItem } from "@/components/surveys/SurveyLinks";
-import { useAuth } from "@/context/AuthContext";
+import SurveyLinks, { type SurveyLinkItem } from "@/components/surveys/SurveyLinks";
+import { useAsync } from "@/hooks/useAsync";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { listSurveys } from "@/lib/api";
 
+async function loadSurveyLinks(): Promise<SurveyLinkItem[]> {
+	try {
+		const surveys = await listSurveys();
+		return surveys.map((survey) => ({
+			id: survey.id,
+			label: survey.title || `Week ${survey.id}`,
+			status: survey.has_responded ? "completed" : survey.is_unlocked ? "current" : "locked",
+			href: survey.is_unlocked ? `/surveys/${survey.id}` : undefined,
+		}));
+	} catch (error) {
+		// The page shows an empty list rather than an error.
+		console.error("Error loading surveys:", error);
+		return [];
+	}
+}
+
 export default function SurveysHomePage() {
-	const router = useRouter();
-	const { user, isLoading } = useAuth();
-	const [items, setItems] = useState<SurveyLinkItem[]>([]);
-
-	useEffect(() => {
-		if (!isLoading && !user) {
-			router.replace("/");
-			return;
-		}
-	}, [isLoading, user, router]);
-
-	useEffect(() => {
-		if (isLoading || !user) return;
-
-		let cancelled = false;
-
-		async function loadSurverys() {
-			try {
-				const token = localStorage.getItem("token") ?? "";
-				const data = await listSurveys(token);
-
-				if (cancelled) return;
-
-				const mapped: SurveyLinkItem[] = data.map((survey) => ({
-					id: survey.id,
-					label: survey.title || `Week ${survey.id}`,
-					status: survey.has_responded
-						? "completed"
-						: survey.is_unlocked
-							? "current"
-							: "locked",
-					href: survey.is_unlocked ? `/surveys/${survey.id}` : undefined,
-				}));
-
-				setItems(mapped);
-			} catch (error) {
-				console.error("Error loading surveys:", error);
-				if (!cancelled) setItems([]);
-			}
-		}
-
-		loadSurverys();
-
-		return () => {
-			cancelled = true;
-		};
-	}, [isLoading, user]);
+	const { user, isLoading } = useRequireAuth();
+	const { data: items } = useAsync(loadSurveyLinks, [user], [] as SurveyLinkItem[], { enabled: !isLoading && !!user });
 
 	if (isLoading) {
-		return <div className="flex min-h-screen items-center justify-center">Loading...</div>;
+		return <FullPageMessage>Loading...</FullPageMessage>;
 	}
 
 	return (

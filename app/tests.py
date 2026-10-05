@@ -8,10 +8,10 @@ from django.core.management import call_command
 from django.core.cache import cache
 from django.db import connection
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 from django.test import TestCase as DjangoTestCase, override_settings
 from rest_framework import status
 from rest_framework.test import APITestCase as DRFAPITestCase
-from rest_framework.authtoken.models import Token
 
 from .models import (
     AdditionalResource,
@@ -2223,8 +2223,6 @@ class PushSubscriptionEndpointReuseTests(APITestCase):
     def setUp(self):
         self.user_a = _make_user("a@test.local")
         self.user_b = _make_user("b@test.local")
-        Token.objects.get_or_create(user=self.user_a)
-        Token.objects.get_or_create(user=self.user_b)
 
     def test_endpoint_reassigned_to_new_user(self):
         payload = {"endpoint": "https://push.example.com/sub/123", "p256dh": "key", "auth": "auth"}
@@ -2434,11 +2432,19 @@ class GoogleLoginEdgeCaseTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertNotIn("token", resp.data)
 
-    def test_verified_email_logs_into_existing_account_ignoring_case(self):
+    def test_google_cannot_take_over_a_password_account(self):
+        # Sign-up doesn't verify emails, so whoever set this password may not own the address.
         resp = self._google_login({"email": "Victim@Test.local", "email_verified": True, "name": "Victim"})
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertNotIn("token", resp.data)
+        self.assertIn("password", resp.data["error"])
+
+    def test_google_account_logs_in_again_ignoring_case(self):
+        google_user = User.objects.create_user(email="g.user@gmail.com", auth_provider="google")
+        resp = self._google_login({"email": "G.User@Gmail.com", "email_verified": True, "name": "G"})
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
-        self.assertEqual(resp.data["user"]["id"], self.existing.pk)
-        self.assertEqual(User.objects.filter(email__iexact="victim@test.local").count(), 1)
+        self.assertEqual(resp.data["user"]["id"], google_user.pk)
+        self.assertEqual(User.objects.filter(email__iexact="g.user@gmail.com").count(), 1)
 
     def test_new_google_user_is_created_lowercase_without_password(self):
         resp = self._google_login({"email": "New.Person@Gmail.com", "email_verified": True, "name": "New"})
@@ -3171,3 +3177,367 @@ class SurveyAdminTests(APITestCase):
             Survey.objects.create(module=module, code=f"wk{week}", title="x", type="weekly", questions=self.QUESTIONS)
         with self.assertNumQueries(4):
             self.client.get("/api/surveys/manage/")
+
+
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+class ReminderDeliveryTests(TestCase):
+    """Real (non dry-run) sends from send_due_reminders and notify_survey_unlocked."""
+
+    def setUp(self):
+        from django.utils import timezone
+        from zoneinfo import ZoneInfo
+        self.user = _make_user("remind@test.local")
+        today = timezone.localdate()
+        cohort = Cohort.objects.create(
+            name="Now", year=today.year, start_date=today, end_date=today + timedelta(days=56)
+        )
+        Enrollment.objects.create(user=self.user, cohort=cohort)
+        with patch("app.signals._fire_async"):
+            self.module = _make_module(week=1)
+            self.item = _make_audio_item(self.module, day_offset=0, title="Body scan")
+        # 08:00 Perth: the default reminder hour.
+        self.fake_now = datetime.datetime.combine(today, datetime.time(8, 0), tzinfo=ZoneInfo("Australia/Perth"))
+
+    def _run(self):
+        with patch("app.management.commands.send_due_reminders._perth_now", return_value=self.fake_now):
+            call_command("send_due_reminders", stdout=StringIO(), stderr=StringIO())
+
+    def _logs(self, notification_type):
+        return NotificationLog.objects.filter(user=self.user, type=notification_type)
+
+    def test_content_reminder_is_emailed_and_logged_once_per_day(self):
+        from django.core import mail
+        self._run()
+        self._run()
+        logs = self._logs(NotificationLog.NotificationType.CONTENT_REMINDER)
+        self.assertEqual(
+            list(logs.values_list("status", "channel", "content_item_id")),
+            [(NotificationLog.Status.SENT, NotificationLog.Channel.EMAIL, self.item.pk)],
+        )
+        self.assertEqual([m.subject for m in mail.outbox], ["Your daily meditation: Body scan"])
+        self.assertIn(f"/modules/{self.module.pk}", mail.outbox[0].body)
+
+    def test_completed_item_is_not_reminded(self):
+        ContentCompletion.objects.create(user=self.user, content_item=self.item)
+        self._run()
+        self.assertFalse(self._logs(NotificationLog.NotificationType.CONTENT_REMINDER).exists())
+
+    def test_survey_reminder_for_unlocked_unanswered_survey(self):
+        from django.core import mail
+        NotificationPreference.objects.create(
+            user=self.user, daily_content_reminder=False, daily_survey_reminder=True
+        )
+        ContentCompletion.objects.create(user=self.user, content_item=self.item)
+        survey = Survey.objects.get(module=self.module, type=SurveyType.WEEKLY)
+        self._run()
+        self._run()
+        logs = self._logs(NotificationLog.NotificationType.SURVEY_PROMPT)
+        self.assertEqual(list(logs.values_list("status", "module_id")), [(NotificationLog.Status.SENT, self.module.pk)])
+        self.assertEqual([m.subject for m in mail.outbox], [f"Survey reminder: {survey.title}"])
+        self.assertIn(f"Your survey '{survey.title}' is ready to complete.", mail.outbox[0].body)
+
+    def test_survey_reminder_skips_locked_and_answered_surveys(self):
+        NotificationPreference.objects.create(
+            user=self.user, daily_content_reminder=False, daily_survey_reminder=True
+        )
+        self._run()  # content not complete, so the survey is still locked
+        ContentCompletion.objects.create(user=self.user, content_item=self.item)
+        survey = Survey.objects.get(module=self.module, type=SurveyType.WEEKLY)
+        SurveyResponse.objects.create(user=self.user, survey=survey, answers={})
+        self._run()  # unlocked but already answered
+        self.assertFalse(self._logs(NotificationLog.NotificationType.SURVEY_PROMPT).exists())
+
+    @override_settings(VAPID_PRIVATE_KEY="test-key")
+    def test_dead_push_endpoint_shared_by_two_reminders(self):
+        """The first send prunes the endpoint; the second must skip it, not crash."""
+        from django.core import mail
+        from pywebpush import WebPushException
+        with patch("app.signals._fire_async"):
+            _make_audio_item(self.module, day_offset=0, title="Breathing")
+        PushSubscription.objects.create(user=self.user, endpoint="https://push.example/gone", p256dh="k", auth="a")
+        gone = WebPushException("gone", response=type("R", (), {"status_code": 410})())
+        with patch("pywebpush.webpush", side_effect=gone):
+            self._run()
+        self.assertFalse(PushSubscription.objects.filter(user=self.user).exists())
+        self.assertEqual(len(mail.outbox), 2)
+
+    def test_survey_unlocked_notice_when_last_item_completed(self):
+        from django.core import mail
+        NotificationPreference.objects.create(user=self.user, survey_unlocked_reminder=True)
+        survey = Survey.objects.get(module=self.module, type=SurveyType.WEEKLY)
+        self.client.force_login(self.user)
+        resp = self.client.post("/api/progress/", {"content_item": self.item.pk})
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        logs = self._logs(NotificationLog.NotificationType.SURVEY_PROMPT)
+        self.assertEqual(list(logs.values_list("status", flat=True)), [NotificationLog.Status.SENT])
+        self.assertEqual([m.subject for m in mail.outbox], [f"Survey available: {survey.title}"])
+
+    def test_no_survey_unlocked_notice_without_opt_in(self):
+        self.client.force_login(self.user)
+        self.client.post("/api/progress/", {"content_item": self.item.pk})
+        self.assertFalse(self._logs(NotificationLog.NotificationType.SURVEY_PROMPT).exists())
+
+
+class DashboardModuleCompletionTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(email="admin@test.local", password="testpass", role=User.Role.ADMIN)
+        cohort = Cohort.objects.create(
+            name="C", year=2026, start_date=date.today() - timedelta(days=7), end_date=date.today() + timedelta(days=49),
+        )
+        self.a, self.b, self.c, self.pending = (
+            User.objects.create_user(email=f"{n}@test.local", password="testpass") for n in ("a", "b", "c", "p")
+        )
+        for user in (self.a, self.b, self.c):
+            Enrollment.objects.create(user=user, cohort=cohort)
+        Enrollment.objects.create(user=self.pending, cohort=cohort, status=Enrollment.Status.PENDING)
+        self.client.force_login(self.admin)
+
+    def _module(self, week, items, published=True):
+        with patch("app.signals._fire_async"):
+            module = Module.objects.create(week_number=week, title=f"W{week}", is_published=published)
+            made = [
+                ContentItem.objects.create(
+                    module=module, title=f"I{week}-{n}", type="video",
+                    provider="youtube", embed_url="https://www.youtube.com/embed/x",
+                )
+                for n in range(items)
+            ]
+        return module, made
+
+    def _stats(self):
+        return {m["id"]: m for m in self.client.get("/api/dashboard/stats/").data["modules"]}
+
+    def _complete(self, user, *items):
+        for item in items:
+            ContentCompletion.objects.create(user=user, content_item=item)
+
+    def test_counts_only_active_students_who_finished_every_item(self):
+        w1, (i1, i2) = self._module(1, 2)
+        w2, (j1,) = self._module(2, 1)
+        empty, _ = self._module(3, 0)
+        hidden, (h1,) = self._module(4, 1, published=False)
+        self._complete(self.a, i1, i2, j1)  # finished both
+        self._complete(self.b, i1)          # half of week 1
+        self._complete(self.c, j1)          # week 2 only
+        self._complete(self.pending, i1, i2, j1, h1)  # not active: never counted
+        stats = self._stats()
+        self.assertEqual(set(stats), {w1.pk, w2.pk, empty.pk})
+        self.assertEqual((stats[w1.pk]["completed_count"], stats[w1.pk]["completion_pct"]), (1, 33.3))
+        self.assertEqual((stats[w2.pk]["completed_count"], stats[w2.pk]["completion_pct"]), (2, 66.7))
+        self.assertEqual((stats[empty.pk]["completed_count"], stats[empty.pk]["eligible_count"]), (0, 3))
+
+    def test_query_count_does_not_grow_with_modules(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        self._module(1, 2)
+        with CaptureQueriesContext(connection) as before:
+            self._stats()
+        for week in range(2, 7):
+            self._module(week, 2)
+        with CaptureQueriesContext(connection) as after:
+            self._stats()
+        self.assertEqual(len(after), len(before))
+
+
+class ContentItemReorderValidationTests(APITestCase):
+    def test_non_integer_ids_are_rejected(self):
+        admin = User.objects.create_user(email="admin@test.local", password="testpass", role=User.Role.ADMIN)
+        with patch("app.signals._fire_async"):
+            module = Module.objects.create(week_number=1, title="W1")
+            item = ContentItem.objects.create(
+                module=module, title="V", type="video", provider="youtube", embed_url="https://www.youtube.com/embed/x",
+            )
+        self.client.force_login(admin)
+        for ids in (["1"], [item.pk, "x"], "nope"):
+            resp = self.client.post("/api/content-items/reorder/", {"module": module.pk, "ids": ids}, format="json")
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, ids)
+        resp = self.client.post("/api/content-items/reorder/", {"module": module.pk, "ids": [item.pk]}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+
+
+class LoginLockoutTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="lock@test.local", password="Calm-River-42")
+
+    def _login(self, password, ip="10.0.0.1"):
+        return self.client.post(
+            "/api/login/", {"email": "Lock@Test.local", "password": password}, format="json", REMOTE_ADDR=ip,
+        )
+
+    def test_five_wrong_passwords_lock_the_account(self):
+        codes = [self._login("wrong", ip=f"10.0.0.{i}").status_code for i in range(4)]
+        self.assertEqual(codes, [401] * 4)
+        fifth = self._login("wrong", ip="10.0.0.9")
+        self.assertEqual(fifth.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(fifth.data["error"], "Too many failed attempts. Try again in 15 minutes.")
+        # Even the right password is refused while locked, from any address.
+        locked = self._login("Calm-River-42", ip="10.0.0.99")
+        self.assertEqual(locked.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertNotIn("token", locked.data)
+
+    def test_lock_expires(self):
+        for i in range(5):
+            self._login("wrong", ip=f"10.0.1.{i}")
+        later = timezone.now() + timedelta(minutes=16)
+        with patch("django.utils.timezone.now", return_value=later):
+            self.assertEqual(self._login("Calm-River-42", ip="10.0.1.99").status_code, status.HTTP_200_OK)
+
+    def test_successful_login_resets_the_count(self):
+        for i in range(4):
+            self._login("wrong", ip=f"10.0.2.{i}")
+        self.assertEqual(self._login("Calm-River-42", ip="10.0.2.50").status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.failed_login_count, 0)
+        self.assertEqual(self._login("wrong", ip="10.0.2.60").status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_django_admin_login_is_locked_too(self):
+        admin = User.objects.create_user(email="boss@test.local", password="Calm-River-42", role=User.Role.ADMIN)
+        for _ in range(5):
+            self.client.post("/admin/login/", {"username": admin.email, "password": "wrong"})
+        resp = self.client.post("/admin/login/", {"username": admin.email, "password": "Calm-River-42"})
+        self.assertEqual(resp.status_code, 200)  # the login form again, not a redirect into the admin
+        self.assertNotIn("_auth_user_id", self.client.session)
+
+
+class PerDeviceTokenTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(email="dev@test.local", password="Calm-River-42")
+
+    def _token(self, ip):
+        resp = self.client.post(
+            "/api/login/", {"email": "dev@test.local", "password": "Calm-River-42"}, format="json", REMOTE_ADDR=ip,
+        )
+        return resp.data["token"]
+
+    def _get_user(self, token):
+        return self.client.get("/api/user/", HTTP_AUTHORIZATION=f"Token {token}")
+
+    def test_each_login_gets_its_own_token_and_logout_ends_only_that_one(self):
+        from .models import AuthToken
+        phone, laptop = self._token("10.1.0.1"), self._token("10.1.0.2")
+        self.assertNotEqual(phone, laptop)
+        # Only hashes are stored.
+        self.assertFalse(AuthToken.objects.filter(key_hash__in=[phone, laptop]).exists())
+        self.client.post("/api/logout/", HTTP_AUTHORIZATION=f"Token {phone}")
+        self.assertEqual(self._get_user(phone).status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(self._get_user(laptop).status_code, status.HTTP_200_OK)
+
+    def test_token_expires_after_seven_idle_days_and_use_extends_it(self):
+        token = self._token("10.1.1.1")
+        start = timezone.now()
+        with patch("django.utils.timezone.now", return_value=start + timedelta(days=6)):
+            self.assertEqual(self._get_user(token).status_code, status.HTTP_200_OK)
+        with patch("django.utils.timezone.now", return_value=start + timedelta(days=12)):
+            self.assertEqual(self._get_user(token).status_code, status.HTTP_200_OK)  # 6 idle days since last use
+        with patch("django.utils.timezone.now", return_value=start + timedelta(days=20)):
+            resp = self._get_user(token)
+        self.assertEqual(resp.status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertIn("expired", resp.data["detail"])
+        self.assertFalse(self.user.auth_tokens.exists())
+
+    def test_password_change_signs_out_every_device(self):
+        phone, laptop = self._token("10.1.2.1"), self._token("10.1.2.2")
+        resp = self.client.post(
+            "/api/change-password/", {"current_password": "Calm-River-42", "new_password": "Quiet-Forest-77"},
+            format="json", HTTP_AUTHORIZATION=f"Token {phone}",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(self._get_user(phone).status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(self._get_user(laptop).status_code, status.HTTP_401_UNAUTHORIZED)
+        self.assertEqual(self._get_user(resp.data["token"]).status_code, status.HTTP_200_OK)
+
+
+class SecurityHardeningTests(APITestCase):
+    def setUp(self):
+        today = timezone.localdate()
+        self.cohort = Cohort.objects.create(
+            name="C", year=today.year, start_date=today - timedelta(days=7), end_date=today + timedelta(days=49),
+        )
+        self.student = User.objects.create_user(email="s@test.local", password="testpass", full_name="Stu")
+        Enrollment.objects.create(user=self.student, cohort=self.cohort)
+        self.thread = ForumThread.objects.create(created_by=self.student, title="t")
+        self.opening = ForumPost.objects.create(thread=self.thread, author=self.student, body="hi", is_head_post=True)
+
+    def _user(self, email, status_value=None):
+        user = User.objects.create_user(email=email, password="testpass")
+        if status_value:
+            Enrollment.objects.create(user=user, cohort=self.cohort, status=status_value)
+        return user
+
+    def test_forum_responses_never_include_emails(self):
+        self.client.force_authenticate(self.student)
+        listing = self.client.get("/api/forum/threads/").data
+        detail = self.client.get(f"/api/forum/threads/{self.thread.pk}/").data
+        self.assertNotIn("s@test.local", str(listing) + str(detail))
+        self.assertNotIn("author_email", listing[0])
+        self.assertNotIn("author_email", detail["opening_post"])
+
+    def test_only_participants_submit_surveys(self):
+        survey = Survey.objects.create(
+            code="end", title="End", type="end", questions=[{"id": "q1", "type": "integer", "text": "x"}],
+        )
+        cases = [
+            (self._user("pending@test.local", Enrollment.Status.PENDING), status.HTTP_403_FORBIDDEN),
+            (self._user("withdrawn@test.local", Enrollment.Status.WITHDRAWN), status.HTTP_403_FORBIDDEN),
+            (self._user("nobody@test.local"), status.HTTP_403_FORBIDDEN),
+            (self._user("done@test.local", Enrollment.Status.COMPLETED), status.HTTP_201_CREATED),
+            (self.student, status.HTTP_201_CREATED),
+        ]
+        for user, expected in cases:
+            self.client.force_authenticate(user)
+            listed = next(s for s in self.client.get("/api/surveys/").data if s["id"] == survey.pk)
+            self.assertEqual(listed["is_unlocked"], expected == status.HTTP_201_CREATED, user.email)
+            resp = self.client.post("/api/survey-responses/", {"survey": survey.pk, "answers": {"q1": 1}}, format="json")
+            self.assertEqual(resp.status_code, expected, user.email)
+
+    def test_unpublished_or_locked_module_cannot_be_marked_viewed(self):
+        with patch("app.signals._fire_async"):
+            draft = Module.objects.create(week_number=9, title="Draft", is_published=False)
+            locked = Module.objects.create(week_number=5, title="Locked", is_published=True)
+            open_week = Module.objects.create(week_number=1, title="Open", is_published=True)
+        self.client.force_authenticate(self.student)
+        for module, expected in ((draft, 400), (locked, 400), (open_week, 201)):
+            resp = self.client.post("/api/content-views/", {"module": module.pk}, format="json")
+            self.assertEqual(resp.status_code, expected, module.title)
+
+    def test_forum_posts_are_capped_at_5000_characters(self):
+        self.client.force_authenticate(self.student)
+        too_long = "x" * 5001
+        self.assertEqual(self.client.post("/api/forum/threads/", {"body": too_long}, format="json").status_code, 400)
+        self.assertEqual(
+            self.client.post("/api/forum/posts/", {"thread": self.thread.pk, "body": too_long}, format="json").status_code, 400,
+        )
+        self.assertEqual(
+            self.client.patch(f"/api/forum/posts/{self.opening.pk}/", {"body": too_long}, format="json").status_code, 400,
+        )
+        self.assertEqual(self.client.post("/api/forum/threads/", {"body": "x" * 5000}, format="json").status_code, 201)
+
+    def test_reply_parent_must_be_in_the_same_thread(self):
+        other = ForumThread.objects.create(created_by=self.student, title="o")
+        self.client.force_authenticate(self.student)
+        resp = self.client.post(
+            "/api/forum/posts/", {"thread": other.pk, "body": "r", "parent_post": self.opening.pk}, format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("parent_post", resp.data)
+
+    def test_cover_images_over_5mb_are_rejected(self):
+        from io import BytesIO
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        from PIL import Image
+        admin = User.objects.create_user(email="a@test.local", password="testpass", role=User.Role.ADMIN)
+        self.client.force_authenticate(admin)
+        small = BytesIO()
+        Image.new("RGB", (10, 10)).save(small, "PNG")
+        # A valid PNG padded past 5 MB (bytes after the end chunk are ignored by decoders).
+        big = SimpleUploadedFile("big.png", small.getvalue() + b"\0" * (5 * 1024 * 1024), content_type="image/png")
+        resp = self.client.post(
+            "/api/additional-resources/", {"category": "book", "title": "Big", "cover_image": big}, format="multipart",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("5 MB", str(resp.data["cover_image"]))
+        ok = SimpleUploadedFile("ok.png", small.getvalue(), content_type="image/png")
+        resp = self.client.post(
+            "/api/additional-resources/", {"category": "book", "title": "Ok", "cover_image": ok}, format="multipart",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)

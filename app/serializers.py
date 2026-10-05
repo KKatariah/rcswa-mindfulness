@@ -1,13 +1,19 @@
 import re
-from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.db.models import Count, Max, Q
+from django.db.models import Max
 from django.utils import timezone
 from rest_framework import serializers
 from rest_framework.exceptions import PermissionDenied
+from .access import (
+    can_edit_forum_item,
+    is_admin,
+    module_is_unlocked,
+    module_unlock_date,
+    survey_is_unlocked,
+)
 from .utils import gravatar_url
 
 from .models import (
@@ -127,6 +133,10 @@ class ResourceSerializer(serializers.ModelSerializer):
 
 # ── Additional Resources (public Resources page: books/documentaries/programs) ──
 
+# Largest cover image an admin can upload.
+COVER_IMAGE_MAX_BYTES = 5 * 1024 * 1024
+
+
 class AdditionalResourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = AdditionalResource
@@ -144,6 +154,11 @@ class AdditionalResourceSerializer(serializers.ModelSerializer):
         # Order is set by appending to the category and changed only via the reorder action,
         # so two resources can't be given the same slot.
         read_only_fields = ["id", "display_order", "created_at", "updated_at"]
+
+    def validate_cover_image(self, image):
+        if image and image.size > COVER_IMAGE_MAX_BYTES:
+            raise serializers.ValidationError("Cover images must be 5 MB or smaller.")
+        return image
 
     @staticmethod
     def _end_of(category):
@@ -187,35 +202,6 @@ class ContentItemSerializer(serializers.ModelSerializer):
             last = validated_data["module"].content_items.order_by("-display_order").first()
             validated_data["display_order"] = last.display_order + 1 if last else 1
         return super().create(validated_data)
-
-
-def _cohort_start_date(user):
-    """Start date of the user's most recent active cohort, or None. Cached on the user for the request."""
-    if not hasattr(user, "_cohort_start_date"):
-        enrollment = (
-            Enrollment.objects
-            .filter(user=user, status=Enrollment.Status.ACTIVE)
-            .select_related("cohort")
-            .order_by("-enrolled_at")
-            .first()
-        )
-        user._cohort_start_date = enrollment.cohort.start_date if enrollment else None
-    return user._cohort_start_date
-
-
-def module_unlock_date(module, user):
-    """Week N opens (N-1) weeks after the user's cohort starts. None when the user has no active cohort."""
-    start = _cohort_start_date(user)
-    return start + timedelta(weeks=module.week_number - 1) if start else None
-
-
-def module_is_unlocked(module, user):
-    if getattr(user, "role", None) == "admin" or user.is_staff:
-        return True  # admins can open any module early to prepare content
-    if not module.is_published:
-        return False
-    unlock_date = module_unlock_date(module, user)
-    return unlock_date is not None and unlock_date <= timezone.localdate()
 
 
 class ModuleSerializer(serializers.ModelSerializer):
@@ -286,6 +272,12 @@ class ContentCompletionSerializer(serializers.ModelSerializer):
 
 
 class ContentViewSerializer(serializers.ModelSerializer):
+    def validate_module(self, module):
+        # Same rule as opening the module page: unpublished or locked modules can't be "viewed".
+        if not module_is_unlocked(module, self.context["request"].user):
+            raise serializers.ValidationError("This module is not available yet.")
+        return module
+
     # read_only=True: user is injected by the viewset, never accepted from the payload.
     user = serializers.PrimaryKeyRelatedField(read_only=True)
 
@@ -307,61 +299,72 @@ def _forum_author_name(author, request):
     """
     if author is None:
         return "Deleted user"
-    if request and request.user.is_authenticated:
-        u = request.user
-        if getattr(u, "role", None) == "admin" or u.is_staff:
-            if author.display_name:
-                return f"{author.display_name} ({author.full_name})"
-            return author.full_name
+    if request and is_admin(request.user):
+        if author.display_name:
+            return f"{author.display_name} ({author.full_name})"
+        return author.full_name
     return author.display_name or author.full_name
 
 
-def _can_edit(obj, request):
-    """True if the requesting user authored obj or has admin/staff rights."""
-    if not request or not request.user.is_authenticated:
-        return False
-    u = request.user
-    if getattr(u, "role", None) == "admin" or u.is_staff:
-        return True
-    if isinstance(obj, ForumThread):
-        return obj.created_by_id == u.pk
-    return obj.author_id == u.pk
+class _ForumAuthorFieldsMixin(serializers.Serializer):
+    """Author name/avatar and can_edit for a thread or post; author_attr names the author field.
+
+    Authors' email addresses are never included: display names exist so students aren't identified."""
+
+    author_attr = "author"
+
+    author_name = serializers.SerializerMethodField()
+    author_avatar_url = serializers.SerializerMethodField()
+    can_edit = serializers.SerializerMethodField()
+
+    def _author(self, obj):
+        return getattr(obj, self.author_attr)
+
+    def get_author_name(self, obj):
+        return _forum_author_name(self._author(obj), self.context.get("request"))
+
+    def get_author_avatar_url(self, obj):
+        author = self._author(obj)
+        return gravatar_url(author.email if author else "")
+
+    def get_can_edit(self, obj):
+        request = self.context.get("request")
+        return bool(request) and can_edit_forum_item(request.user, obj)
+
+
+# Longest forum post or reply, in characters (the client's textareas use the same cap).
+FORUM_POST_MAX_CHARS = 5000
+
+
+def _request_is_admin(serializer):
+    request = serializer.context.get("request")
+    return bool(request) and is_admin(request.user)
 
 
 class ForumPostCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = ForumPost
         fields = ["id", "thread", "parent_post", "body"]
+        extra_kwargs = {"body": {"max_length": FORUM_POST_MAX_CHARS}}
+
+    def validate(self, attrs):
+        parent = attrs.get("parent_post")
+        if parent is not None and parent.thread_id != attrs["thread"].pk:
+            raise serializers.ValidationError({"parent_post": "A reply must be to a post in the same thread."})
+        return attrs
 
 
-class ForumPostSerializer(serializers.ModelSerializer):
-    author_name = serializers.SerializerMethodField()
-    author_email = serializers.SerializerMethodField()
-    author_avatar_url = serializers.SerializerMethodField()
-    can_edit = serializers.SerializerMethodField()
+class ForumPostSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer):
 
     class Meta:
         model = ForumPost
         fields = [
             "id", "thread", "parent_post",
-            "author_name", "author_email", "author_avatar_url",
+            "author_name", "author_avatar_url",
             "body", "created_at", "updated_at", "edited_at", "can_edit",
         ]
         read_only_fields = ["thread", "parent_post", "created_at", "updated_at", "edited_at"]
-
-    def get_author_name(self, obj):
-        return _forum_author_name(obj.author, self.context.get("request"))
-
-    def get_author_email(self, obj):
-        return getattr(obj.author, "email", None)
-
-    def get_author_avatar_url(self, obj):
-        if obj.author is None:
-            return gravatar_url("")
-        return gravatar_url(obj.author.email)
-
-    def get_can_edit(self, obj):
-        return _can_edit(obj, self.context.get("request"))
+        extra_kwargs = {"body": {"max_length": FORUM_POST_MAX_CHARS}}
 
     def update(self, instance, validated_data):
         instance.body = validated_data.get("body", instance.body)
@@ -370,75 +373,33 @@ class ForumPostSerializer(serializers.ModelSerializer):
         return instance
 
 
-def _is_admin(request):
-    if not request or not request.user.is_authenticated:
-        return False
-    u = request.user
-    return getattr(u, "role", None) == "admin" or u.is_staff
+def _thread_posts(thread):
+    """The thread's posts, opening post first. Sorted once and kept on the thread for this request."""
+    if not hasattr(thread, "_sorted_posts"):
+        thread._sorted_posts = sorted(thread.posts.all(), key=lambda p: (p.created_at, p.pk))
+    return thread._sorted_posts
 
 
-# ── Forum archive ────────────────────────────────────────────────────────────────
-# Computed on read, not stored: no scheduled job exists in this repo, and none is
-# being added. Archive state is always derived fresh from today's date.
+class ForumThreadSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer):
+    author_attr = "created_by"
 
-def _is_program_active(today=None):
-    """True if `today` falls within [start_date, end_date] of ANY cohort.
-    The forum is read-only (not hidden) whenever this is False. If no cohort has
-    ever been created, there is no "programme" to have ended yet, so stay open."""
-    if not Cohort.objects.exists():
-        return True
-    today = today or timezone.localdate()
-    return Cohort.objects.filter(start_date__lte=today, end_date__gte=today).exists()
-
-
-def _pick_signup_cohort(today=None):
-    """The cohort a new signup should be auto-enrolled into: the currently
-    active one, or if none is active, the soonest upcoming one. None if
-    neither exists."""
-    today = today or timezone.localdate()
-    active = (
-        Cohort.objects.filter(start_date__lte=today, end_date__gte=today)
-        .order_by("start_date")
-        .first()
-    )
-    if active:
-        return active
-    return Cohort.objects.filter(start_date__gt=today).order_by("start_date").first()
-
-
-class ForumThreadSerializer(serializers.ModelSerializer):
-    author_name = serializers.SerializerMethodField()
-    author_email = serializers.SerializerMethodField()
-    author_avatar_url = serializers.SerializerMethodField()
     body = serializers.SerializerMethodField()
     reply_count = serializers.SerializerMethodField()
     edited_at = serializers.SerializerMethodField()
-    can_edit = serializers.SerializerMethodField()
     can_pin = serializers.SerializerMethodField()
 
     class Meta:
         model = ForumThread
         fields = [
             "id", "title", "module", "content_item",
-            "author_name", "author_email", "author_avatar_url",
+            "author_name", "author_avatar_url",
             "created_at", "updated_at", "edited_at",
             "body", "reply_count", "can_edit", "is_pinned", "pin_order", "can_pin",
         ]
         read_only_fields = ["module", "content_item", "created_at", "updated_at", "edited_at", "pin_order"]
 
-    def get_author_name(self, obj):
-        return _forum_author_name(obj.created_by, self.context.get("request"))
-
-    def get_author_email(self, obj):
-        return getattr(obj.created_by, "email", None)
-
-    def get_author_avatar_url(self, obj):
-        if obj.created_by is None:
-            return gravatar_url("")
-        return gravatar_url(obj.created_by.email)
-
     def get_body(self, obj):
-        posts = sorted(obj.posts.all(), key=lambda p: (p.created_at, p.pk))
+        posts = _thread_posts(obj)
         return posts[0].body if posts else ""
 
     def get_reply_count(self, obj):
@@ -446,20 +407,14 @@ class ForumThreadSerializer(serializers.ModelSerializer):
         return max(0, len(active) - 1)
 
     def get_edited_at(self, obj):
-        posts = sorted(obj.posts.all(), key=lambda p: (p.created_at, p.pk))
-        if not posts:
-            return None
-        return posts[0].edited_at
-
-    def get_can_edit(self, obj):
-        return _can_edit(obj, self.context.get("request"))
+        posts = _thread_posts(obj)
+        return posts[0].edited_at if posts else None
 
     def get_can_pin(self, obj):
-        return _is_admin(self.context.get("request"))
+        return _request_is_admin(self)
 
     def validate(self, attrs):
-        request = self.context.get("request")
-        if "is_pinned" in attrs and not _is_admin(request):
+        if "is_pinned" in attrs and not _request_is_admin(self):
             raise PermissionDenied("Only admins can pin or unpin threads.")
 
         is_pinning = attrs.get("is_pinned")
@@ -483,21 +438,17 @@ class ForumThreadDetailSerializer(ForumThreadSerializer):
         fields = ForumThreadSerializer.Meta.fields + ["opening_post", "replies"]
 
     def get_opening_post(self, obj):
-        posts = sorted(obj.posts.all(), key=lambda p: (p.created_at, p.pk))
-        if not posts:
-            return None
-        return ForumPostSerializer(posts[0], context=self.context).data
+        posts = _thread_posts(obj)
+        return ForumPostSerializer(posts[0], context=self.context).data if posts else None
 
     def get_replies(self, obj):
-        posts = sorted(obj.posts.all(), key=lambda p: (p.created_at, p.pk))
-        first_id = posts[0].pk if posts else None
-        replies = [p for p in posts if p.pk != first_id and not p.is_deleted]
+        replies = [p for p in _thread_posts(obj)[1:] if not p.is_deleted]
         return ForumPostSerializer(replies, many=True, context=self.context).data
 
 
 class ForumThreadCreateSerializer(serializers.ModelSerializer):
     # title is derived from the body on the server; not accepted from the client.
-    body = serializers.CharField()
+    body = serializers.CharField(max_length=FORUM_POST_MAX_CHARS)
 
     class Meta:
         model = ForumThread
@@ -562,30 +513,6 @@ class AdminUserUpdateSerializer(serializers.ModelSerializer):
 
 # ── Surveys ────────────────────────────────────────────────────────────────────
 
-def _survey_is_unlocked(survey, user):
-    """Return True if every ContentItem in the survey's module is completed by user."""
-    # Once submitted, content added to the module later must not re-lock it.
-    if SurveyResponse.objects.filter(user=user, survey=survey).exists():
-        return True
-    if survey.module_id is None:
-        # Weekly surveys always require a module; guard against misconfigured data.
-        if survey.type == Survey.SurveyType.WEEKLY:
-            return False
-        return True
-    if not module_is_unlocked(survey.module, user):
-        return False
-    required_ids = set(
-        ContentItem.objects.filter(module_id=survey.module_id).values_list("id", flat=True)
-    )
-    if not required_ids:
-        return True
-    completed_ids = set(
-        ContentCompletion.objects.filter(user=user, content_item_id__in=required_ids)
-        .values_list("content_item_id", flat=True)
-    )
-    return required_ids == completed_ids
-
-
 # Generous cap on free-text answers; the form asks for 100-250 words.
 LONGTEXT_MAX_CHARS = 5000
 
@@ -648,19 +575,12 @@ class SurveySerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or not request.user.is_authenticated:
             return False
-        if self.get_has_responded(obj):
-            return True
-        completed_ids = self.context.get("completed_ids")
-        if completed_ids is not None:
-            if obj.module_id is None:
-                if obj.type == Survey.SurveyType.WEEKLY:
-                    return False
-                return True
-            if not module_is_unlocked(obj.module, request.user):
-                return False
-            required_ids = {ci.id for ci in obj.module.content_items.all()}
-            return not required_ids or required_ids <= completed_ids
-        return _survey_is_unlocked(obj, request.user)
+        return survey_is_unlocked(
+            obj,
+            request.user,
+            completed_ids=self.context.get("completed_ids"),
+            responded_ids=self.context.get("responded_ids"),
+        )
 
     def get_has_responded(self, obj):
         request = self.context.get("request")
@@ -860,111 +780,7 @@ class SurveyResponseAdminSerializer(serializers.ModelSerializer):
         return obj.survey.title if obj.survey else ""
 
 
-# ── Admin dashboard stats ────────────────────────────────────────────────────────
-# ORM aggregation only — no raw SQL, no pagination/filtering library (none installed).
-
-def _cohort_breakdown():
-    cohorts = Cohort.objects.annotate(
-        enrolled=Count("enrollments"),
-        pending=Count("enrollments", filter=Q(enrollments__status=Enrollment.Status.PENDING)),
-        active=Count("enrollments", filter=Q(enrollments__status=Enrollment.Status.ACTIVE)),
-        completed=Count("enrollments", filter=Q(enrollments__status=Enrollment.Status.COMPLETED)),
-        withdrawn=Count("enrollments", filter=Q(enrollments__status=Enrollment.Status.WITHDRAWN)),
-    ).order_by("-start_date")
-    return [
-        {
-            "cohort_id": c.id,
-            "cohort_name": str(c),
-            "enrolled": c.enrolled,
-            "pending": c.pending,
-            "active": c.active,
-            "completed": c.completed,
-            "withdrawn": c.withdrawn,
-        }
-        for c in cohorts
-    ]
-
-
-def _module_completion_stats():
-    """Completion % of published modules among ACTIVE-enrolled students. A student
-    "completes" a module when they've completed every ContentItem in it — same
-    all-items concept as _survey_is_unlocked."""
-    active_user_ids = set(
-        Enrollment.objects.filter(status=Enrollment.Status.ACTIVE).values_list("user_id", flat=True)
-    )
-    eligible_count = len(active_user_ids)
-    results = []
-    modules = Module.objects.filter(is_published=True).prefetch_related("content_items")
-    for module in modules:
-        item_ids = list(module.content_items.values_list("id", flat=True))
-        if not item_ids or eligible_count == 0:
-            completed_count = 0
-        else:
-            completed_count = (
-                ContentCompletion.objects
-                .filter(user_id__in=active_user_ids, content_item_id__in=item_ids)
-                .values("user_id")
-                .annotate(n=Count("content_item_id", distinct=True))
-                .filter(n=len(item_ids))
-                .count()
-            )
-        pct = round((completed_count / eligible_count) * 100, 1) if eligible_count else 0.0
-        results.append({
-            "id": module.id,
-            "week_number": module.week_number,
-            "title": module.title,
-            "completed_count": completed_count,
-            "eligible_count": eligible_count,
-            "completion_pct": pct,
-        })
-    return results
-
-
-def _survey_response_rates():
-    active_user_ids = set(
-        Enrollment.objects.filter(status=Enrollment.Status.ACTIVE).values_list("user_id", flat=True)
-    )
-    eligible_count = len(active_user_ids)
-    surveys = Survey.objects.annotate(response_count=Count("responses"))
-    results = []
-    for survey in surveys:
-        pct = round((survey.response_count / eligible_count) * 100, 1) if eligible_count else 0.0
-        results.append({
-            "survey_id": survey.id,
-            "code": survey.code,
-            "title": survey.title,
-            "response_count": survey.response_count,
-            "eligible_count": eligible_count,
-            "response_pct": pct,
-        })
-    return results
-
-
-def _forum_activity_stats():
-    return {
-        "thread_count": ForumThread.objects.count(),
-        "post_count": ForumPost.objects.filter(is_deleted=False).count(),
-        "active_participants": (
-            ForumPost.objects.filter(is_deleted=False).values("author").distinct().count()
-        ),
-    }
-
-
-def _enrollment_status_breakdown():
-    rows = Enrollment.objects.values("status").annotate(n=Count("id"))
-    breakdown = {choice: 0 for choice in Enrollment.Status.values}
-    for row in rows:
-        breakdown[row["status"]] = row["n"]
-    return breakdown
-
-
 # ── Profile ────────────────────────────────────────────────────────────────────
-
-class ProfileUpdateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ["display_name"]
-
 
 class ChangePasswordSerializer(serializers.Serializer):
     current_password = serializers.CharField(write_only=True)
@@ -1011,24 +827,3 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
         if value.minute or value.second:
             raise serializers.ValidationError("Reminder time must be on the hour (e.g. 08:00).")
         return value
-
-
-# –– User profiles –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
-
-class UserSerializer(serializers.ModelSerializer):
-    avatar_url = serializers.SerializerMethodField()
-
-    class Meta:
-        model = User
-        fields = [
-            "id",
-            "email",
-            "full_name",
-            "display_name",
-            "avatar_url",
-            "auth_provider",
-            "role",
-        ]
-
-    def get_avatar_url(self, obj):
-        return gravatar_url(obj.email)

@@ -1,10 +1,18 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import Head from "next/head";
 import AdminLayout from "@/components/admin/AdminLayout";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import AdminTable from "@/components/admin/AdminTable";
 import Modal from "@/components/main/Modal";
+import Badge, { type BadgeTone } from "@/components/ui/Badge";
+import Card from "@/components/ui/Card";
 import Select from "@/components/ui/Select";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { LoadingState } from "@/components/ui/feedback";
+import { Field, FormActions, FormError, TextField } from "@/components/ui/form";
 import { PencilIcon } from "@/components/ui/icons";
+import { useAsync } from "@/hooks/useAsync";
+import { useFormSubmit } from "@/hooks/useFormSubmit";
 import {
 	listCohorts,
 	listEnrollments,
@@ -16,32 +24,21 @@ import {
 } from "@/lib/api";
 import type { AdminUser, Cohort, Enrollment } from "@/types/admin";
 
-const STATUS_STYLES: Record<Enrollment["status"], string> = {
-	pending: "bg-amber-100 text-amber-700",
-	active: "bg-green-100 text-green-700",
-	completed: "bg-blue-100 text-blue-700",
-	withdrawn: "bg-gray-100 text-gray-600",
+const STATUS_TONES: Record<Enrollment["status"], BadgeTone> = {
+	pending: "amber",
+	active: "green",
+	completed: "blue",
+	withdrawn: "gray",
 };
 
-const ROLE_STYLES: Record<AdminUser["role"], string> = {
-	admin: "bg-purple-100 text-purple-700",
-	student: "bg-gray-100 text-gray-600",
+const ROLE_TONES: Record<AdminUser["role"], BadgeTone> = {
+	admin: "purple",
+	student: "gray",
 };
 
-function StatusBadge({ status }: { status: Enrollment["status"] }) {
-	return (
-		<span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${STATUS_STYLES[status]}`}>
-			{status}
-		</span>
-	);
-}
-
-function RoleBadge({ role }: { role: AdminUser["role"] }) {
-	return (
-		<span className={`inline-block rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${ROLE_STYLES[role]}`}>
-			{role}
-		</span>
-	);
+function EnrollmentStatus({ enrollment }: { enrollment: Enrollment | undefined }) {
+	if (!enrollment) return <span className="text-xs text-muted">Not enrolled</span>;
+	return <Badge tone={STATUS_TONES[enrollment.status]}>{enrollment.status}</Badge>;
 }
 
 type EditFormState = {
@@ -63,52 +60,36 @@ function EditUserForm({
 	onCancel: () => void;
 }) {
 	const [form, setForm] = useState(initial);
-	const [error, setError] = useState<string | null>(null);
-	const [submitting, setSubmitting] = useState(false);
+	const { submitting, error, run } = useFormSubmit("Failed to save user");
 	const [confirmingPromote, setConfirmingPromote] = useState(false);
 
-	async function handleSubmit(e: FormEvent) {
+	function handleSubmit(e: FormEvent) {
 		e.preventDefault();
-		setError(null);
-		setSubmitting(true);
-		try {
-			await onSubmit(form);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to save user");
-		} finally {
-			setSubmitting(false);
-		}
+		void run(() => onSubmit(form));
 	}
 
 	return (
 		<form onSubmit={handleSubmit} className="flex flex-col gap-4">
-			{error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+			<FormError message={error} />
 
-			<div className="flex flex-col gap-2">
-				<label htmlFor="user-name" className="text-sm font-semibold text-ink">Full name</label>
-				<input
-					id="user-name"
-					required
-					value={form.full_name}
-					onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
-					className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-				/>
-			</div>
+			<TextField
+				id="user-name"
+				label="Full name"
+				required
+				value={form.full_name}
+				onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
+			/>
 
-			<div className="flex flex-col gap-2">
-				<label htmlFor="user-email" className="text-sm font-semibold text-ink">Email</label>
-				<input
-					id="user-email"
-					type="email"
-					required
-					value={form.email}
-					onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-					className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-				/>
-			</div>
+			<TextField
+				id="user-email"
+				label="Email"
+				type="email"
+				required
+				value={form.email}
+				onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+			/>
 
-			<div className="flex flex-col gap-2">
-				<label htmlFor="user-role" className="text-sm font-semibold text-ink">Role</label>
+			<Field id="user-role" label="Role">
 				<Select
 					id="user-role"
 					value={form.role}
@@ -125,10 +106,9 @@ function EditUserForm({
 					]}
 					className="h-12 w-full"
 				/>
-			</div>
+			</Field>
 
-			<div className="flex flex-col gap-2">
-				<label htmlFor="user-cohort" className="text-sm font-semibold text-ink">Cohort</label>
+			<Field id="user-cohort" label="Cohort">
 				<Select
 					id="user-cohort"
 					value={form.cohort}
@@ -139,24 +119,9 @@ function EditUserForm({
 					]}
 					className="h-12 w-full"
 				/>
-			</div>
+			</Field>
 
-			<div className="mt-2 flex gap-3">
-				<button
-					type="submit"
-					disabled={submitting}
-					className="h-12 flex-1 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white disabled:opacity-50"
-				>
-					{submitting ? "Saving…" : "Save"}
-				</button>
-				<button
-					type="button"
-					onClick={onCancel}
-					className="h-12 flex-1 rounded-xl border border-gray-200 text-[15px] font-semibold text-ink"
-				>
-					Cancel
-				</button>
-			</div>
+			<FormActions submitting={submitting} onCancel={onCancel} />
 
 			{confirmingPromote && (
 				<ConfirmDialog
@@ -175,38 +140,17 @@ function EditUserForm({
 }
 
 export default function AdminUsersPage() {
-	const [users, setUsers] = useState<AdminUser[]>([]);
-	const [cohorts, setCohorts] = useState<Cohort[]>([]);
-	const [enrollments, setEnrollments] = useState<Enrollment[]>([]);
+	const usersState = useAsync(listUsers, [], [] as AdminUser[], { errorFallback: "Failed to load users" });
+	const cohortsState = useAsync(listCohorts, [], [] as Cohort[], { errorFallback: "Failed to load users" });
+	const enrollmentsState = useAsync(() => listEnrollments(), [], [] as Enrollment[], { errorFallback: "Failed to load users" });
+	const { data: users, setData: setUsers } = usersState;
+	const cohorts = cohortsState.data;
+	const { data: enrollments, setData: setEnrollments } = enrollmentsState;
+	const loading = usersState.loading || cohortsState.loading || enrollmentsState.loading;
+	const error = usersState.error ?? cohortsState.error ?? enrollmentsState.error;
 	const [roleFilter, setRoleFilter] = useState<string>("");
 	const [search, setSearch] = useState("");
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
 	const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
-
-	useEffect(() => {
-		let cancelled = false;
-		const token = localStorage.getItem("token") ?? "";
-		(async () => {
-			try {
-				const [userData, cohortData, enrollmentData] = await Promise.all([
-					listUsers(token),
-					listCohorts(token),
-					listEnrollments({}, token),
-				]);
-				if (!cancelled) {
-					setUsers(userData);
-					setCohorts(cohortData);
-					setEnrollments(enrollmentData);
-				}
-			} catch (e) {
-				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load users");
-			} finally {
-				if (!cancelled) setLoading(false);
-			}
-		})();
-		return () => { cancelled = true; };
-	}, []);
 
 	// A user can have more than one enrollment record over time (e.g. withdrawn
 	// from one cohort, later enrolled in another) — always keep the most recent
@@ -237,25 +181,20 @@ export default function AdminUsersPage() {
 
 	async function handleSaveUser(form: EditFormState) {
 		if (!editingUser) return;
-		const token = localStorage.getItem("token") ?? "";
 
-		const updated = await updateUser(
-			editingUser.id,
-			{ full_name: form.full_name, email: form.email, role: form.role },
-			token,
-		);
+		const updated = await updateUser(editingUser.id, { full_name: form.full_name, email: form.email, role: form.role });
 
 		const existing = enrollmentByUser.get(editingUser.id);
 		const nextCohortId = form.cohort ? Number(form.cohort) : null;
 		let nextEnrollment = existing ?? null;
 
 		if (nextCohortId === null && existing) {
-			await deleteEnrollment(existing.id, token);
+			await deleteEnrollment(existing.id);
 			nextEnrollment = null;
 		} else if (nextCohortId !== null && !existing) {
-			nextEnrollment = await createEnrollment({ user: editingUser.id, cohort: nextCohortId }, token);
+			nextEnrollment = await createEnrollment({ user: editingUser.id, cohort: nextCohortId });
 		} else if (nextCohortId !== null && existing && existing.cohort !== nextCohortId) {
-			nextEnrollment = await updateEnrollment(existing.id, { cohort: nextCohortId }, token);
+			nextEnrollment = await updateEnrollment(existing.id, { cohort: nextCohortId });
 		}
 
 		setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)));
@@ -272,10 +211,9 @@ export default function AdminUsersPage() {
 				<title>Users — Admin</title>
 			</Head>
 
-			<div className="flex flex-wrap items-center justify-between gap-3">
-				<h1 className="text-2xl font-extrabold text-ink">Users</h1>
+			<AdminPageHeader title="Users">
 				<span className="text-sm text-muted">{filtered.length} of {users.length}</span>
-			</div>
+			</AdminPageHeader>
 
 			<div className="mt-6 flex flex-wrap gap-3">
 				<input
@@ -298,13 +236,13 @@ export default function AdminUsersPage() {
 			</div>
 
 			{loading ? (
-				<div className="mt-6 flex justify-center rounded-2xl border border-gray-200 bg-white py-16">
-					<span className="text-sm text-muted">Loading…</span>
-				</div>
+				<Card variant="admin" className="mt-6">
+					<LoadingState />
+				</Card>
 			) : error ? (
-				<p className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 text-sm text-red-600">{error}</p>
+				<Card as="p" variant="admin" className="mt-6 p-6 text-sm text-red-600">{error}</Card>
 			) : filtered.length === 0 ? (
-				<p className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 text-sm text-muted">No users found.</p>
+				<Card as="p" variant="admin" className="mt-6 p-6 text-sm text-muted">No users found.</Card>
 			) : (
 				<>
 					{/* Mobile: stacked cards */}
@@ -312,7 +250,7 @@ export default function AdminUsersPage() {
 						{filtered.map((u) => {
 							const enrollment = enrollmentByUser.get(u.id);
 							return (
-								<div key={u.id} className="rounded-2xl border border-gray-200 bg-white p-4">
+								<Card key={u.id} variant="admin" className="p-4">
 									<div className="flex items-start justify-between gap-3">
 										<div className="min-w-0">
 											<p className="truncate font-semibold text-ink">{u.full_name || u.display_name || "—"}</p>
@@ -329,8 +267,8 @@ export default function AdminUsersPage() {
 									</div>
 
 									<div className="mt-3 flex flex-wrap items-center gap-2">
-										<RoleBadge role={u.role} />
-										{enrollment ? <StatusBadge status={enrollment.status} /> : <span className="text-xs text-muted">Not enrolled</span>}
+										<Badge tone={ROLE_TONES[u.role]}>{u.role}</Badge>
+										<EnrollmentStatus enrollment={enrollment} />
 									</div>
 
 									<dl className="mt-3 grid grid-cols-2 gap-y-1.5 text-sm">
@@ -339,47 +277,32 @@ export default function AdminUsersPage() {
 										<dt className="text-muted">Joined</dt>
 										<dd className="text-right text-ink-soft">{new Date(u.created_at).toLocaleDateString()}</dd>
 									</dl>
-								</div>
+								</Card>
 							);
 						})}
 					</div>
 
 					{/* Desktop: table */}
-					<div className="mt-6 hidden overflow-x-auto rounded-2xl border border-gray-200 bg-white md:block">
-						<table className="w-full text-left text-sm">
-							<thead>
-								<tr className="border-b border-gray-200 text-xs font-semibold uppercase tracking-wide text-muted">
-									<th className="px-5 py-3">Name</th>
-									<th className="px-5 py-3">Email</th>
-									<th className="px-5 py-3">Role</th>
-									<th className="px-5 py-3">Cohort</th>
-									<th className="px-5 py-3">Status</th>
-									<th className="px-5 py-3">Joined</th>
-									<th className="px-5 py-3" />
+					<AdminTable columns={["Name", "Email", "Role", "Cohort", "Status", "Joined", ""]} className="mt-6 hidden md:block">
+						{filtered.map((u) => {
+							const enrollment = enrollmentByUser.get(u.id);
+							return (
+								<tr key={u.id} className="border-b border-gray-100 last:border-0">
+									<td className="px-5 py-3 font-semibold text-ink">{u.full_name || u.display_name || "—"}</td>
+									<td className="px-5 py-3 text-ink-soft">{u.email}</td>
+									<td className="px-5 py-3"><Badge tone={ROLE_TONES[u.role]}>{u.role}</Badge></td>
+									<td className="px-5 py-3 text-ink-soft">{enrollment ? cohortName(enrollment.cohort) : "—"}</td>
+									<td className="px-5 py-3"><EnrollmentStatus enrollment={enrollment} /></td>
+									<td className="px-5 py-3 text-ink-soft">{new Date(u.created_at).toLocaleDateString()}</td>
+									<td className="px-5 py-3">
+										<button type="button" onClick={() => setEditingUser(u)} aria-label="Edit user">
+											<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
+										</button>
+									</td>
 								</tr>
-							</thead>
-							<tbody>
-								{filtered.map((u) => {
-									const enrollment = enrollmentByUser.get(u.id);
-									return (
-										<tr key={u.id} className="border-b border-gray-100 last:border-0">
-											<td className="px-5 py-3 font-semibold text-ink">{u.full_name || u.display_name || "—"}</td>
-											<td className="px-5 py-3 text-ink-soft">{u.email}</td>
-											<td className="px-5 py-3"><RoleBadge role={u.role} /></td>
-											<td className="px-5 py-3 text-ink-soft">{enrollment ? cohortName(enrollment.cohort) : "—"}</td>
-											<td className="px-5 py-3">{enrollment ? <StatusBadge status={enrollment.status} /> : <span className="text-xs text-muted">Not enrolled</span>}</td>
-											<td className="px-5 py-3 text-ink-soft">{new Date(u.created_at).toLocaleDateString()}</td>
-											<td className="px-5 py-3">
-												<button type="button" onClick={() => setEditingUser(u)} aria-label="Edit user">
-													<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
-												</button>
-											</td>
-										</tr>
-									);
-								})}
-							</tbody>
-						</table>
-					</div>
+							);
+						})}
+					</AdminTable>
 				</>
 			)}
 

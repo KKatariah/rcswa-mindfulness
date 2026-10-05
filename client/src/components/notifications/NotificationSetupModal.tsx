@@ -1,6 +1,8 @@
 import { useState } from "react";
 import Modal from "@/components/main/Modal";
-import { enableNotifications } from "@/components/notifications/NotificationManager";
+import Tabs from "@/components/ui/Tabs";
+import { errorMessage } from "@/lib/errors";
+import { enableNotifications } from "@/lib/pushNotifications";
 import {
 	NOTIFICATION_SETUP_CONTENT,
 	detectPlatform,
@@ -29,13 +31,7 @@ export default function NotificationSetupModal({ isOpen, onClose }: Props) {
 			const message = await enableNotifications();
 			setResult({ text: message, isError: false });
 		} catch (err) {
-			setResult({
-				text:
-					err instanceof Error
-						? err.message
-						: "Failed to enable notifications.",
-				isError: true,
-			});
+			setResult({ text: errorMessage(err, "Failed to enable notifications."), isError: true });
 		} finally {
 			setEnabling(false);
 		}
@@ -43,36 +39,16 @@ export default function NotificationSetupModal({ isOpen, onClose }: Props) {
 
 	return (
 		<Modal isOpen={isOpen} onClose={onClose} title="Set up notifications">
-			{/* Platform tab selector */}
-			<div
-				role="tablist"
-				aria-label="Select your device"
-				className="flex gap-1 rounded-xl bg-gray-100 p-1"
-			>
-				{PLATFORMS.map((platform) => {
-					const isActive = platform === activeTab;
-					return (
-						<button
-							key={platform}
-							type="button"
-							role="tab"
-							aria-selected={isActive}
-							onClick={() => {
-								setActiveTab(platform);
-								setResult(null);
-							}}
-							className={[
-								"flex-1 rounded-lg px-3 py-2 text-sm font-semibold transition-colors",
-								isActive
-									? "bg-white text-ink shadow-sm"
-									: "text-muted hover:text-ink",
-							].join(" ")}
-						>
-							{NOTIFICATION_SETUP_CONTENT[platform].tabLabel}
-						</button>
-					);
-				})}
-			</div>
+			<Tabs
+				variant="pills"
+				label="Select your device"
+				tabs={PLATFORMS.map((platform) => ({ id: platform, label: NOTIFICATION_SETUP_CONTENT[platform].tabLabel }))}
+				active={activeTab}
+				onChange={(platform) => {
+					setActiveTab(platform);
+					setResult(null);
+				}}
+			/>
 
 			{/* Step list */}
 			<div

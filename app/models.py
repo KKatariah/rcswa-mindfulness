@@ -11,7 +11,9 @@ directly, the recommended pattern for pluggable user models.
 """
 
 import datetime
+import hashlib
 import re
+import secrets
 from urllib.parse import quote
 
 from django.conf import settings
@@ -118,6 +120,9 @@ class User(AbstractUser):
     provider_uid = models.CharField(max_length=255, blank=True, null=True)  # noqa: DJ01 (so flake8 linting ignores null=True)
     role = models.CharField(max_length=10, choices=Role.choices, default=Role.STUDENT)
     created_at = models.DateTimeField(auto_now_add=True)
+    # Wrong passwords in a row, and when a lock from too many of them ends (see app/lockout.py).
+    failed_login_count = models.PositiveSmallIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
 
     def save(self, *args, **kwargs):
         # Superusers are always app admins.
@@ -129,6 +134,35 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.full_name or self.email
+
+
+def _hash_token_key(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+class AuthToken(models.Model):
+    """API login token. One per signed-in device, expiring after a period without use
+    (see app/authentication.py). Only a hash of the key is stored, so a copy of the
+    database can't be used to log in."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="auth_tokens")
+    key_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used = models.DateTimeField(auto_now_add=True)
+
+    @classmethod
+    def issue(cls, user):
+        """Create a token for a new login and return its key (shown to the client once)."""
+        key = secrets.token_hex(20)
+        cls.objects.create(user=user, key_hash=_hash_token_key(key))
+        return key
+
+    @classmethod
+    def find(cls, key):
+        return cls.objects.select_related("user").filter(key_hash=_hash_token_key(key)).first()
+
+    def __str__(self):
+        return f"Token for {self.user} (last used {self.last_used:%Y-%m-%d})"
 
 
 class Cohort(models.Model):

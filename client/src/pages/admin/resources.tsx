@@ -1,12 +1,19 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { safeUrl } from "@/lib/safeUrl";
 import Head from "next/head";
 import AdminLayout from "@/components/admin/AdminLayout";
+import AdminPageHeader, { CreateButton } from "@/components/admin/AdminPageHeader";
+import AdminTable, { REORDER_COLUMN } from "@/components/admin/AdminTable";
 import Modal from "@/components/main/Modal";
-import Select from "@/components/ui/Select";
-import { PlusIcon, PencilIcon, TrashIcon } from "@/components/ui/icons";
+import Card from "@/components/ui/Card";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import DragHandle, { ReorderHelp } from "@/components/ui/DragHandle";
+import { ErrorBanner, LoadingState } from "@/components/ui/feedback";
+import { Field, FormActions, FormError, TextField } from "@/components/ui/form";
+import { PlusIcon, PencilIcon, TrashIcon } from "@/components/ui/icons";
+import Select from "@/components/ui/Select";
+import { useAsync } from "@/hooks/useAsync";
 import { useDragReorder, type ReorderHandlers } from "@/hooks/useDragReorder";
+import { useFormSubmit } from "@/hooks/useFormSubmit";
 import {
 	listAdditionalResources,
 	createAdditionalResource,
@@ -14,6 +21,8 @@ import {
 	deleteAdditionalResource,
 	reorderAdditionalResources,
 } from "@/lib/api";
+import { errorMessage } from "@/lib/errors";
+import { safeUrl } from "@/lib/safeUrl";
 import type { AdditionalResourceCategory, AdminAdditionalResource } from "@/types/admin";
 
 const CATEGORY_OPTIONS: { value: AdditionalResourceCategory; label: string }[] = [
@@ -65,20 +74,11 @@ function ResourceForm({
 	onCancel: () => void;
 }) {
 	const [form, setForm] = useState(initial);
-	const [error, setError] = useState<string | null>(null);
-	const [submitting, setSubmitting] = useState(false);
+	const { submitting, error, run } = useFormSubmit("Failed to save resource");
 
-	async function handleSubmit(e: FormEvent) {
+	function handleSubmit(e: FormEvent) {
 		e.preventDefault();
-		setError(null);
-		setSubmitting(true);
-		try {
-			await onSubmit(form);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to save resource");
-		} finally {
-			setSubmitting(false);
-		}
+		void run(() => onSubmit(form));
 	}
 
 	// Only create a fresh object URL when the picked file actually changes, and
@@ -97,10 +97,9 @@ function ResourceForm({
 
 	return (
 		<form onSubmit={handleSubmit} className="flex flex-col gap-4">
-			{error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+			<FormError message={error} />
 
-			<div className="flex flex-col gap-2">
-				<label htmlFor="resource-category" className="text-sm font-semibold text-ink">Category</label>
+			<Field id="resource-category" label="Category">
 				<Select
 					id="resource-category"
 					value={form.category}
@@ -116,47 +115,35 @@ function ResourceForm({
 					options={CATEGORY_OPTIONS}
 					className="h-12 w-full"
 				/>
-			</div>
+			</Field>
 
-			<div className="flex flex-col gap-2">
-				<label htmlFor="resource-title" className="text-sm font-semibold text-ink">Title</label>
-				<input
-					id="resource-title"
-					required
-					value={form.title}
-					onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-					className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-				/>
-			</div>
+			<TextField
+				id="resource-title"
+				label="Title"
+				required
+				value={form.title}
+				onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+			/>
 
 			{form.category === "book" && (
-				<div className="flex flex-col gap-2">
-					<label htmlFor="resource-author" className="text-sm font-semibold text-ink">Author</label>
-					<input
-						id="resource-author"
-						value={form.author}
-						onChange={(e) => setForm((f) => ({ ...f, author: e.target.value }))}
-						className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-					/>
-				</div>
+				<TextField
+					id="resource-author"
+					label="Author"
+					value={form.author}
+					onChange={(e) => setForm((f) => ({ ...f, author: e.target.value }))}
+				/>
 			)}
 
-			<div className="flex flex-col gap-2">
-				<label htmlFor="resource-url" className="text-sm font-semibold text-ink">
-					Link {form.category === "book" ? "(optional)" : ""}
-				</label>
-				<input
-					id="resource-url"
-					type="url"
-					value={form.url}
-					onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
-					placeholder="https://…"
-					className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
-				/>
-			</div>
+			<TextField
+				id="resource-url"
+				label={`Link ${form.category === "book" ? "(optional)" : ""}`}
+				type="url"
+				value={form.url}
+				onChange={(e) => setForm((f) => ({ ...f, url: e.target.value }))}
+				placeholder="https://…"
+			/>
 
-			<div className="flex flex-col gap-2">
-				<label htmlFor="resource-cover" className="text-sm font-semibold text-ink">Cover image</label>
+			<Field id="resource-cover" label="Cover image">
 				{coverPreview && (
 					// eslint-disable-next-line @next/next/no-img-element -- local blob preview / API-hosted image, not a next/image candidate
 					<img src={coverPreview} alt="" className="h-32 w-24 rounded-lg border border-gray-200 object-cover" />
@@ -168,58 +155,33 @@ function ResourceForm({
 					onChange={(e) => setForm((f) => ({ ...f, cover_image: e.target.files?.[0] ?? null }))}
 					className="text-sm text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-surface-muted file:px-3 file:py-2 file:text-sm file:font-semibold"
 				/>
-			</div>
+			</Field>
 
-			<div className="mt-2 flex gap-3">
-				<button
-					type="submit"
-					disabled={submitting}
-					className="h-12 flex-1 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white disabled:opacity-50"
-				>
-					{submitting ? "Saving…" : "Save"}
-				</button>
-				<button
-					type="button"
-					onClick={onCancel}
-					className="h-12 flex-1 rounded-xl border border-gray-200 text-[15px] font-semibold text-ink"
-				>
-					Cancel
-				</button>
-			</div>
+			<FormActions submitting={submitting} onCancel={onCancel} />
 		</form>
 	);
 }
 
 export default function AdminResourcesPage() {
-	const [resources, setResources] = useState<AdminAdditionalResource[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
+	const {
+		data: resources,
+		setData: setResources,
+		loading,
+		error,
+	} = useAsync(() => listAdditionalResources(), [], [] as AdminAdditionalResource[], {
+		errorFallback: "Failed to load resources",
+	});
 	const [modalOpen, setModalOpen] = useState(false);
 	const [editing, setEditing] = useState<AdminAdditionalResource | null>(null);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const [newCategory, setNewCategory] = useState<AdditionalResourceCategory>("book");
+	const [deleting, setDeleting] = useState<AdminAdditionalResource | null>(null);
 	const { draggingId, startDrag, handleKey } = useDragReorder<number>();
 
 	const sections = useMemo(
 		() => SECTIONS.map((s) => ({ ...s, items: resources.filter((r) => r.category === s.category).sort(byOrder) })),
 		[resources],
 	);
-
-	useEffect(() => {
-		let cancelled = false;
-		const token = localStorage.getItem("token") ?? "";
-		(async () => {
-			try {
-				const data = await listAdditionalResources(token);
-				if (!cancelled) setResources(data);
-			} catch (e) {
-				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load resources");
-			} finally {
-				if (!cancelled) setLoading(false);
-			}
-		})();
-		return () => { cancelled = true; };
-	}, []);
 
 	function openCreate(category: AdditionalResourceCategory = "book") {
 		setEditing(null);
@@ -236,10 +198,10 @@ export default function AdminResourcesPage() {
 			onDrop: async (ids) => {
 				setDeleteError(null);
 				try {
-					await reorderAdditionalResources(category, ids, localStorage.getItem("token") ?? "");
+					await reorderAdditionalResources(category, ids);
 				} catch (err) {
 					setResources(snapshot);
-					setDeleteError(err instanceof Error ? err.message : "Failed to reorder resources");
+					setDeleteError(errorMessage(err, "Failed to reorder resources"));
 				}
 			},
 		};
@@ -251,7 +213,6 @@ export default function AdminResourcesPage() {
 	}
 
 	async function handleSave(form: ResourceFormState) {
-		const token = localStorage.getItem("token") ?? "";
 		const payload = {
 			category: form.category,
 			title: form.title,
@@ -262,24 +223,25 @@ export default function AdminResourcesPage() {
 			...(form.cover_image ? { cover_image: form.cover_image } : {}),
 		};
 		if (editing) {
-			const updated = await updateAdditionalResource(editing.id, payload, token);
+			const updated = await updateAdditionalResource(editing.id, payload);
 			setResources((prev) => prev.map((r) => (r.id === updated.id ? updated : r)));
 		} else {
-			const created = await createAdditionalResource(payload, token);
+			const created = await createAdditionalResource(payload);
 			setResources((prev) => [...prev, created]);
 		}
 		setModalOpen(false);
 	}
 
-	async function handleDelete(resource: AdminAdditionalResource) {
-		if (!confirm(`Delete "${resource.title}"?`)) return;
+	async function handleDelete() {
+		if (!deleting) return;
+		const resource = deleting;
+		setDeleting(null);
 		setDeleteError(null);
-		const token = localStorage.getItem("token") ?? "";
 		try {
-			await deleteAdditionalResource(resource.id, token);
+			await deleteAdditionalResource(resource.id);
 			setResources((prev) => prev.filter((r) => r.id !== resource.id));
 		} catch (e) {
-			setDeleteError(e instanceof Error ? e.message : "Failed to delete resource");
+			setDeleteError(errorMessage(e, "Failed to delete resource"));
 		}
 	}
 
@@ -289,30 +251,18 @@ export default function AdminResourcesPage() {
 				<title>Resources — Admin</title>
 			</Head>
 
-			<div className="flex items-center justify-between">
-				<h1 className="text-2xl font-extrabold text-ink">Resources</h1>
-				<button
-					type="button"
-					onClick={() => openCreate()}
-					className="flex h-11 items-center gap-2 rounded-xl bg-brand-blue px-4 text-[14px] font-bold text-white"
-				>
-					<PlusIcon className="size-4" />
-					New Resource
-				</button>
-			</div>
+			<AdminPageHeader title="Resources">
+				<CreateButton onClick={() => openCreate()}>New Resource</CreateButton>
+			</AdminPageHeader>
 
-			{deleteError && (
-				<p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
-					{deleteError}
-				</p>
-			)}
+			{deleteError && <ErrorBanner className="mt-4">{deleteError}</ErrorBanner>}
 
 			{loading ? (
-				<div className="mt-6 flex justify-center rounded-2xl border border-gray-200 bg-white py-16">
-					<span className="text-sm text-muted">Loading…</span>
-				</div>
+				<Card variant="admin" className="mt-6">
+					<LoadingState />
+				</Card>
 			) : error ? (
-				<p className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 text-sm text-red-600">{error}</p>
+				<Card as="p" variant="admin" className="mt-6 p-6 text-sm text-red-600">{error}</Card>
 			) : (
 				sections.map(({ category, heading, items }) => (
 					<section key={category} aria-labelledby={`resources-${category}`} className="mt-8">
@@ -329,64 +279,52 @@ export default function AdminResourcesPage() {
 								Add
 							</button>
 						</div>
-						<div className="mt-3 overflow-x-auto rounded-2xl border border-gray-200 bg-white">
-							{items.length === 0 ? (
-								<p className="p-6 text-sm text-muted">Nothing here yet.</p>
-							) : (
-								<table className="w-full text-left text-sm">
-									<thead>
-										<tr className="border-b border-gray-200 text-xs font-semibold uppercase tracking-wide text-muted">
-											<th className="w-10 px-3 py-3"><span className="sr-only">Reorder</span></th>
-											<th className="px-5 py-3">Cover</th>
-											<th className="px-5 py-3">Title</th>
-											{category === "book" && <th className="px-5 py-3">Author</th>}
-											<th className="px-5 py-3" />
-										</tr>
-									</thead>
-									<tbody>
-										{items.map((resource) => (
-											<tr
-												key={resource.id}
-												data-reorder-id={resource.id}
-												className={`border-b border-gray-100 last:border-0 ${
-													draggingId === resource.id ? "bg-surface-muted opacity-50" : ""
-												}`}
-											>
-												<td className="px-3 py-3">
-													<DragHandle
-														label={`Reorder ${resource.title}`}
-														onPointerDown={(e) => startDrag(e, resource.id, items.map((r) => r.id), reorderHandlers(category))}
-														onKeyDown={(e) => handleKey(e, resource.id, items.map((r) => r.id), reorderHandlers(category))}
-													/>
-												</td>
-												<td className="px-5 py-3">
-													{resource.cover_image ? (
-														// eslint-disable-next-line @next/next/no-img-element -- API-hosted thumbnail, not a next/image candidate
-														<img src={safeUrl(resource.cover_image)} alt="" className="size-10 rounded-lg object-cover" />
-													) : (
-														<div className="size-10 rounded-lg bg-surface-muted" />
-													)}
-												</td>
-												<td className="px-5 py-3 font-semibold text-ink">{resource.title}</td>
-												{category === "book" && (
-													<td className="px-5 py-3 text-ink-soft">{resource.author || "—"}</td>
-												)}
-												<td className="px-5 py-3">
-													<div className="flex justify-end gap-3">
-														<button type="button" onClick={() => openEdit(resource)} aria-label="Edit resource">
-															<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
-														</button>
-														<button type="button" onClick={() => handleDelete(resource)} aria-label="Delete resource">
-															<TrashIcon className="size-4 text-muted hover:text-red-500" />
-														</button>
-													</div>
-												</td>
-											</tr>
-										))}
-									</tbody>
-								</table>
-							)}
-						</div>
+						<AdminTable
+							columns={[REORDER_COLUMN, "Cover", "Title", ...(category === "book" ? ["Author"] : []), ""]}
+							empty={items.length === 0}
+							emptyMessage="Nothing here yet."
+							className="mt-3"
+						>
+							{items.map((resource) => (
+								<tr
+									key={resource.id}
+									data-reorder-id={resource.id}
+									className={`border-b border-gray-100 last:border-0 ${
+										draggingId === resource.id ? "bg-surface-muted opacity-50" : ""
+									}`}
+								>
+									<td className="px-3 py-3">
+										<DragHandle
+											label={`Reorder ${resource.title}`}
+											onPointerDown={(e) => startDrag(e, resource.id, items.map((r) => r.id), reorderHandlers(category))}
+											onKeyDown={(e) => handleKey(e, resource.id, items.map((r) => r.id), reorderHandlers(category))}
+										/>
+									</td>
+									<td className="px-5 py-3">
+										{resource.cover_image ? (
+											// eslint-disable-next-line @next/next/no-img-element -- API-hosted thumbnail, not a next/image candidate
+											<img src={safeUrl(resource.cover_image)} alt="" className="size-10 rounded-lg object-cover" />
+										) : (
+											<div className="size-10 rounded-lg bg-surface-muted" />
+										)}
+									</td>
+									<td className="px-5 py-3 font-semibold text-ink">{resource.title}</td>
+									{category === "book" && (
+										<td className="px-5 py-3 text-ink-soft">{resource.author || "—"}</td>
+									)}
+									<td className="px-5 py-3">
+										<div className="flex justify-end gap-3">
+											<button type="button" onClick={() => openEdit(resource)} aria-label="Edit resource">
+												<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
+											</button>
+											<button type="button" onClick={() => setDeleting(resource)} aria-label="Delete resource">
+												<TrashIcon className="size-4 text-muted hover:text-red-500" />
+											</button>
+										</div>
+									</td>
+								</tr>
+							))}
+						</AdminTable>
 					</section>
 				))
 			)}
@@ -410,6 +348,17 @@ export default function AdminResourcesPage() {
 					onCancel={() => setModalOpen(false)}
 				/>
 			</Modal>
+
+			{deleting && (
+				<ConfirmDialog
+					title={`Delete "${deleting.title}"?`}
+					message="It will no longer appear on the Resources page. This can't be undone."
+					confirmLabel="Delete resource"
+					danger
+					onConfirm={handleDelete}
+					onCancel={() => setDeleting(null)}
+				/>
+			)}
 		</AdminLayout>
 	);
 }

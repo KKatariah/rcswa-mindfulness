@@ -4,8 +4,8 @@ from django.core.management.base import BaseCommand
 from django.utils import timezone
 
 from app.models import Enrollment, Module, NotificationLog
-from app.notifications import deliver
-from app.serializers import module_unlock_date
+from app.access import module_unlock_date
+from app.notifications import deliver_and_log
 
 
 class Command(BaseCommand):
@@ -15,7 +15,6 @@ class Command(BaseCommand):
     )
 
     def handle(self, *args, **options):
-        now = timezone.now()
         today = timezone.localdate()
 
         # Unlock dates are per user (cohort start + (week - 1) weeks), so each
@@ -62,37 +61,19 @@ class Command(BaseCommand):
                     skipped += 1
                     continue
 
-                payload = {
-                    "title": f"Week {module.week_number} is now available",
-                    "body": module.title,
-                    "url": f"/modules/{module.id}",
-                }
-
-                channel, success = deliver(
+                success = deliver_and_log(
                     user=user,
-                    payload_dict=payload,
+                    notification_type=NotificationLog.NotificationType.MODULE_ADDED,
+                    payload_dict={
+                        "title": f"Week {module.week_number} is now available",
+                        "body": module.title,
+                        "url": f"/modules/{module.id}",
+                    },
                     subject=f"Week {module.week_number} is now available",
                     email_template="app/content_update_email.txt",
-                    email_context={
-                        "user": user,
-                        "module": module,
-                    },
-                )
-
-                NotificationLog.objects.create(
-                    user=user,
-                    type=NotificationLog.NotificationType.MODULE_ADDED,
+                    email_context={"user": user, "module": module},
                     module=module,
-                    channel=channel or NotificationLog.Channel.PUSH,
-                    scheduled_for=timezone.make_aware(
-                        datetime.combine(unlock_date, time.min)
-                    ),
-                    sent_at=now if success else None,
-                    status=(
-                        NotificationLog.Status.SENT
-                        if success
-                        else NotificationLog.Status.FAILED
-                    ),
+                    scheduled_for=timezone.make_aware(datetime.combine(unlock_date, time.min)),
                 )
 
                 if success:

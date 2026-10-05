@@ -40,7 +40,6 @@ router.register("additional-resources", AdditionalResourceViewSet, basename="add
 
 urlpatterns = [
     path('admin/', admin.site.urls),
-    path('app/', include('app.urls')),
     path('api/', include('app.api_urls')),
     path('api/', include(router.urls)),
     path('api/notifications/vapid-public-key/', vapid_public_key_view, name='vapid-public-key'),

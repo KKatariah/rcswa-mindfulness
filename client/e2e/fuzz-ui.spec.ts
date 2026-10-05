@@ -166,7 +166,6 @@ const PAGES: { path: string; as: string; interact?: (page: Page) => Promise<void
 	{ path: "/forum", as: STUDENT, interact: openFirstThread },
 	{ path: "/resources", as: STUDENT },
 	{ path: "/surveys", as: STUDENT },
-	{ path: "/progress", as: STUDENT },
 	{ path: "/profile", as: STUDENT },
 	{ path: "/admin", as: ADMIN },
 	{ path: "/admin/users", as: ADMIN },

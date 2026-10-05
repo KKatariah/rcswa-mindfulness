@@ -1,6 +1,7 @@
 import { useState } from "react";
 import Select from "@/components/ui/Select";
 import { downloadSurveyResponsesCsv } from "@/lib/api";
+import { errorMessage } from "@/lib/errors";
 
 type Props =
 	// Lets the admin pick one survey or all of them.
@@ -18,12 +19,12 @@ export default function SurveyExport(props: Props) {
 		setDownloading(true);
 		setError(null);
 		try {
-			await downloadSurveyResponsesCsv(localStorage.getItem("token") ?? "", {
+			await downloadSurveyResponsesCsv({
 				surveyId: props.surveyId ?? (selectedId ? Number(selectedId) : undefined),
 				includeIdentity,
 			});
 		} catch (e) {
-			setError(e instanceof Error ? e.message : "Export failed");
+			setError(errorMessage(e, "Export failed"));
 		} finally {
 			setDownloading(false);
 		}

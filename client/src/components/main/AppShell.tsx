@@ -27,7 +27,7 @@ export default function AppShell({
 					rightRail ? "xl:grid-cols-[280px_minmax(0,1fr)_320px]" : "xl:grid-cols-[280px_minmax(0,1fr)]"
 				} ${mobileNav ? "pb-28" : ""}`}
 			>
-				<Sidebar responsive />
+				<Sidebar />
 
 				<div className="min-w-0">{children}</div>
 

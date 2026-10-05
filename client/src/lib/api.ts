@@ -1,77 +1,151 @@
 import type { AuthUser } from "@/types/user";
+import type { ForumPost, ForumThread, ForumThreadDetail } from "@/types/forum";
+import type {
+	Cohort,
+	AdminModule,
+	AdminContentItem,
+	AdminUser,
+	Enrollment,
+	DashboardStats,
+	AdditionalResourceCategory,
+	AdminAdditionalResource,
+	AdminSurvey,
+	AdminSurveyResponse,
+} from "@/types/admin";
 
 export const API_BASE_URL =
 	process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api";
 
-type LoginPayload = { email: string; password: string };
-type RegisterPayload = { email: string; full_name: string; password: string };
+/** The signed-in user's API token, or null when signed out (or rendering on the server). */
+export function getToken(): string | null {
+	return typeof window === "undefined" ? null : localStorage.getItem("token");
+}
+
+// ── Request helpers ────────────────────────────────────────────────────────────
+
+type RequestOptions = {
+	method?: "GET" | "POST" | "PATCH" | "DELETE";
+	/** Sent as JSON, or as-is for FormData (the browser then sets the multipart boundary). */
+	body?: unknown;
+	/**
+	 * Public endpoints pass false so no token is sent: the API rejects a stale token
+	 * even on endpoints that don't need one, which would break login and the home page.
+	 */
+	auth?: boolean;
+};
+
+function send(path: string, { method = "GET", body, auth = true }: RequestOptions = {}): Promise<Response> {
+	const headers: Record<string, string> = {};
+	const token = auth ? getToken() : null;
+	if (token) headers.Authorization = `Token ${token}`;
+
+	let payload: BodyInit | undefined;
+	if (body instanceof FormData) {
+		payload = body;
+	} else if (body !== undefined) {
+		headers["Content-Type"] = "application/json";
+		payload = JSON.stringify(body);
+	}
+	return fetch(`${API_BASE_URL}${path}`, { method, headers, body: payload });
+}
+
+/** Turns a failed response into a thrown Error with a message fit to show the user. */
+async function throwForStatus(res: Response): Promise<never> {
+	// Error bodies are normally JSON, but a proxy or server crash can return HTML.
+	const data: unknown = await res.json().catch(() => null);
+	const detail = typeof data === "object" && data !== null ? (data as { detail?: unknown }).detail : undefined;
+
+	// The stored token was rejected (e.g. the password was changed in another
+	// tab). Sign out and go home rather than leaving the page half-broken.
+	// Login itself also returns 401, but with "error" rather than "detail".
+	if (res.status === 401 && detail && getToken()) {
+		localStorage.removeItem("token");
+		localStorage.removeItem("user");
+		if (window.location.pathname !== "/") {
+			// eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload resets AuthContext; this runs outside React so there's no router
+			window.location.assign("/");
+		}
+		throw new Error("Your session has expired. Please log in again.");
+	}
+	if (res.status === 429) {
+		const seconds = /(\d+) seconds?/.exec(String(detail ?? ""))?.[1];
+		throw new Error(
+			seconds
+				? `You're doing that too often. Please wait ${seconds} seconds and try again.`
+				: "You're doing that too often. Please wait a moment and try again.",
+		);
+	}
+	const message = typeof data === "object" && data !== null ? Object.values(data).flat().join(" ") : "";
+	throw new Error(message || "Something went wrong");
+}
+
+async function request<T>(path: string, options?: RequestOptions): Promise<T> {
+	const res = await send(path, options);
+	if (!res.ok) return throwForStatus(res);
+	// 204 No Content (deletes, reorders) has no body to parse.
+	if (res.status === 204) return undefined as T;
+	return res.json() as Promise<T>;
+}
+
+function query(params: Record<string, string | number | undefined>): string {
+	const search = new URLSearchParams();
+	for (const [key, value] of Object.entries(params)) {
+		if (value !== undefined && value !== "") search.set(key, String(value));
+	}
+	const text = search.toString();
+	return text ? `?${text}` : "";
+}
+
+// ── Auth & profile ─────────────────────────────────────────────────────────────
 
 type AuthResponse = { message: string; token: string; user: AuthUser };
 
-async function handleResponse<T>(res: Response): Promise<T> {
-	const data = await res.json();
-	if (!res.ok) {
-		// The stored token was rejected (e.g. the password was changed in another
-		// tab). Sign out and go home rather than leaving the page half-broken.
-		// Login itself also returns 401, but with "error" rather than "detail".
-		if (res.status === 401 && data?.detail && typeof window !== "undefined" && localStorage.getItem("token")) {
-			localStorage.removeItem("token");
-			localStorage.removeItem("user");
-			if (window.location.pathname !== "/") {
-				// eslint-disable-next-line @next/next/no-location-assign-relative-destination -- a full reload resets AuthContext; this runs outside React so there's no router
-				window.location.assign("/");
-			}
-			throw new Error("Your session has expired. Please log in again.");
-		}
-		if (res.status === 429) {
-			const seconds = /(\d+) seconds?/.exec(String(data?.detail ?? ""))?.[1];
-			throw new Error(
-				seconds
-					? `You're doing that too often. Please wait ${seconds} seconds and try again.`
-					: "You're doing that too often. Please wait a moment and try again.",
-			);
-		}
-		const message =
-			typeof data === "object" && data !== null
-				? Object.values(data).flat().join(" ")
-				: "Something went wrong";
-		throw new Error(message);
-	}
-	return data as T;
-}
-
-export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
-	const res = await fetch(`${API_BASE_URL}/login/`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(payload),
-	});
-	const data = await handleResponse<AuthResponse>(res);
+export async function loginUser(payload: { email: string; password: string }): Promise<AuthResponse> {
+	const data = await request<AuthResponse>("/login/", { method: "POST", body: payload, auth: false });
 	localStorage.setItem("token", data.token);
 	return data;
 }
 
-export async function registerUser(
-	payload: RegisterPayload,
-): Promise<{ message: string; user: AuthUser }> {
-	const res = await fetch(`${API_BASE_URL}/register/`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify(payload),
-	});
-	return handleResponse<{ message: string; user: AuthUser }>(res);
+export async function loginWithGoogle(credential: string): Promise<AuthResponse> {
+	const data = await request<AuthResponse>("/google-login/", { method: "POST", body: { credential }, auth: false });
+	localStorage.setItem("token", data.token);
+	return data;
+}
+
+export function registerUser(payload: {
+	email: string;
+	full_name: string;
+	password: string;
+}): Promise<{ message: string; user: AuthUser }> {
+	return request("/register/", { method: "POST", body: payload, auth: false });
 }
 
 export async function logoutUser(): Promise<void> {
-	const token = localStorage.getItem("token");
-	await fetch(`${API_BASE_URL}/logout/`, {
-		method: "POST",
-		headers: { Authorization: `Token ${token}` },
-	});
+	// Best effort: the token is dropped locally even if the server call fails.
+	await send("/logout/", { method: "POST" }).catch(() => undefined);
 	localStorage.removeItem("token");
 }
 
-// ── Modules ────────────────────────────────────────────────────────────────────
+export function getCurrentUser(): Promise<{ user: AuthUser }> {
+	if (!getToken()) return Promise.reject(new Error("No token"));
+	return request("/user/");
+}
+
+export function updateProfile(payload: { display_name: string }): Promise<{ message: string; user: AuthUser }> {
+	return request("/profile/", { method: "PATCH", body: payload });
+}
+
+/** Changing the password replaces the API token; the new one is stored here. */
+export async function changePassword(payload: {
+	current_password: string;
+	new_password: string;
+}): Promise<{ message: string; token: string }> {
+	const data = await request<{ message: string; token: string }>("/change-password/", { method: "POST", body: payload });
+	localStorage.setItem("token", data.token);
+	return data;
+}
+
+// ── Modules & progress ─────────────────────────────────────────────────────────
 
 export type ApiContentItem = {
 	id: number;
@@ -94,73 +168,14 @@ export type ApiModule = {
 
 export type ApiModuleDetail = ApiModule & { description: string };
 
-export async function listModules(token: string): Promise<ApiModule[]> {
-	const res = await fetch(`${API_BASE_URL}/modules/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<ApiModule[]>(res);
-}
-
-export async function getModule(
-	id: number | string,
-	token: string,
-): Promise<ApiModuleDetail> {
-	const res = await fetch(`${API_BASE_URL}/modules/${id}/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<ApiModuleDetail>(res);
-}
-
 export type ApiModuleSummary = { id: number; week_number: number; title: string; summary: string };
 
-export async function listModuleSummaries(): Promise<ApiModuleSummary[]> {
-  const res = await fetch(`${API_BASE_URL}/modules/summary/`);
-  return handleResponse<ApiModuleSummary[]>(res);
-}
-
 export type ApiContentCompletion = {
-  id: number;
-  user: number;
-  content_item: number;
-  completed_at: string;
+	id: number;
+	user: number;
+	content_item: number;
+	completed_at: string;
 };
-
-export async function listProgress(
-	token: string,
-): Promise<ApiContentCompletion[]> {
-	const res = await fetch(`${API_BASE_URL}/progress/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<ApiContentCompletion[]>(res);
-}
-
-export async function markContentComplete(
-	contentItemId: number,
-	token: string,
-): Promise<ApiContentCompletion> {
-	const res = await fetch(`${API_BASE_URL}/progress/`, {
-		method: "POST",
-		headers: {
-			Authorization: `Token ${token}`,
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({ content_item: contentItemId }),
-	});
-	return handleResponse<ApiContentCompletion>(res);
-}
-
-export async function deleteContentCompletion(
-	completionId: number,
-	token: string,
-): Promise<void> {
-	const res = await fetch(`${API_BASE_URL}/progress/${completionId}/`, {
-		method: "DELETE",
-		headers: { Authorization: `Token ${token}` },
-	});
-	if (!res.ok) {
-		throw new Error("Failed to unmark completion");
-	}
-}
 
 export type ApiModuleView = {
 	id: number;
@@ -169,235 +184,129 @@ export type ApiModuleView = {
 	viewed_at: string;
 };
 
-export async function listModuleViews(token: string): Promise<ApiModuleView[]> {
-	const res = await fetch(`${API_BASE_URL}/content-views/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<ApiModuleView[]>(res);
+export function listModules(): Promise<ApiModule[]> {
+	return request("/modules/");
 }
 
-export async function markModuleViewed(
-	moduleId: number,
-	token: string,
-): Promise<ApiModuleView> {
-	const res = await fetch(`${API_BASE_URL}/content-views/`, {
-		method: "POST",
-		headers: {
-			Authorization: `Token ${token}`,
-			"Content-Type": "application/json",
-		},
-		body: JSON.stringify({ module: moduleId }),
-	});
-	return handleResponse<ApiModuleView>(res);
+export function getModule(id: number | string): Promise<ApiModuleDetail> {
+	return request(`/modules/${id}/`);
+}
+
+/** Public programme overview for the home page. */
+export function listModuleSummaries(): Promise<ApiModuleSummary[]> {
+	return request("/modules/summary/", { auth: false });
+}
+
+export function listProgress(): Promise<ApiContentCompletion[]> {
+	return request("/progress/");
+}
+
+export function markContentComplete(contentItemId: number): Promise<ApiContentCompletion> {
+	return request("/progress/", { method: "POST", body: { content_item: contentItemId } });
+}
+
+export function deleteContentCompletion(completionId: number): Promise<void> {
+	return request(`/progress/${completionId}/`, { method: "DELETE" });
+}
+
+export function listModuleViews(): Promise<ApiModuleView[]> {
+	return request("/content-views/");
+}
+
+export function markModuleViewed(moduleId: number): Promise<ApiModuleView> {
+	return request("/content-views/", { method: "POST", body: { module: moduleId } });
 }
 
 // ── Forum ──────────────────────────────────────────────────────────────────────
 
-import type { ForumPost, ForumThread, ForumThreadDetail } from "@/types/forum";
-
-function authHeader(token: string) {
-	return {
-		Authorization: `Token ${token}`,
-		"Content-Type": "application/json",
-	};
+export function listForumThreads(): Promise<ForumThread[]> {
+	return request("/forum/threads/");
 }
 
-async function deleteRequest(url: string, token: string): Promise<void> {
-	const res = await fetch(url, {
-		method: "DELETE",
-		headers: { Authorization: `Token ${token}` },
-	});
-	if (!res.ok) {
-		const data = await res.json().catch(() => ({}));
-		const message =
-			typeof data === "object" && data !== null
-				? Object.values(data).flat().join(" ")
-				: "Something went wrong";
-		throw new Error(message);
-	}
+export function getForumThread(id: number): Promise<ForumThreadDetail> {
+	return request(`/forum/threads/${id}/`);
 }
 
-export async function listForumThreads(token: string): Promise<ForumThread[]> {
-	const res = await fetch(`${API_BASE_URL}/forum/threads/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<ForumThread[]>(res);
+export function createForumThread(data: { body: string; module?: number; content_item?: number }): Promise<ForumThread> {
+	return request("/forum/threads/", { method: "POST", body: data });
 }
 
-export async function getForumThread(
-	id: number,
-	token: string,
-): Promise<ForumThreadDetail> {
-	const res = await fetch(`${API_BASE_URL}/forum/threads/${id}/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<ForumThreadDetail>(res);
+export function pinForumThread(id: number, is_pinned: boolean): Promise<ForumThread> {
+	return request(`/forum/threads/${id}/`, { method: "PATCH", body: { is_pinned } });
 }
 
-export async function createForumThread(
-	data: { body: string; module?: number; content_item?: number },
-	token: string,
-): Promise<ForumThread> {
-	const res = await fetch(`${API_BASE_URL}/forum/threads/`, {
-		method: "POST",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<ForumThread>(res);
+export function deleteForumThread(id: number): Promise<void> {
+	return request(`/forum/threads/${id}/`, { method: "DELETE" });
 }
 
-export async function pinForumThread(
-	id: number,
-	is_pinned: boolean,
-	token: string,
-): Promise<ForumThread> {
-	const res = await fetch(`${API_BASE_URL}/forum/threads/${id}/`, {
-		method: "PATCH",
-		headers: authHeader(token),
-		body: JSON.stringify({ is_pinned }),
-	});
-	return handleResponse<ForumThread>(res);
+export function createForumPost(data: { thread: number; body: string; parent_post?: number }): Promise<ForumPost> {
+	return request("/forum/posts/", { method: "POST", body: data });
 }
 
-export async function updateForumThread(
-	id: number,
-	data: { title: string },
-	token: string,
-): Promise<ForumThread> {
-	const res = await fetch(`${API_BASE_URL}/forum/threads/${id}/`, {
-		method: "PATCH",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<ForumThread>(res);
+export function updateForumPost(id: number, data: { body: string }): Promise<ForumPost> {
+	return request(`/forum/posts/${id}/`, { method: "PATCH", body: data });
 }
 
-export async function deleteForumThread(
-	id: number,
-	token: string,
-): Promise<void> {
-	return deleteRequest(`${API_BASE_URL}/forum/threads/${id}/`, token);
+export function deleteForumPost(id: number): Promise<void> {
+	return request(`/forum/posts/${id}/`, { method: "DELETE" });
 }
 
-export async function createForumPost(
-	data: { thread: number; body: string; parent_post?: number },
-	token: string,
-): Promise<ForumPost> {
-	const res = await fetch(`${API_BASE_URL}/forum/posts/`, {
-		method: "POST",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<ForumPost>(res);
+export function getProgramStatus(): Promise<{ is_active: boolean }> {
+	return request("/program-status/");
 }
 
-export async function updateForumPost(
-	id: number,
-	data: { body: string },
-	token: string,
-): Promise<ForumPost> {
-	const res = await fetch(`${API_BASE_URL}/forum/posts/${id}/`, {
-		method: "PATCH",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<ForumPost>(res);
+// ── Admin: users, cohorts & enrollments ────────────────────────────────────────
+
+export function listUsers(): Promise<AdminUser[]> {
+	return request("/users/");
 }
 
-export async function deleteForumPost(
-	id: number,
-	token: string,
-): Promise<void> {
-	return deleteRequest(`${API_BASE_URL}/forum/posts/${id}/`, token);
-}
-
-export async function getProgramStatus(
-	token: string,
-): Promise<{ is_active: boolean }> {
-	const res = await fetch(`${API_BASE_URL}/program-status/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<{ is_active: boolean }>(res);
-}
-
-// ── Admin: Cohorts ─────────────────────────────────────────────────────────────
-
-import type {
-	Cohort,
-	AdminModule,
-	AdminContentItem,
-	AdminUser,
-	Enrollment,
-	DashboardStats,
-	AdditionalResourceCategory,
-	AdminAdditionalResource,
-	AdminSurvey,
-	AdminSurveyResponse,
-} from "@/types/admin";
-
-export async function listUsers(token: string): Promise<AdminUser[]> {
-	const res = await fetch(`${API_BASE_URL}/users/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<AdminUser[]>(res);
-}
-
-export async function updateUser(
+export function updateUser(
 	id: number,
 	data: Partial<{ email: string; full_name: string; display_name: string; role: AdminUser["role"] }>,
-	token: string,
 ): Promise<AdminUser> {
-	const res = await fetch(`${API_BASE_URL}/users/${id}/`, {
-		method: "PATCH",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<AdminUser>(res);
+	return request(`/users/${id}/`, { method: "PATCH", body: data });
 }
 
-export async function deleteUser(id: number, token: string): Promise<void> {
-	return deleteRequest(`${API_BASE_URL}/users/${id}/`, token);
+export function deleteUser(id: number): Promise<void> {
+	return request(`/users/${id}/`, { method: "DELETE" });
 }
 
-export async function listCohorts(token: string): Promise<Cohort[]> {
-	const res = await fetch(`${API_BASE_URL}/cohorts/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<Cohort[]>(res);
+type CohortInput = { name: string; year: number; start_date: string; end_date: string };
+
+export function listCohorts(): Promise<Cohort[]> {
+	return request("/cohorts/");
 }
 
-export async function createCohort(
-	data: { name: string; year: number; start_date: string; end_date: string },
-	token: string,
-): Promise<Cohort> {
-	const res = await fetch(`${API_BASE_URL}/cohorts/`, {
-		method: "POST",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<Cohort>(res);
+export function createCohort(data: CohortInput): Promise<Cohort> {
+	return request("/cohorts/", { method: "POST", body: data });
 }
 
-export async function updateCohort(
+export function updateCohort(id: number, data: Partial<CohortInput>): Promise<Cohort> {
+	return request(`/cohorts/${id}/`, { method: "PATCH", body: data });
+}
+
+export function deleteCohort(id: number): Promise<void> {
+	return request(`/cohorts/${id}/`, { method: "DELETE" });
+}
+
+export function listEnrollments(params: { cohort?: number; status?: Enrollment["status"] } = {}): Promise<Enrollment[]> {
+	return request(`/enrollments/${query(params)}`);
+}
+
+export function createEnrollment(data: { user: number; cohort: number; status?: Enrollment["status"] }): Promise<Enrollment> {
+	return request("/enrollments/", { method: "POST", body: data });
+}
+
+export function updateEnrollment(
 	id: number,
-	data: Partial<{
-		name: string;
-		year: number;
-		start_date: string;
-		end_date: string;
-	}>,
-	token: string,
-): Promise<Cohort> {
-	const res = await fetch(`${API_BASE_URL}/cohorts/${id}/`, {
-		method: "PATCH",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<Cohort>(res);
+	data: Partial<{ cohort: number; status: Enrollment["status"] }>,
+): Promise<Enrollment> {
+	return request(`/enrollments/${id}/`, { method: "PATCH", body: data });
 }
 
-export async function deleteCohort(id: number, token: string): Promise<void> {
-	return deleteRequest(`${API_BASE_URL}/cohorts/${id}/`, token);
+export function deleteEnrollment(id: number): Promise<void> {
+	return request(`/enrollments/${id}/`, { method: "DELETE" });
 }
 
 // ── Admin: Additional Resources (public Resources page) ─────────────────────────
@@ -421,331 +330,117 @@ function additionalResourceFormData(data: Partial<AdditionalResourceInput>): For
 	return form;
 }
 
-export async function listAdditionalResources(
-	token: string,
-	params?: { category?: AdditionalResourceCategory },
-): Promise<AdminAdditionalResource[]> {
-	const query = params?.category ? `?category=${params.category}` : "";
-	const res = await fetch(`${API_BASE_URL}/additional-resources/${query}`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<AdminAdditionalResource[]>(res);
+export function listAdditionalResources(params: { category?: AdditionalResourceCategory } = {}): Promise<AdminAdditionalResource[]> {
+	return request(`/additional-resources/${query(params)}`);
 }
 
-export async function createAdditionalResource(
-	data: AdditionalResourceInput,
-	token: string,
-): Promise<AdminAdditionalResource> {
-	const res = await fetch(`${API_BASE_URL}/additional-resources/`, {
-		method: "POST",
-		// No Content-Type here — the browser sets the multipart boundary for FormData.
-		headers: { Authorization: `Token ${token}` },
-		body: additionalResourceFormData(data),
-	});
-	return handleResponse<AdminAdditionalResource>(res);
+export function createAdditionalResource(data: AdditionalResourceInput): Promise<AdminAdditionalResource> {
+	return request("/additional-resources/", { method: "POST", body: additionalResourceFormData(data) });
 }
 
-export async function updateAdditionalResource(
-	id: number,
-	data: Partial<AdditionalResourceInput>,
-	token: string,
-): Promise<AdminAdditionalResource> {
-	const res = await fetch(`${API_BASE_URL}/additional-resources/${id}/`, {
-		method: "PATCH",
-		headers: { Authorization: `Token ${token}` },
-		body: additionalResourceFormData(data),
-	});
-	return handleResponse<AdminAdditionalResource>(res);
+export function updateAdditionalResource(id: number, data: Partial<AdditionalResourceInput>): Promise<AdminAdditionalResource> {
+	return request(`/additional-resources/${id}/`, { method: "PATCH", body: additionalResourceFormData(data) });
 }
 
-export async function deleteAdditionalResource(id: number, token: string): Promise<void> {
-	return deleteRequest(`${API_BASE_URL}/additional-resources/${id}/`, token);
+export function deleteAdditionalResource(id: number): Promise<void> {
+	return request(`/additional-resources/${id}/`, { method: "DELETE" });
 }
 
 // ids: every resource in the category, in the new display order.
-export async function reorderAdditionalResources(
-	category: AdditionalResourceCategory,
-	ids: number[],
-	token: string,
-): Promise<void> {
-	const res = await fetch(`${API_BASE_URL}/additional-resources/reorder/`, {
-		method: "POST",
-		headers: authHeader(token),
-		body: JSON.stringify({ category, ids }),
-	});
-	if (!res.ok) {
-		const data = await res.json().catch(() => ({}));
-		const message =
-			typeof data === "object" && data !== null
-				? Object.values(data).flat().join(" ")
-				: "Something went wrong";
-		throw new Error(message || "Failed to reorder resources");
-	}
+export function reorderAdditionalResources(category: AdditionalResourceCategory, ids: number[]): Promise<void> {
+	return request("/additional-resources/reorder/", { method: "POST", body: { category, ids } });
 }
 
-export async function listEnrollments(
-	params: { cohort?: number; status?: Enrollment["status"] },
-	token: string,
-): Promise<Enrollment[]> {
-	const search = new URLSearchParams();
-	if (params.cohort) search.set("cohort", String(params.cohort));
-	if (params.status) search.set("status", params.status);
-	const query = search.toString() ? `?${search.toString()}` : "";
-	const res = await fetch(`${API_BASE_URL}/enrollments/${query}`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<Enrollment[]>(res);
+// ── Admin: modules & content items ─────────────────────────────────────────────
+
+type ModuleInput = { week_number: number; title: string; description: string; summary: string; is_published: boolean };
+
+export function listModulesAdmin(): Promise<AdminModule[]> {
+	return request("/modules/");
 }
 
-export async function createEnrollment(
-	data: { user: number; cohort: number; status?: Enrollment["status"] },
-	token: string,
-): Promise<Enrollment> {
-	const res = await fetch(`${API_BASE_URL}/enrollments/`, {
-		method: "POST",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<Enrollment>(res);
+export function getModuleAdmin(id: number): Promise<AdminModule> {
+	return request(`/modules/${id}/`);
 }
 
-export async function updateEnrollment(
-	id: number,
-	data: Partial<{ cohort: number; status: Enrollment["status"] }>,
-	token: string,
-): Promise<Enrollment> {
-	const res = await fetch(`${API_BASE_URL}/enrollments/${id}/`, {
-		method: "PATCH",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<Enrollment>(res);
-}
-
-export async function deleteEnrollment(id: number, token: string): Promise<void> {
-	return deleteRequest(`${API_BASE_URL}/enrollments/${id}/`, token);
-}
-
-// ── Admin: Modules ─────────────────────────────────────────────────────────────
-
-export async function listModulesAdmin(token: string): Promise<AdminModule[]> {
-	const res = await fetch(`${API_BASE_URL}/modules/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<AdminModule[]>(res);
-}
-
-export async function getModuleAdmin(
-	id: number,
-	token: string,
+export function createModule(
+	data: Pick<ModuleInput, "week_number" | "title"> & Partial<Pick<ModuleInput, "description" | "is_published">>,
 ): Promise<AdminModule> {
-	const res = await fetch(`${API_BASE_URL}/modules/${id}/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<AdminModule>(res);
+	return request("/modules/", { method: "POST", body: data });
 }
 
-export async function createModule(
-	data: {
-		week_number: number;
-		title: string;
-		description?: string;
-		is_published?: boolean;
-	},
-	token: string,
-): Promise<AdminModule> {
-	const res = await fetch(`${API_BASE_URL}/modules/`, {
-		method: "POST",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<AdminModule>(res);
+export function updateModule(id: number, data: Partial<ModuleInput>): Promise<AdminModule> {
+	return request(`/modules/${id}/`, { method: "PATCH", body: data });
 }
 
-export async function updateModule(
-	id: number,
-	data: Partial<{
-		week_number: number;
-		title: string;
-		description: string;
-		summary: string;
-		is_published: boolean;
-	}>,
-	token: string,
-): Promise<AdminModule> {
-	const res = await fetch(`${API_BASE_URL}/modules/${id}/`, {
-		method: "PATCH",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<AdminModule>(res);
-}
-
-export async function deleteModule(id: number, token: string): Promise<void> {
-	return deleteRequest(`${API_BASE_URL}/modules/${id}/`, token);
-}
-
-// ── Admin: Content Items ──────────────────────────────────────────────────────
-
-export async function listContentItems(
-	moduleId: number,
-	token: string,
-): Promise<AdminContentItem[]> {
-	const res = await fetch(`${API_BASE_URL}/content-items/?module=${moduleId}`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<AdminContentItem[]>(res);
-}
-
-export async function createContentItem(
-	data: Partial<AdminContentItem> & {
-		module: number;
-		title: string;
-		type: string;
-	},
-	token: string,
-): Promise<AdminContentItem> {
-	const res = await fetch(`${API_BASE_URL}/content-items/`, {
-		method: "POST",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<AdminContentItem>(res);
-}
-
-export async function updateContentItem(
-	id: number,
-	data: Partial<AdminContentItem>,
-	token: string,
-): Promise<AdminContentItem> {
-	const res = await fetch(`${API_BASE_URL}/content-items/${id}/`, {
-		method: "PATCH",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<AdminContentItem>(res);
-}
-
-export async function deleteContentItem(
-	id: number,
-	token: string,
-): Promise<void> {
-	return deleteRequest(`${API_BASE_URL}/content-items/${id}/`, token);
+export function deleteModule(id: number): Promise<void> {
+	return request(`/modules/${id}/`, { method: "DELETE" });
 }
 
 // ids: every module, in the new week order. The server reassigns the existing week numbers.
-export async function reorderModules(ids: number[], token: string): Promise<void> {
-	const res = await fetch(`${API_BASE_URL}/modules/reorder/`, {
-		method: "POST",
-		headers: authHeader(token),
-		body: JSON.stringify({ ids }),
-	});
-	if (!res.ok) {
-		const data = await res.json().catch(() => ({}));
-		const message =
-			typeof data === "object" && data !== null
-				? Object.values(data).flat().join(" ")
-				: "Something went wrong";
-		throw new Error(message || "Failed to reorder modules");
-	}
+export function reorderModules(ids: number[]): Promise<void> {
+	return request("/modules/reorder/", { method: "POST", body: { ids } });
+}
+
+export function createContentItem(
+	data: Partial<AdminContentItem> & { module: number; title: string; type: string },
+): Promise<AdminContentItem> {
+	return request("/content-items/", { method: "POST", body: data });
+}
+
+export function updateContentItem(id: number, data: Partial<AdminContentItem>): Promise<AdminContentItem> {
+	return request(`/content-items/${id}/`, { method: "PATCH", body: data });
+}
+
+export function deleteContentItem(id: number): Promise<void> {
+	return request(`/content-items/${id}/`, { method: "DELETE" });
 }
 
 // ids: every content item in the module, in the new display order.
-export async function reorderContentItems(moduleId: number, ids: number[], token: string): Promise<void> {
-	const res = await fetch(`${API_BASE_URL}/content-items/reorder/`, {
-		method: "POST",
-		headers: authHeader(token),
-		body: JSON.stringify({ module: moduleId, ids }),
-	});
-	if (!res.ok) {
-		const data = await res.json().catch(() => ({}));
-		const message =
-			typeof data === "object" && data !== null
-				? Object.values(data).flat().join(" ")
-				: "Something went wrong";
-		throw new Error(message || "Failed to reorder content items");
-	}
+export function reorderContentItems(moduleId: number, ids: number[]): Promise<void> {
+	return request("/content-items/reorder/", { method: "POST", body: { module: moduleId, ids } });
 }
 
-// ── Admin: Dashboard ───────────────────────────────────────────────────────────
+// ── Admin: dashboard & surveys ─────────────────────────────────────────────────
 
-export async function getDashboardStats(
-	token: string,
-): Promise<DashboardStats> {
-	const res = await fetch(`${API_BASE_URL}/dashboard/stats/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<DashboardStats>(res);
+export function getDashboardStats(): Promise<DashboardStats> {
+	return request("/dashboard/stats/");
 }
 
-// ── Admin: Surveys ────────────────────────────────────────────────────────────
+type SurveyInput = Omit<AdminSurvey, "id" | "response_count">;
 
-export async function listSurveysAdmin(token: string): Promise<AdminSurvey[]> {
-	const res = await fetch(`${API_BASE_URL}/surveys/manage/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<AdminSurvey[]>(res);
+export function listSurveysAdmin(): Promise<AdminSurvey[]> {
+	return request("/surveys/manage/");
 }
 
-export async function getSurveyAdmin(
-	id: number,
-	token: string,
-): Promise<Omit<AdminSurvey, "response_count">> {
-	const res = await fetch(`${API_BASE_URL}/surveys/${id}/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<Omit<AdminSurvey, "response_count">>(res);
+export function getSurveyAdmin(id: number): Promise<Omit<AdminSurvey, "response_count">> {
+	return request(`/surveys/${id}/`);
 }
 
-export async function createSurvey(
-	data: Omit<AdminSurvey, "id" | "response_count">,
-	token: string,
-): Promise<AdminSurvey> {
-	const res = await fetch(`${API_BASE_URL}/surveys/`, {
-		method: "POST",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<AdminSurvey>(res);
+export function createSurvey(data: SurveyInput): Promise<AdminSurvey> {
+	return request("/surveys/", { method: "POST", body: data });
 }
 
-export async function updateSurvey(
-	id: number,
-	data: Partial<Omit<AdminSurvey, "id" | "response_count">>,
-	token: string,
-): Promise<AdminSurvey> {
-	const res = await fetch(`${API_BASE_URL}/surveys/${id}/`, {
-		method: "PATCH",
-		headers: authHeader(token),
-		body: JSON.stringify(data),
-	});
-	return handleResponse<AdminSurvey>(res);
+export function updateSurvey(id: number, data: Partial<SurveyInput>): Promise<AdminSurvey> {
+	return request(`/surveys/${id}/`, { method: "PATCH", body: data });
 }
 
-export async function deleteSurvey(id: number, token: string): Promise<void> {
-	return deleteRequest(`${API_BASE_URL}/surveys/${id}/`, token);
+export function deleteSurvey(id: number): Promise<void> {
+	return request(`/surveys/${id}/`, { method: "DELETE" });
 }
 
-export async function listSurveyResponses(id: number, token: string): Promise<AdminSurveyResponse[]> {
-	const res = await fetch(`${API_BASE_URL}/surveys/${id}/responses/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<AdminSurveyResponse[]>(res);
+export function listSurveyResponses(id: number): Promise<AdminSurveyResponse[]> {
+	return request(`/surveys/${id}/responses/`);
 }
 
 /** Download survey responses as CSV (admin only). Omit surveyId for all surveys. */
 export async function downloadSurveyResponsesCsv(
-	token: string,
 	options: { surveyId?: number; includeIdentity?: boolean } = {},
 ): Promise<void> {
-	const params = new URLSearchParams();
-	if (options.surveyId) params.set("survey", String(options.surveyId));
-	if (options.includeIdentity) params.set("identify", "1");
-	const query = params.toString() ? `?${params}` : "";
-	const res = await fetch(`${API_BASE_URL}/surveys/export/${query}`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	if (!res.ok) await handleResponse(res);
+	const res = await send(
+		`/surveys/export/${query({ survey: options.surveyId, identify: options.includeIdentity ? 1 : undefined })}`,
+	);
+	if (!res.ok) await throwForStatus(res);
 
 	const filename =
 		/filename="([^"]+)"/.exec(res.headers.get("Content-Disposition") ?? "")?.[1] ?? "survey-responses.csv";
@@ -755,61 +450,6 @@ export async function downloadSurveyResponsesCsv(
 	link.download = filename;
 	link.click();
 	URL.revokeObjectURL(url);
-}
-
-export async function loginWithGoogle(
-	credential: string,
-): Promise<AuthResponse> {
-	const res = await fetch(`${API_BASE_URL}/google-login/`, {
-		method: "POST",
-		headers: { "Content-Type": "application/json" },
-		body: JSON.stringify({ credential }),
-	});
-	const data = await handleResponse<AuthResponse>(res);
-	localStorage.setItem("token", data.token);
-	return data;
-}
-
-export async function getCurrentUser(): Promise<{ user: AuthUser }> {
-	const token = localStorage.getItem("token");
-	if (!token) {
-		throw new Error("No token");
-	}
-	const res = await fetch(`${API_BASE_URL}/user/`, {
-		method: "GET",
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<{ user: AuthUser }>(res);
-}
-
-export async function updateProfile(
-	payload: { display_name: string },
-	token: string,
-) {
-	const res = await fetch(`${API_BASE_URL}/profile/`, {
-		method: "PATCH",
-		headers: {
-			"Content-Type": "application/json",
-			Authorization: `Token ${token}`,
-		},
-		body: JSON.stringify(payload),
-	});
-	return handleResponse(res);
-}
-
-export async function changePassword(
-	payload: { current_password: string; new_password: string },
-	token: string,
-) {
-	const res = await fetch(`${API_BASE_URL}/change-password/`, {
-		method: "POST",
-		headers: {
-			"Content-Type": "application/json",
-			Authorization: `Token ${token}`,
-		},
-		body: JSON.stringify(payload),
-	});
-	return handleResponse<{ message: string; token: string }>(res);
 }
 
 // ── Surveys ────────────────────────────────────────────────────────────────────
@@ -838,80 +478,49 @@ export type ApiSurveyDetail = ApiSurvey & {
 			value: number;
 		};
 	}>;
-}
-
-export async function listSurveys(token: string): Promise<ApiSurvey[]> {
-	const res = await fetch(`${API_BASE_URL}/surveys/`, {
-		headers: { Authorization: `Token ${token}` },
-	});
-	return handleResponse<ApiSurvey[]>(res);
-}
-
-export async function getSurvey(id: number | string, token: string): Promise<ApiSurveyDetail> {
-  const res = await fetch(`${API_BASE_URL}/surveys/${id}/`, {
-    headers: { Authorization: `Token ${token}` },
-  });
-  return handleResponse<ApiSurveyDetail>(res);
-}
-
-export async function submitSurveyResponse(
-  payload: { survey: number; answers: Record<string, number | string> },
-  token: string,
-): Promise<{ id: number; survey: number; answers: Record<string, number | string>; submitted_at: string }> {
-  const res = await fetch(`${API_BASE_URL}/survey-responses/`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Token ${token}`,
-    },
-    body: JSON.stringify(payload),
-  });
-  return handleResponse(res);
-}
-
-// ── Notification Preferences ──────────────────────────────────────────────
-
-export type NotificationPreferences = {
-    id: number;
-    email_enabled: boolean;
-    inapp_enabled: boolean;
-    reminder_time: string;
-    push_denied: boolean;
-    daily_content_reminder: boolean;
-    survey_unlocked_reminder: boolean;
-    daily_survey_reminder: boolean;
 };
 
-export async function getNotificationPreferences(
-    token: string
-): Promise<NotificationPreferences> {
-    const res = await fetch(
-        `${API_BASE_URL}/notifications/preferences/me/`,
-        {
-            headers: {
-                Authorization: `Token ${token}`,
-            },
-        }
-    );
-
-    return handleResponse<NotificationPreferences>(res);
+export function listSurveys(): Promise<ApiSurvey[]> {
+	return request("/surveys/");
 }
 
-export async function updateNotificationPreferences(
-    token: string,
-    preferences: Partial<NotificationPreferences>
-): Promise<NotificationPreferences> {
-    const res = await fetch(
-        `${API_BASE_URL}/notifications/preferences/me/`,
-        {
-            method: "PATCH",
-            headers: {
-                "Content-Type": "application/json",
-                Authorization: `Token ${token}`,
-            },
-            body: JSON.stringify(preferences),
-        }
-    );
+export function getSurvey(id: number | string): Promise<ApiSurveyDetail> {
+	return request(`/surveys/${id}/`);
+}
 
-    return handleResponse<NotificationPreferences>(res);
+export function submitSurveyResponse(payload: {
+	survey: number;
+	answers: Record<string, number | string>;
+}): Promise<{ id: number; survey: number; answers: Record<string, number | string>; submitted_at: string }> {
+	return request("/survey-responses/", { method: "POST", body: payload });
+}
+
+// ── Notifications ──────────────────────────────────────────────────────────────
+
+export type NotificationPreferences = {
+	id: number;
+	email_enabled: boolean;
+	inapp_enabled: boolean;
+	reminder_time: string;
+	push_denied: boolean;
+	daily_content_reminder: boolean;
+	survey_unlocked_reminder: boolean;
+	daily_survey_reminder: boolean;
+};
+
+export function getNotificationPreferences(): Promise<NotificationPreferences> {
+	return request("/notifications/preferences/me/");
+}
+
+export function updateNotificationPreferences(preferences: Partial<NotificationPreferences>): Promise<NotificationPreferences> {
+	return request("/notifications/preferences/me/", { method: "PATCH", body: preferences });
+}
+
+export async function getVapidPublicKey(): Promise<string | undefined> {
+	const data = await request<{ vapid_public_key?: string }>("/notifications/vapid-public-key/", { auth: false });
+	return data.vapid_public_key;
+}
+
+export function savePushSubscription(subscription: { endpoint: string; p256dh: string; auth: string }): Promise<unknown> {
+	return request("/notifications/subscriptions/", { method: "POST", body: subscription });
 }

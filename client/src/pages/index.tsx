@@ -1,11 +1,11 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import Head from "next/head";
-import Image from "next/image";
 import Link from "next/link";
-import Navbar from "@/components/main/Navbar";
+import Hero from "@/components/main/Hero";
 import Footer from "@/components/main/Footer";
 import SignUpModal from "@/components/main/SignUpModal";
 import { useAuth } from "@/context/AuthContext";
+import { useAsync } from "@/hooks/useAsync";
 import { listModuleSummaries, type ApiModuleSummary } from "@/lib/api";
 import {
 	CalendarIcon,
@@ -40,30 +40,41 @@ const CARD_SCROLL_DISTANCE = 320;
 const CTA_CLASS =
 	"items-center justify-center rounded-xl bg-brand-blue px-8 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]";
 
+function ScrollButtons({ onScroll, className }: { onScroll: (direction: number) => void; className: string }) {
+	const buttonClass =
+		"flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white text-ink hover:bg-surface-muted";
+	return (
+		<div className={`items-center gap-3 ${className}`}>
+			<button type="button" onClick={() => onScroll(-1)} aria-label="Scroll to previous weeks" className={buttonClass}>
+				<ChevronLeftIcon className="size-5" />
+			</button>
+			<button type="button" onClick={() => onScroll(1)} aria-label="Scroll to next weeks" className={buttonClass}>
+				<ChevronRightIcon className="size-5" />
+			</button>
+		</div>
+	);
+}
+
 export default function Home() {
 	const { user } = useAuth();
 	const weeksRef = useRef<HTMLDivElement>(null);
 	const [signUpOpen, setSignUpOpen] = useState(false);
-	const [programmeWeeks, setProgrammeWeeks] = useState<ApiModuleSummary[]>([]);
-	const [weeksLoading, setWeeksLoading] = useState(true);
-	const [weeksError, setWeeksError] = useState<string | null>(null);
-
-	useEffect(() => {
-		const controller = new AbortController();
-		async function loadWeeks() {
-			try {
-				const modules = await listModuleSummaries();
+	const {
+		data: programmeWeeks,
+		loading: weeksLoading,
+		error: weeksError,
+	} = useAsync(
+		() =>
+			listModuleSummaries().then(
 				// Week 0 is the introduction module, not one of the 8 programme weeks.
-				if (!controller.signal.aborted) setProgrammeWeeks(modules.filter((m) => m.week_number > 0));
-			} catch {
-				if (!controller.signal.aborted) setWeeksError("Unable to load the programme right now.");
-			} finally {
-				if (!controller.signal.aborted) setWeeksLoading(false);
-			}
-		}
-		void loadWeeks();
-		return () => controller.abort();
-	}, []);
+				(modules) => modules.filter((m) => m.week_number > 0),
+				() => {
+					throw new Error("Unable to load the programme right now.");
+				},
+			),
+		[],
+		[] as ApiModuleSummary[],
+	);
 
 	function scrollWeeks(direction: number) {
 		weeksRef.current?.scrollBy({ left: direction * CARD_SCROLL_DISTANCE, behavior: "smooth" });
@@ -79,41 +90,25 @@ export default function Home() {
 				/>
 			</Head>
 
-			<div className="relative min-h-[560px] overflow-hidden sm:min-h-[640px]">
-				<Image
-					src="/pexels-michael-metschl-718198730-18284929.jpg"
-					alt=""
-					fill
-					priority
-					sizes="100vw"
-					className="object-cover"
-				/>
-				<div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/50" />
-
-				<Navbar />
-
-				<div className="relative z-10 flex min-h-[560px] flex-col items-center justify-center px-6 text-center sm:min-h-[640px]">
-					<h1 className="text-5xl font-extrabold text-white sm:text-6xl">
-						Find Your Calm
-					</h1>
-					<p className="mt-4 text-lg text-white/90">
-						An 8-week guided meditation journey for lasting wellbeing
-					</p>
-					{user ? (
-						<Link href="/modules" className={`mt-8 flex h-14 ${CTA_CLASS}`}>
-							Continue Your Journey
-						</Link>
-					) : (
-						<button
-							type="button"
-							onClick={() => setSignUpOpen(true)}
-							className={`mt-8 flex h-14 ${CTA_CLASS}`}
-						>
-							Start Your Journey
-						</button>
-					)}
-				</div>
-			</div>
+			<Hero
+				title="Find Your Calm"
+				subtitle="An 8-week guided meditation journey for lasting wellbeing"
+				heightClass="min-h-[560px] sm:min-h-[640px]"
+			>
+				{user ? (
+					<Link href="/modules" className={`mt-8 flex h-14 ${CTA_CLASS}`}>
+						Continue Your Journey
+					</Link>
+				) : (
+					<button
+						type="button"
+						onClick={() => setSignUpOpen(true)}
+						className={`mt-8 flex h-14 ${CTA_CLASS}`}
+					>
+						Start Your Journey
+					</button>
+				)}
+			</Hero>
 
 			<section className="bg-white px-6 py-20 sm:px-10 lg:px-30">
 				<div className="mx-auto max-w-2xl text-center">
@@ -146,24 +141,7 @@ export default function Home() {
 						The 8-Week Programme
 					</h2>
 
-					<div className="hidden shrink-0 items-center gap-3 sm:flex">
-						<button
-							type="button"
-							onClick={() => scrollWeeks(-1)}
-							aria-label="Scroll to previous weeks"
-							className="flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white text-ink hover:bg-surface-muted"
-						>
-							<ChevronLeftIcon className="size-5" />
-						</button>
-						<button
-							type="button"
-							onClick={() => scrollWeeks(1)}
-							aria-label="Scroll to next weeks"
-							className="flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white text-ink hover:bg-surface-muted"
-						>
-							<ChevronRightIcon className="size-5" />
-						</button>
-					</div>
+					<ScrollButtons onScroll={scrollWeeks} className="hidden shrink-0 sm:flex" />
 				</div>
 
 				{weeksError ? (
@@ -197,24 +175,7 @@ export default function Home() {
 					</div>
 				)}
 
-				<div className="mt-2 flex justify-center gap-3 sm:hidden">
-					<button
-						type="button"
-						onClick={() => scrollWeeks(-1)}
-						aria-label="Scroll to previous weeks"
-						className="flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white text-ink"
-					>
-						<ChevronLeftIcon className="size-5" />
-					</button>
-					<button
-						type="button"
-						onClick={() => scrollWeeks(1)}
-						aria-label="Scroll to next weeks"
-						className="flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white text-ink"
-					>
-						<ChevronRightIcon className="size-5" />
-					</button>
-				</div>
+				<ScrollButtons onScroll={scrollWeeks} className="mt-2 flex justify-center sm:hidden" />
 			</section>
 
 			<section className="bg-white px-6 py-20 text-center sm:px-10 lg:px-30">

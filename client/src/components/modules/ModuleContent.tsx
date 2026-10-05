@@ -1,6 +1,5 @@
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import ContentEmbed from "@/components/modules/ContentEmbed";
+import Markdown from "@/components/ui/Markdown";
 import type { ContentBlock } from "@/types/module";
 
 type ModuleContentProps = {
@@ -15,14 +14,12 @@ export default function ModuleContent({ blocks, embedded = false, onToggleComple
 			{blocks.map((block) => {
 				if (block.type === "text") {
 					return (
-						<div
+						<Markdown
 							key={block.id}
-							className="prose prose-neutral prose-lg lg:prose-base mb-4 max-w-none break-words last:mb-0 [&_table]:block [&_table]:overflow-x-auto"
+							className="prose-lg lg:prose-base mb-4 last:mb-0 [&_table]:block [&_table]:overflow-x-auto"
 						>
-							<ReactMarkdown remarkPlugins={[remarkGfm]}>
-								{block.content}
-							</ReactMarkdown>
-						</div>
+							{block.content}
+						</Markdown>
 					);
 				}
 

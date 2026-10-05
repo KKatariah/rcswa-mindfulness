@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
+import Card from "@/components/ui/Card";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
 type ScaleQuestion = {
@@ -103,7 +104,7 @@ function ScaleQuestionGroup({
 										value={value}
 										checked={answers[question.id] === value}
 										onChange={() => onAnswer(question.id, value)}
-										className="size-4 accent-[#5096CF] border-[#5096CF] bg-white checked:bg-[#5096CF] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5096CF] md:size-4"
+										className="size-4 border-brand-blue bg-white accent-brand-blue checked:bg-brand-blue focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 									/>
 								</label>
 							))}
@@ -112,6 +113,21 @@ function ScaleQuestionGroup({
 				</fieldset>
 			))}
 		</div>
+	);
+}
+
+function NumberQuestion({ label, onChange }: { label: ReactNode; onChange: (value: number) => void }) {
+	return (
+		<label className="grid gap-2 text-sm leading-5 text-ink md:grid-cols-[minmax(0,1fr)_170px] md:items-center md:text-base">
+			<span>{label}</span>
+			<input
+				type="number"
+				min="0"
+				placeholder="Enter number..."
+				className="h-9 rounded-xl border border-[#5b5a5a] bg-white px-3 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30 md:h-8 md:px-4"
+				onChange={(event) => onChange(Number(event.target.value || 0))}
+			/>
+		</label>
 	);
 }
 
@@ -158,31 +174,19 @@ export default function SurveyQuestions({
 
 	return (
 		<form onSubmit={submit} className="grid gap-4 pb-[calc(var(--mobile-bottom-nav-height)+var(--mobile-bottom-nav-safe)-1rem)] md:gap-5 md:pb-0">
-			<section className="rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10">
+			<Card as="section" className="p-4 md:p-10">
 				<h2 className="text-[13px] font-bold leading-5 text-ink md:text-base">
 					{sectionText[1] ?? <>Questions 1 to 6 ask about your <u>formal meditation practice</u> (e.g. sitting meditation).</>}
 				</h2>
 				<div className="mt-4 grid gap-3 md:mt-5 md:max-w-[900px] md:gap-4">
-					<label className="grid gap-2 text-sm leading-5 text-ink md:grid-cols-[minmax(0,1fr)_170px] md:items-center md:text-base">
-						<span>1. {questionText[1] ?? <>How many times did you do formal meditation practice in the <u>past week</u>?</>}</span>
-						<input
-							type="number"
-							min="0"
-							placeholder="Enter number..."
-							className="h-9 rounded-xl border border-[#5b5a5a] bg-white px-3 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30 md:h-8 md:px-4"
-							onChange={(event) => updateAnswer(1, Number(event.target.value || 0))}
-						/>
-					</label>
-					<label className="grid gap-2 text-sm leading-5 text-ink md:grid-cols-[minmax(0,1fr)_170px] md:items-center md:text-base">
-						<span>2. {questionText[2] ?? "What was the average duration of each meditation session (estimate in minutes)?"}</span>
-						<input
-							type="number"
-							min="0"
-							placeholder="Enter number..."
-							className="h-9 rounded-xl border border-[#5b5a5a] bg-white px-3 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30 md:h-8 md:px-4"
-							onChange={(event) => updateAnswer(2, Number(event.target.value || 0))}
-						/>
-					</label>
+					<NumberQuestion
+						label={<>1. {questionText[1] ?? <>How many times did you do formal meditation practice in the <u>past week</u>?</>}</>}
+						onChange={(value) => updateAnswer(1, value)}
+					/>
+					<NumberQuestion
+						label={<>2. {questionText[2] ?? "What was the average duration of each meditation session (estimate in minutes)?"}</>}
+						onChange={(value) => updateAnswer(2, value)}
+					/>
 				</div>
 				<p className="mt-3 text-sm leading-4 text-ink md:mt-4 md:text-base">
 					<span className="font-bold">(Note:</span> If you did not do <u>any</u> meditation practice in the past week, skip to question 7.)
@@ -191,9 +195,9 @@ export default function SurveyQuestions({
 					Please select the appropriate number (0 - not at all, 6 - all the time) to indicate how much each of the following were true for you over the <u>past week</u>.
 				</p>
 				<ScaleQuestionGroup questions={formalQuestions} answers={answers} onAnswer={updateAnswer} />
-			</section>
+			</Card>
 
-			<section className="rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10">
+			<Card as="section" className="p-4 md:p-10">
 				<h2 className="text-sm font-bold leading-5 text-ink md:text-base">
 					{sectionText[7] ?? "Questions 7 to 12 ask about your informal practice (being mindful in everyday life, outside of meditation sessions)."}
 				</h2>
@@ -201,9 +205,9 @@ export default function SurveyQuestions({
 					Again, please select the appropriate number to indicate how much each of the following were true for you over the <u>past week</u>.
 				</p>
 				<ScaleQuestionGroup questions={informalQuestions} answers={answers} onAnswer={updateAnswer} />
-			</section>
+			</Card>
 
-			<section className="rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10">
+			<Card as="section" className="p-4 md:p-10">
 				<h2 className="text-sm font-bold text-ink md:text-base">Reflective Journal</h2>
 				<p className="mt-3 text-sm leading-5 text-ink md:mt-4 md:text-base">
 					Please write 100-250 words (4-5 sentences) reflecting on the following questions:
@@ -222,7 +226,7 @@ export default function SurveyQuestions({
 				<p id="journal-word-count" className="mt-2 text-xs text-muted">
 					{journalWords} {journalWords === 1 ? "word" : "words"} (aim for 100-250)
 				</p>
-			</section>
+			</Card>
 
 			<div className="flex flex-nowrap items-center justify-center gap-3">
 				<button

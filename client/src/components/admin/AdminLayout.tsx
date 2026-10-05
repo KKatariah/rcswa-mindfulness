@@ -3,6 +3,7 @@ import { useRequireRole } from "@/hooks/useRequireRole";
 import AdminSidebar from "@/components/admin/AdminSidebar";
 import Navbar from "@/components/main/Navbar";
 import Footer from "@/components/main/Footer";
+import { LoadingState } from "@/components/ui/feedback";
 
 export default function AdminLayout({ children }: { children: ReactNode }) {
 	const { isLoading, denied } = useRequireRole("admin");
@@ -18,9 +19,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
 			</div>
 
 			{isLoading ? (
-				<div className="flex justify-center py-20">
-					<span className="text-sm text-muted">Loading…</span>
-				</div>
+				<LoadingState className="py-20" />
 			) : denied ? (
 				<div className="flex justify-center p-6 py-20">
 					<div className="mx-auto max-w-md rounded-2xl border border-gray-200 bg-white p-8 text-center">

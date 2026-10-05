@@ -1,0 +1,5 @@
+Hi {{ user.full_name }},
+
+Your survey '{{ survey.title }}' is ready to complete.
+
+Please log in to the mindfulness program to complete it.
