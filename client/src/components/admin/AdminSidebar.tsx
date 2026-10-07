@@ -24,7 +24,7 @@ export default function AdminSidebar() {
   return (
     <aside className="flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)] md:sticky md:top-6 md:h-[calc(100dvh-3rem)] md:overflow-y-auto">
       <Link href="/" className="flex items-center gap-3">
-        <span className="size-9 shrink-0 rounded-[10px] bg-brand-blue" />
+        <img src="/assets/branding/rcswa-logo-navy.png" alt="RCSWA logo" width={803} height={730} className="h-9 w-auto shrink-0" />
         <span className="text-[18px] font-bold text-[#111827]">Admin</span>
       </Link>
 
