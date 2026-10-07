@@ -61,7 +61,7 @@ export default function Footer() {
 
       <div className="flex flex-wrap items-center justify-between gap-4">
         <p className="text-sm text-white/50">
-          © {new Date().getFullYear()} Wellbeing Course. All rights reserved.
+          © {new Date().getFullYear()} RCSWA Wellbeing. All rights reserved.
         </p>
 
         <div className="flex items-center gap-3">

@@ -72,7 +72,7 @@ export default function Home() {
 	return (
 		<>
 			<Head>
-				<title>Wellbeing Course</title>
+				<title>RCSWA Wellbeing</title>
 				<meta
 					name="description"
 					content="An 8-week guided meditation journey"

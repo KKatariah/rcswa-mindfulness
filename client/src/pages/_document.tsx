@@ -13,7 +13,7 @@ export default function Document() {
 
 				{/* iOS standalone mode */}
 				<meta name="apple-mobile-web-app-capable" content="yes" />
-				<meta name="apple-mobile-web-app-title" content="Wellbeing Course" />
+				<meta name="apple-mobile-web-app-title" content="Wellbeing" />
 				<meta name="apple-mobile-web-app-status-bar-style" content="default" />
 
 				{/* Android standalone mode */}

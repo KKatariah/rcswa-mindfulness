@@ -33,7 +33,7 @@ export default function ProgressPage() {
   return (
     <>
       <Head>
-        <title>Your Progress | Wellbeing Course</title>
+        <title>Your Progress | RCSWA Wellbeing</title>
         <meta name="description" content="Track your progress through the eight-week mindfulness programme." />
       </Head>
       <AppShell

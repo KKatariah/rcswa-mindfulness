@@ -131,7 +131,7 @@ export default function ResourcesPage() {
   return (
     <>
       <Head>
-        <title>Resources | Wellbeing Course</title>
+        <title>Resources | RCSWA Wellbeing</title>
         <meta name="description" content="Books, documentaries, and online programmes to support your mindfulness journey." />
       </Head>
       <AppShell>
