@@ -63,9 +63,8 @@ export default function Navbar() {
 						</Link>
 					)}
 
-					<Link href="/" className={`${user ? "hidden md:flex" : "flex"} items-center gap-3`}>
-						<span className="size-9 shrink-0 rounded-[10px] bg-brand-blue" />
-						<span className="text-lg font-bold text-white">logo</span>
+					<Link href="/" className={`${user ? "hidden md:flex" : "flex"} items-center`}>
+						<img src="/assets/branding/rcswa-logo-white.png" alt="RCSWA logo" width={803} height={730} className="h-10 w-auto" />
 					</Link>
 
 					<ul className="hidden items-center justify-self-center gap-7 text-[15px] font-semibold text-white lg:flex">
