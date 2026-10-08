@@ -3802,4 +3802,3 @@ class PasswordResetAdminTests(APITestCase):
     def test_unknown_user_returns_404(self):
         self.client.force_login(self.admin)
         self.assertEqual(self._reset(999999).status_code, status.HTTP_404_NOT_FOUND)
-
