@@ -4,6 +4,7 @@ import Link from "next/link";
 import AdminLayout from "@/components/admin/AdminLayout";
 import Select from "@/components/ui/Select";
 import EditUserModal from "@/components/admin/EditUserModal";
+import ResetPasswordModal from "@/components/admin/ResetPasswordModal";
 import { EnrollmentStatusBadge, RoleBadge } from "@/components/admin/Badges";
 import { PencilIcon } from "@/components/ui/icons";
 import { listCohorts, listEnrollments, listUsers } from "@/lib/api";
@@ -18,6 +19,7 @@ export default function AdminUsersPage() {
 	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState<string | null>(null);
 	const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
+	const [resettingUser, setResettingUser] = useState<AdminUser | null>(null);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -80,6 +82,9 @@ export default function AdminUsersPage() {
 		}
 		setEditingUser(null);
 	}
+
+	// Admins can't be reset from here (the server refuses it too).
+	const canReset = (u: AdminUser) => u.role !== "admin";
 
 	return (
 		<AdminLayout>
@@ -154,6 +159,16 @@ export default function AdminUsersPage() {
 										<dt className="text-muted">Joined</dt>
 										<dd className="text-right text-ink-soft">{new Date(u.created_at).toLocaleDateString()}</dd>
 									</dl>
+
+									{canReset(u) && (
+										<button
+											type="button"
+											onClick={() => setResettingUser(u)}
+											className="mt-3 text-sm font-semibold text-brand-blue hover:underline"
+										>
+											Reset password
+										</button>
+									)}
 								</div>
 							);
 						})}
@@ -189,9 +204,20 @@ export default function AdminUsersPage() {
 											<td className="px-5 py-3">{enrollment ? <EnrollmentStatusBadge status={enrollment.status} /> : <span className="text-xs text-muted">Not enrolled</span>}</td>
 											<td className="px-5 py-3 text-ink-soft">{new Date(u.created_at).toLocaleDateString()}</td>
 											<td className="px-5 py-3">
-												<button type="button" onClick={() => setEditingUser(u)} aria-label="Edit user">
-													<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
-												</button>
+												<div className="flex items-center justify-end gap-4">
+													{canReset(u) && (
+														<button
+															type="button"
+															onClick={() => setResettingUser(u)}
+															className="whitespace-nowrap text-sm font-semibold text-brand-blue hover:underline"
+														>
+															Reset password
+														</button>
+													)}
+													<button type="button" onClick={() => setEditingUser(u)} aria-label="Edit user">
+														<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
+													</button>
+												</div>
 											</td>
 										</tr>
 									);
@@ -209,6 +235,8 @@ export default function AdminUsersPage() {
 				onClose={() => setEditingUser(null)}
 				onSaved={handleUserSaved}
 			/>
+
+			<ResetPasswordModal user={resettingUser} onClose={() => setResettingUser(null)} />
 		</AdminLayout>
 	);
 }

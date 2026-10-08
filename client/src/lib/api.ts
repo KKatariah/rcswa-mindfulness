@@ -23,6 +23,16 @@ async function handleResponse<T>(res: Response): Promise<T> {
 			}
 			throw new Error("Your session has expired. Please log in again.");
 		}
+		// The server says this account isn't approved (never approved, or un-approved
+		// mid-session). Tell AuthContext to re-sync; ApprovalGate then redirects.
+		if (
+			res.status === 403 &&
+			typeof window !== "undefined" &&
+			/awaiting admin approval/i.test(String(data?.detail ?? ""))
+		) {
+			window.dispatchEvent(new Event("approval-required"));
+			throw new Error("Your account is awaiting admin approval.");
+		}
 		if (res.status === 429) {
 			const seconds = /(\d+) seconds?/.exec(String(data?.detail ?? ""))?.[1];
 			throw new Error(
@@ -209,6 +219,13 @@ async function deleteRequest(url: string, token: string): Promise<void> {
 	});
 	if (!res.ok) {
 		const data = await res.json().catch(() => ({}));
+		if (
+			res.status === 403 &&
+			typeof window !== "undefined" &&
+			/awaiting admin approval/i.test(String(data?.detail ?? ""))
+		) {
+			window.dispatchEvent(new Event("approval-required"));
+		}
 		const message =
 			typeof data === "object" && data !== null
 				? Object.values(data).flat().join(" ")
@@ -376,6 +393,17 @@ export async function updateUser(
 
 export async function deleteUser(id: number, token: string): Promise<void> {
 	return deleteRequest(`${API_BASE_URL}/users/${id}/`, token);
+}
+
+export async function resetUserPassword(
+	id: number,
+	token: string,
+): Promise<{ temporary_password: string }> {
+	const res = await fetch(`${API_BASE_URL}/users/${id}/reset-password/`, {
+		method: "POST",
+		headers: { Authorization: `Token ${token}` },
+	});
+	return handleResponse<{ temporary_password: string }>(res);
 }
 
 export async function listCohorts(token: string): Promise<Cohort[]> {
