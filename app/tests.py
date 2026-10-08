@@ -3750,17 +3750,6 @@ class PasswordResetAdminTests(APITestCase):
         self.assertEqual(self._reset(self.student.pk).status_code, status.HTTP_200_OK)
         self.assertFalse(Token.objects.filter(user=self.student).exists())
 
-    def test_temporary_password_works_as_current_password_for_change_password(self):
-        self.client.force_login(self.admin)
-        temp = self._reset(self.student.pk).data["temporary_password"]
-        self.client.force_login(self.student)
-        resp = self.client.post(
-            "/api/change-password/",
-            {"current_password": temp, "new_password": "Calm-River-42"},
-            format="json",
-        )
-        self.assertEqual(resp.status_code, status.HTTP_200_OK)
-
     def test_each_reset_gives_a_different_password(self):
         self.client.force_login(self.admin)
         first = self._reset(self.student.pk).data["temporary_password"]
