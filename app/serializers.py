@@ -1194,7 +1194,6 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
         return value
 
 
-
 class NotificationLogSerializer(serializers.ModelSerializer):
     """A delivered notification as shown in the user's in-app inbox.
 
@@ -1236,6 +1235,7 @@ class NotificationLogSerializer(serializers.ModelSerializer):
             # The frontend module route is keyed by id, not week number.
             return f"/modules/{obj.module.id}/"
         return None
+
 
 # –– User profiles –––––––––––––––––––––––––––––––––––––––––––––––––––––––––
 
