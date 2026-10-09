@@ -167,6 +167,20 @@ class AuthToken(models.Model):
         return f"Token for {self.user} (last used {self.last_used:%Y-%m-%d})"
 
 
+class UnknownEmailLockout(models.Model):
+    """Wrong-password count and lock for an email with no account (see app/lockout.py).
+
+    Real accounts keep theirs on the user; tracking unknown emails the same way means
+    the lock message can't be used to tell which emails are registered. Only a keyed
+    hash of the email is stored.
+    """
+
+    email_hash = models.CharField(max_length=64, unique=True)
+    failed_login_count = models.PositiveSmallIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class Cohort(models.Model):
     name = models.CharField(max_length=150)
     year = models.PositiveIntegerField()

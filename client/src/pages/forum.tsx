@@ -22,6 +22,7 @@ import {
   MessageCircleIcon,
   MoreHorizontalIcon,
   PencilIcon,
+  PinIcon,
   SearchIcon,
   TrashIcon,
 } from "@/components/ui/icons";
@@ -270,6 +271,13 @@ function PostMenu({ label, actions, className = "" }: { label: string; actions: 
     </div>
   );
 }
+
+const pinAction = (isPinned: boolean, onSelect: () => void, disabled?: boolean): MenuAction => ({
+  label: isPinned ? "Unpin thread" : "Pin thread",
+  icon: <PinIcon className="size-4" />,
+  onSelect,
+  disabled,
+});
 
 const editAction = (onSelect: () => void): MenuAction => ({
   label: "Edit",
@@ -619,7 +627,7 @@ function ThreadDetailView({
 
   const threadActions: MenuAction[] = [];
   if (thread.can_pin) {
-    threadActions.push({ label: thread.is_pinned ? "Unpin thread" : "Pin thread", onSelect: handlePinToggle });
+    threadActions.push(pinAction(thread.is_pinned, handlePinToggle));
   }
   if (openingPost?.can_edit) threadActions.push(editAction(() => setEditingOpening(true)));
   if (thread.can_edit) threadActions.push(deleteAction("Delete thread", onDeleteThread));
@@ -805,7 +813,7 @@ function ThreadRow({ thread, isFirst, isLast, isOnly, isAdmin, onSelect, onEdit,
             className="-my-1.5 -mr-2"
             label={`Actions for thread by ${thread.author_name}`}
             actions={[
-              { label: thread.is_pinned ? "Unpin thread" : "Pin thread", onSelect: handlePin, disabled: pinning },
+              pinAction(thread.is_pinned, handlePin, pinning),
               editAction(() => setEditing(true)),
               deleteAction("Delete thread", () => onDelete(thread.id)),
             ]}

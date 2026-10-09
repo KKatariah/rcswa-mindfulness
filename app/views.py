@@ -28,7 +28,7 @@ from .access import (
     survey_is_unlocked,
 )
 from .exports import cohort_names, survey_responses_csv
-from .lockout import lock_minutes_left
+from .lockout import lock_minutes_left, unknown_email_entry
 from .models import (
     AdditionalResource,
     AuthToken,
@@ -189,19 +189,22 @@ def login_view(request):
         )
 
     # Emails are matched case-insensitively; authenticate() needs the stored spelling.
+    # Unknown emails go through authenticate() too, so they're counted and locked like accounts.
     match = User.objects.filter(email__iexact=email.strip()).first()
-    user = authenticate(request, email=match.email, password=password) if match else None
+    user = authenticate(request, email=match.email if match else email.strip(), password=password)
 
     if user is None:
         if match:
             match.refresh_from_db(fields=["locked_until"])
             minutes = lock_minutes_left(match)
-            if minutes:
-                unit = "minute" if minutes == 1 else "minutes"
-                return Response(
-                    {"error": f"Too many failed attempts. Try again in {minutes} {unit}."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
+        else:
+            minutes = lock_minutes_left(unknown_email_entry(email))
+        if minutes:
+            unit = "minute" if minutes == 1 else "minutes"
+            return Response(
+                {"error": f"Too many failed attempts. Try again in {minutes} {unit}."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         return Response(
             {"error": "Invalid credentials."},
             status=status.HTTP_401_UNAUTHORIZED,
