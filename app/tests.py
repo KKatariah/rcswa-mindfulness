@@ -16,6 +16,7 @@ from rest_framework.test import APITestCase as DRFAPITestCase
 
 from .models import (
     AdditionalResource,
+    AuthToken,
     Cohort,
     ContentCompletion,
     ContentItem,
@@ -315,6 +316,7 @@ class ForumTests(APITestCase):
         )
         self.student.refresh_from_db()
         self.other.refresh_from_db()
+        _enroll(self.student, self.other)
         self.module = Module.objects.create(
             week_number=1, title="Week 1", is_published=True
         )
@@ -1414,6 +1416,7 @@ class AuthRoleTests(APITestCase):
         self.student = User.objects.create_user(
             email="student@test.local", password="testpass", full_name="Student One",
         )
+        _enroll(self.student)
 
     def test_login_response_includes_role(self):
         resp = self.client.post(
@@ -1568,6 +1571,7 @@ class UserManagementAdminTests(APITestCase):
         self.admin = User.objects.create_user(
             email="admin@test.local", password="testpass", role=User.Role.ADMIN,
         )
+        _enroll(self.student, self.other)
 
     def test_student_lists_only_themselves(self):
         self.client.force_login(self.student)
@@ -1675,7 +1679,9 @@ class ApprovalsAdminTests(APITestCase):
             user=self.student, cohort=self.cohort, status=Enrollment.Status.PENDING,
         )
         self.client.force_login(self.student)
-        self.assertEqual(self.client.get("/api/modules/").data, [])
+        resp = self.client.get("/api/modules/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("awaiting admin approval", str(resp.data["detail"]))
 
         self.client.force_login(self.admin)
         resp = self.client.patch(
@@ -1732,6 +1738,7 @@ class AdditionalResourceAdminTests(APITestCase):
         self.admin = User.objects.create_user(
             email="admin@test.local", password="testpass", role=User.Role.ADMIN,
         )
+        _enroll(self.student)
 
     def _create(self, **overrides):
         data = {"category": "book", "title": "Test Book", "author": "A. Writer", "url": "https://example.com/book"}
@@ -2094,6 +2101,14 @@ class ForumArchiveTests(APITestCase):
             module=self.module, created_by=self.student, title="Existing Thread",
         )
         ForumPost.objects.create(thread=self.thread, author=self.student, body="Opening")
+        # Approved through a cohort that has already ended, so the programme still
+        # counts as inactive until a test adds a running cohort.
+        past = Cohort.objects.create(
+            name="Past Cohort", year=2025,
+            start_date=date.today() - timedelta(days=200),
+            end_date=date.today() - timedelta(days=150),
+        )
+        Enrollment.objects.create(user=self.student, cohort=past, status=Enrollment.Status.ACTIVE)
 
     def _make_ended_cohort(self):
         return Cohort.objects.create(
@@ -2142,10 +2157,15 @@ class ForumArchiveTests(APITestCase):
 
     def test_program_status_endpoint_reflects_active_cohort(self):
         self.client.force_login(self.student)
-        self.assertTrue(self.client.get("/api/program-status/").data["is_active"])
-
-        self._make_ended_cohort()
+        # The student's own cohort has ended, so the programme starts out inactive.
         self.assertFalse(self.client.get("/api/program-status/").data["is_active"])
+
+        Cohort.objects.create(
+            name="Active Cohort", year=2026,
+            start_date=date.today() - timedelta(days=7),
+            end_date=date.today() + timedelta(days=49),
+        )
+        self.assertTrue(self.client.get("/api/program-status/").data["is_active"])
 
 
 # ── Admin portal: dashboard stats ────────────────────────────────────────────────
@@ -2159,6 +2179,7 @@ class ForumRulesTests(APITestCase):
             email="admin@test.local", password="testpass",
             full_name="Admin User", role=User.Role.ADMIN,
         )
+        _enroll(self.student)
 
     def test_forum_blocked_until_rules_accepted(self):
         self.client.force_login(self.student)
@@ -2222,6 +2243,7 @@ class ForumRulesBypassTests(APITestCase):
         self.reply = ForumPost.objects.create(
             thread=self.thread, author=self.student, body="Old reply"
         )
+        _enroll(self.student)
 
     def _forum_requests(self):
         t, op, r = self.thread.pk, self.opening.pk, self.reply.pk
@@ -2338,6 +2360,7 @@ class ForumRulesBypassTests(APITestCase):
 
     def test_acceptance_is_per_user(self):
         other = User.objects.create_user(email="other@test.local", password="testpass")
+        _enroll(other)
         self.client.force_login(other)
         self.client.post("/api/forum/accept-rules/")
         self.client.force_login(self.student)
@@ -2351,6 +2374,7 @@ class ForumRulesBypassTests(APITestCase):
         )
         admin.role = User.Role.STUDENT
         admin.save()
+        _enroll(admin)
         self.client.force_login(admin)
         self.assertEqual(
             self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN
@@ -2589,6 +2613,7 @@ class PushSubscriptionEndpointReuseTests(APITestCase):
     def setUp(self):
         self.user_a = _make_user("a@test.local")
         self.user_b = _make_user("b@test.local")
+        _enroll(self.user_a, self.user_b)
 
     def test_endpoint_reassigned_to_new_user(self):
         payload = {"endpoint": "https://push.example.com/sub/123", "p256dh": "key", "auth": "auth"}
@@ -2644,7 +2669,7 @@ class FailedSendRetriesNextRunTests(TestCase):
 
     def setUp(self):
         self.user = _make_user("retry@test.local")
-        # reminder_time defaults to 08:00 Perth — the mock will set current hour to 8
+        # reminder_time defaults to 17:00 Perth — the mock will set current hour to 17
         self.cohort = _make_cohort(days_ago=0, duration=56)
         Enrollment.objects.create(user=self.user, cohort=self.cohort)
         self.module = _make_module(week=1)
@@ -2667,7 +2692,7 @@ class FailedSendRetriesNextRunTests(TestCase):
         from zoneinfo import ZoneInfo
         PERTH_TZ = ZoneInfo("Australia/Perth")
         fake_now = datetime.datetime.combine(
-            datetime.date.today(), datetime.time(8, 0), tzinfo=PERTH_TZ
+            datetime.date.today(), datetime.time(17, 0), tzinfo=PERTH_TZ
         )
 
         with patch("app.management.commands.send_due_reminders._perth_now", return_value=fake_now):
@@ -2741,7 +2766,7 @@ class DailyMeditationReminderTests(TestCase):
     def _run(self):
         from zoneinfo import ZoneInfo
         fake_now = datetime.datetime.combine(
-            datetime.date.today(), datetime.time(8, 0), tzinfo=ZoneInfo("Australia/Perth")
+            datetime.date.today(), datetime.time(17, 0), tzinfo=ZoneInfo("Australia/Perth")
         )
         out = StringIO()
         with patch("app.management.commands.send_due_reminders._perth_now", return_value=fake_now):
@@ -2862,6 +2887,7 @@ class GoogleLoginEdgeCaseTests(APITestCase):
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
         user = User.objects.get(email="new.person@gmail.com")
         self.assertFalse(user.has_usable_password())
+        _enroll(user)
         self.client.force_login(user)
         resp = self.client.post(
             "/api/change-password/", {"current_password": "x", "new_password": "Calm-River-42"},
@@ -3102,6 +3128,7 @@ class ForumEdgeCaseTests(APITestCase):
         reader = User.objects.create_user(
             email="reader@test.local", password="testpass", forum_rules_accepted_at=timezone.now()
         )
+        _enroll(author, reader)
         self.client.force_login(author)
         tid = self.client.post("/api/forum/threads/", {"body": "Pinned by admin"}, format="json").data["id"]
         self.client.force_login(admin)
@@ -3162,6 +3189,7 @@ class PushFailureTests(TestCase):
 class ReminderTimeTests(APITestCase):
     def test_reminder_time_must_be_on_the_hour(self):
         user = User.objects.create_user(email="s@test.local", password="testpass")
+        _enroll(user)
         self.client.force_login(user)
         bad = self.client.patch("/api/notifications/preferences/me/", {"reminder_time": "08:30"}, format="json")
         self.assertEqual(bad.status_code, status.HTTP_400_BAD_REQUEST)
@@ -3303,6 +3331,7 @@ class OrphanedSurveyTests(APITestCase):
         self.admin = User.objects.create_user(
             email="orphan_admin@test.local", password="pass", role=User.Role.ADMIN,
         )
+        _enroll(self.student)
 
     def test_orphaned_weekly_survey_hidden_from_students(self):
         orphan = Survey(code="orphan-hide-1", title="Orphan", type="weekly", questions=[])
@@ -3627,8 +3656,8 @@ class ReminderDeliveryTests(TestCase):
         with patch("app.signals._fire_async"):
             self.module = _make_module(week=1)
             self.item = _make_audio_item(self.module, title="Body scan")
-        # 08:00 Perth: the default reminder hour.
-        self.fake_now = datetime.datetime.combine(today, datetime.time(8, 0), tzinfo=ZoneInfo("Australia/Perth"))
+        # 17:00 Perth: the default reminder hour.
+        self.fake_now = datetime.datetime.combine(today, datetime.time(17, 0), tzinfo=ZoneInfo("Australia/Perth"))
         PushSubscription.objects.create(user=self.user, endpoint="https://push.example/a", p256dh="k", auth="a")
         push_patch = patch("pywebpush.webpush")
         self.push = push_patch.start()
@@ -3840,6 +3869,7 @@ class LoginLockoutTests(APITestCase):
 class PerDeviceTokenTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user(email="dev@test.local", password="Calm-River-42")
+        _enroll(self.user)
 
     def _token(self, ip):
         resp = self.client.post(
@@ -3920,13 +3950,18 @@ class SecurityHardeningTests(APITestCase):
             (self._user("pending@test.local", Enrollment.Status.PENDING), status.HTTP_403_FORBIDDEN),
             (self._user("withdrawn@test.local", Enrollment.Status.WITHDRAWN), status.HTTP_403_FORBIDDEN),
             (self._user("nobody@test.local"), status.HTTP_403_FORBIDDEN),
-            (self._user("done@test.local", Enrollment.Status.COMPLETED), status.HTTP_201_CREATED),
+            # Only ACTIVE enrollments pass IsApproved, so completed students are locked out too.
+            (self._user("done@test.local", Enrollment.Status.COMPLETED), status.HTTP_403_FORBIDDEN),
             (self.student, status.HTTP_201_CREATED),
         ]
         for user, expected in cases:
             self.client.force_authenticate(user)
-            listed = next(s for s in self.client.get("/api/surveys/").data if s["id"] == survey.pk)
-            self.assertEqual(listed["is_unlocked"], expected == status.HTTP_201_CREATED, user.email)
+            listing = self.client.get("/api/surveys/")
+            if expected == status.HTTP_201_CREATED:
+                listed = next(s for s in listing.data if s["id"] == survey.pk)
+                self.assertTrue(listed["is_unlocked"], user.email)
+            else:
+                self.assertEqual(listing.status_code, status.HTTP_403_FORBIDDEN, user.email)
             resp = self.client.post("/api/survey-responses/", {"survey": survey.pk, "answers": {"q1": 1}}, format="json")
             self.assertEqual(resp.status_code, expected, user.email)
 
@@ -4016,7 +4051,7 @@ class ReminderRunCharacterisationTests(TestCase):
             module=module, channel=NotificationLog.Channel.PUSH, scheduled_for=_perth_midnight_utc(today),
             status=NotificationLog.Status.SENT,
         )
-        fake_now = datetime.datetime.combine(today, datetime.time(8, 0), tzinfo=ZoneInfo("Australia/Perth"))
+        fake_now = datetime.datetime.combine(today, datetime.time(17, 0), tzinfo=ZoneInfo("Australia/Perth"))
 
         def run(*args):
             out = StringIO()
@@ -4030,7 +4065,7 @@ class ReminderRunCharacterisationTests(TestCase):
 
         midnight = _perth_midnight_utc(today).isoformat()
         self.assertEqual(run("--dry-run"), (
-            f"[send_due_reminders] date={today} hour=8 (Australia/Perth) scheduled_for={midnight} dry_run=True\n"
+            f"[send_due_reminders] date={today} hour=17 (Australia/Perth) scheduled_for={midnight} dry_run=True\n"
             # One reminder a day, for the week's first audio item (A), even if already completed.
             f"  [dry-run] would send reminder for 'A': user=plain@test.local day={today}\n"
             f"  [dry-run] would send reminder for 'A': user=half@test.local day={today}\n"
@@ -4171,3 +4206,204 @@ class MediaServingTests(TestCase):
             self.assertEqual(resp["X-Content-Type-Options"], "nosniff")
             self.assertEqual(self.client.get("/media/resource_covers/missing.png").status_code, 404)
             self.assertIn(self.client.get("/media/../server/settings.py").status_code, (400, 404))
+
+
+# ── Approval gate ────────────────────────────────────────────────────────────────
+
+class ApprovalGateTests(APITestCase):
+    """Only students with an ACTIVE enrollment (and admins) get past IsApproved."""
+
+    PROTECTED_URLS = (
+        "/api/modules/",
+        "/api/surveys/",
+        "/api/progress/",
+        "/api/content-views/",
+        "/api/forum/threads/",
+        "/api/additional-resources/",
+        "/api/program-status/",
+        "/api/notifications/preferences/me/",
+        "/api/notifications/subscriptions/",
+    )
+
+    def setUp(self):
+        today = date.today()
+        self.cohort = Cohort.objects.create(
+            name="Gate Cohort", year=today.year,
+            start_date=today - timedelta(days=3), end_date=today + timedelta(days=60),
+        )
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.student = User.objects.create_user(
+            email="pending@test.local", password="testpass", full_name="Pending Person",
+        )
+        self.enrollment = Enrollment.objects.create(
+            user=self.student, cohort=self.cohort, status=Enrollment.Status.PENDING,
+        )
+
+    def test_pending_user_blocked_from_protected_endpoints(self):
+        self.client.force_login(self.student)
+        for url in self.PROTECTED_URLS:
+            with self.subTest(url=url):
+                resp = self.client.get(url)
+                self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+                self.assertIn("awaiting admin approval", str(resp.data["detail"]))
+
+    def test_pending_user_blocked_with_token_auth(self):
+        token = AuthToken.issue(self.student)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        resp = self.client.get("/api/modules/")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("awaiting admin approval", str(resp.data["detail"]))
+
+    def test_pending_user_can_check_status_and_log_out(self):
+        token = AuthToken.issue(self.student)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+        resp = self.client.get("/api/user/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertFalse(resp.data["user"]["is_approved"])
+        self.assertEqual(resp.data["user"]["enrollment_status"], "pending")
+        resp = self.client.post("/api/logout/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_pending_user_can_log_in_and_is_told_they_are_unapproved(self):
+        resp = self.client.post(
+            "/api/login/", {"email": "pending@test.local", "password": "testpass"}, format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertFalse(resp.data["user"]["is_approved"])
+
+    def test_public_module_summary_stays_open_to_pending_user(self):
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get("/api/modules/summary/").status_code, status.HTTP_200_OK)
+
+    def test_new_signup_is_unapproved(self):
+        resp = self.client.post(
+            "/api/register/",
+            {"email": "new@test.local", "full_name": "New User", "password": "Calm-River-42"},
+            format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.assertFalse(resp.data["user"]["is_approved"])
+        self.assertEqual(resp.data["user"]["enrollment_status"], "pending")
+
+    def test_approving_the_enrollment_grants_access(self):
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get("/api/modules/").status_code, status.HTTP_403_FORBIDDEN)
+
+        self.client.force_login(self.admin)
+        resp = self.client.patch(
+            f"/api/enrollments/{self.enrollment.pk}/", {"status": "active"}, format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get("/api/modules/").status_code, status.HTTP_200_OK)
+        self.assertTrue(self.client.get("/api/user/").data["user"]["is_approved"])
+
+    def test_completed_and_withdrawn_enrollments_are_not_approved(self):
+        self.client.force_login(self.student)
+        for enrollment_status in (Enrollment.Status.COMPLETED, Enrollment.Status.WITHDRAWN):
+            with self.subTest(status=enrollment_status):
+                Enrollment.objects.filter(pk=self.enrollment.pk).update(status=enrollment_status)
+                self.assertEqual(self.client.get("/api/modules/").status_code, status.HTTP_403_FORBIDDEN)
+                user = self.client.get("/api/user/").data["user"]
+                self.assertFalse(user["is_approved"])
+                self.assertEqual(user["enrollment_status"], enrollment_status)
+
+    def test_admin_needs_no_enrollment(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self.client.get("/api/modules/").status_code, status.HTTP_200_OK)
+        self.assertTrue(self.client.get("/api/user/").data["user"]["is_approved"])
+
+    def test_user_with_no_enrollment_is_unapproved_with_no_status(self):
+        loner = User.objects.create_user(email="loner@test.local", password="testpass")
+        self.client.force_login(loner)
+        self.assertEqual(self.client.get("/api/modules/").status_code, status.HTTP_403_FORBIDDEN)
+        user = self.client.get("/api/user/").data["user"]
+        self.assertFalse(user["is_approved"])
+        self.assertIsNone(user["enrollment_status"])
+
+
+# ── Admin password reset ─────────────────────────────────────────────────────────
+
+class PasswordResetAdminTests(APITestCase):
+    OLD_PASSWORD = "oldpass-123"
+
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.student = User.objects.create_user(
+            email="student@test.local", password=self.OLD_PASSWORD,
+        )
+        self.other = User.objects.create_user(email="other@test.local", password="testpass")
+        _enroll(self.student, self.other)
+
+    def _reset(self, user_id):
+        return self.client.post(f"/api/users/{user_id}/reset-password/")
+
+    def test_admin_reset_returns_a_temporary_password_that_logs_in(self):
+        self.client.force_login(self.admin)
+        resp = self._reset(self.student.pk)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        temp = resp.data["temporary_password"]
+        self.assertEqual(len(temp), 12)
+
+        self.client.logout()
+        old = self.client.post(
+            "/api/login/", {"email": "student@test.local", "password": self.OLD_PASSWORD}, format="json",
+        )
+        self.assertEqual(old.status_code, status.HTTP_401_UNAUTHORIZED)
+        new = self.client.post(
+            "/api/login/", {"email": "student@test.local", "password": temp}, format="json",
+        )
+        self.assertEqual(new.status_code, status.HTTP_200_OK)
+
+    def test_reset_signs_the_student_out_everywhere(self):
+        AuthToken.issue(self.student)
+        self.client.force_login(self.admin)
+        self.assertEqual(self._reset(self.student.pk).status_code, status.HTTP_200_OK)
+        self.assertFalse(self.student.auth_tokens.exists())
+
+    def test_each_reset_gives_a_different_password(self):
+        self.client.force_login(self.admin)
+        first = self._reset(self.student.pk).data["temporary_password"]
+        second = self._reset(self.student.pk).data["temporary_password"]
+        self.assertNotEqual(first, second)
+
+    def test_students_cannot_reset_passwords(self):
+        self.client.force_login(self.other)
+        self.assertEqual(self._reset(self.student.pk).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._reset(self.other.pk).status_code, status.HTTP_403_FORBIDDEN)
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.check_password(self.OLD_PASSWORD))
+
+    def test_anonymous_cannot_reset_passwords(self):
+        resp = self._reset(self.student.pk)
+        self.assertIn(resp.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+        self.student.refresh_from_db()
+        self.assertTrue(self.student.check_password(self.OLD_PASSWORD))
+
+    def test_admin_passwords_cannot_be_reset(self):
+        other_admin = User.objects.create_user(
+            email="admin2@test.local", password="testpass", role=User.Role.ADMIN,
+        )
+        self.client.force_login(self.admin)
+        self.assertEqual(self._reset(other_admin.pk).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._reset(self.admin.pk).status_code, status.HTTP_403_FORBIDDEN)
+        other_admin.refresh_from_db()
+        self.assertTrue(other_admin.check_password("testpass"))
+
+    def test_google_accounts_are_refused(self):
+        google_user = User.objects.create_user(email="g@test.local", auth_provider="google")
+        self.client.force_login(self.admin)
+        resp = self._reset(google_user.pk)
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Google", str(resp.data))
+        google_user.refresh_from_db()
+        self.assertFalse(google_user.has_usable_password())
+
+    def test_unknown_user_returns_404(self):
+        self.client.force_login(self.admin)
+        self.assertEqual(self._reset(999999).status_code, status.HTTP_404_NOT_FOUND)

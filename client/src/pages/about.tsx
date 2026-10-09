@@ -32,7 +32,7 @@ export default function AboutPage() {
 	return (
 		<>
 			<Head>
-				<title>About Us | Wellbeing Course</title>
+				<title>About Us | RCSWA Wellbeing</title>
 				<meta
 					name="description"
 					content="Learn about Dr Sarah Moore and the Rural Clinical School of Western Australia — the team behind this mindfulness programme for medical students."

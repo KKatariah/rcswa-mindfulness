@@ -1,12 +1,16 @@
 import Link from "next/link";
 import { GlobeIcon, LinkedinIcon } from "@/components/ui/icons";
+import { useAuth } from "@/context/AuthContext";
+import { useApprovalGuard } from "@/context/ApprovalModalContext";
+
+const PROGRAMME_HREF = "/modules";
 
 const FOOTER_COLUMNS = [
   {
     title: "Course",
     links: [
       { label: "Overview", href: "/" },
-      { label: "Programme", href: "/modules" },
+      { label: "Programme", href: PROGRAMME_HREF },
     ],
   },
   {
@@ -29,11 +33,14 @@ const SOCIAL_LINKS = [
 ];
 
 export default function Footer() {
+  const { user } = useAuth();
+  const guardApproval = useApprovalGuard();
+
   return (
     <footer className="bg-ink px-6 py-16 sm:px-10 lg:px-30">
       <div className="flex flex-col justify-between gap-12 lg:flex-row lg:items-start">
         <div className="max-w-xs">
-          <span className="text-lg font-bold text-white">logo</span>
+          <img src="/assets/branding/rcswa-logo-white.png" alt="RCSWA logo" width={803} height={730} className="h-24 w-auto" />
           <p className="mt-4 text-[15px] text-white/50">
             An 8-week guided meditation journey for lasting wellbeing.
           </p>
@@ -44,13 +51,21 @@ export default function Footer() {
             <div key={column.title} className="flex flex-col gap-3">
               <h2 className="text-sm font-bold text-white">{column.title}</h2>
               <ul className="flex flex-col gap-2.5">
-                {column.links.map((link) => (
-                  <li key={link.label}>
-                    <Link href={link.href} className="text-sm text-white/50">
-                      {link.label}
-                    </Link>
-                  </li>
-                ))}
+                {column.links
+                  // Programme is only shown when logged in.
+                  .filter((link) => link.href !== PROGRAMME_HREF || user)
+                  .map((link) => (
+                    <li key={link.label}>
+                      <Link
+                        href={link.href}
+                        // Pending users get the approval popup instead of navigating.
+                        onClick={link.href === PROGRAMME_HREF ? guardApproval : undefined}
+                        className="text-sm text-white/50"
+                      >
+                        {link.label}
+                      </Link>
+                    </li>
+                  ))}
               </ul>
             </div>
           ))}
@@ -61,7 +76,7 @@ export default function Footer() {
 
       <div className="flex flex-wrap items-center justify-between gap-4">
         <p className="text-sm text-white/50">
-          © {new Date().getFullYear()} Wellbeing Course. All rights reserved.
+          © {new Date().getFullYear()} RCSWA Wellbeing. All rights reserved.
         </p>
 
         <div className="flex items-center gap-3">

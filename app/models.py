@@ -376,8 +376,8 @@ class NotificationPreference(models.Model):
 
     inapp_enabled = models.BooleanField(default=True)
 
-    # Default: 8am Perth. Command filters by this hour when running on an hourly cron.
-    reminder_time = models.TimeField(default=datetime.time(8, 0))
+    # Default: 5pm Perth. Command filters by this hour when running on an hourly cron.
+    reminder_time = models.TimeField(default=datetime.time(17, 0))
 
     # Set by the frontend when Notification.permission === 'denied'.
     # When True: no push attempted (user explicitly refused).

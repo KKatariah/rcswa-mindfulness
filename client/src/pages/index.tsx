@@ -1,11 +1,12 @@
 import { useRef, useState } from "react";
 import Head from "next/head";
-import Link from "next/link";
+import { useRouter } from "next/router";
 import Hero from "@/components/main/Hero";
 import Footer from "@/components/main/Footer";
 import SignUpModal from "@/components/main/SignUpModal";
 import { useAuth } from "@/context/AuthContext";
 import { useAsync } from "@/hooks/useAsync";
+import { useApprovalModal } from "@/context/ApprovalModalContext";
 import { listModuleSummaries, type ApiModuleSummary } from "@/lib/api";
 import {
 	CalendarIcon,
@@ -58,6 +59,8 @@ function ScrollButtons({ onScroll, className }: { onScroll: (direction: number) 
 
 export default function Home() {
 	const { user } = useAuth();
+	const router = useRouter();
+	const { open: openApprovalModal } = useApprovalModal();
 	const weeksRef = useRef<HTMLDivElement>(null);
 	const [signUpOpen, setSignUpOpen] = useState(false);
 	const {
@@ -81,10 +84,19 @@ export default function Home() {
 		weeksRef.current?.scrollBy({ left: direction * CARD_SCROLL_DISTANCE, behavior: "smooth" });
 	}
 
+	function goToProgramme() {
+		if (!user) return; // logged out: these buttons aren't rendered anyway
+		if (user.is_approved !== true) {
+			openApprovalModal(); // logged in but not approved: popup, stay on home
+			return;
+		}
+		void router.push("/modules"); // approved: redirect
+	}
+
 	return (
 		<>
 			<Head>
-				<title>Wellbeing Course</title>
+				<title>RCSWA Wellbeing</title>
 				<meta
 					name="description"
 					content="An 8-week guided meditation journey"
@@ -97,9 +109,9 @@ export default function Home() {
 				heightClass="min-h-[560px] sm:min-h-[640px]"
 			>
 				{user ? (
-					<Link href="/modules" className={`mt-8 flex h-14 ${CTA_CLASS}`}>
+					<button type="button" onClick={goToProgramme} className={`mt-8 flex h-14 ${CTA_CLASS}`}>
 						Continue Your Journey
-					</Link>
+					</button>
 				) : (
 					<button
 						type="button"
@@ -187,9 +199,13 @@ export default function Home() {
 					<>
 						<h2 className="text-3xl font-extrabold text-ink sm:text-4xl">Ready for Your Next Session?</h2>
 						<p className="mt-4 text-[15px] text-muted">Pick up where you left off in the programme.</p>
-						<Link href="/modules" className={`mt-8 inline-flex h-14 ${CTA_CLASS}`}>
+						<button
+							type="button"
+							onClick={goToProgramme}
+							className={`mt-8 inline-flex h-14 ${CTA_CLASS}`}
+						>
 							Go to Programme
-						</Link>
+						</button>
 					</>
 				) : (
 					<>

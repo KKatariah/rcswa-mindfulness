@@ -115,8 +115,8 @@ class _Run:
         )
 
     def preferred_hour(self, user):
-        # Users without a preference row default to 8am Perth.
-        return self.pref_hours.get(user.id, 8)
+        # Users without a preference row default to 5pm Perth.
+        return self.pref_hours.get(user.id, 17)
 
     def dry_run_send(self, stdout, user, what):
         """Report and tally what a real run would do: push to the user's devices, or skip without one."""

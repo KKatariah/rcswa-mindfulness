@@ -790,7 +790,7 @@ export default function ForumPage() {
   return (
     <>
       <Head>
-        <title>Forum — Wellbeing Course</title>
+        <title>Forum — RCSWA Wellbeing</title>
       </Head>
 
       <AppShell

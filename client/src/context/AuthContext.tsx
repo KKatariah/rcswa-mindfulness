@@ -27,6 +27,7 @@ type AuthContextValue = {
 	logout: () => Promise<void>;
 	loginWithGoogle: (credential: string) => Promise<void>;
 	updateUser: (updates: Partial<AuthUser>) => void;
+	refreshUser: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -65,6 +66,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		initAuth();
 	}, []);
 
+	// api.ts fires this when the server answers 403 "awaiting admin approval".
+	// Re-sync the user so ApprovalGate can redirect to /pending-approval.
+	useEffect(() => {
+		async function onApprovalRequired() {
+			try {
+				const data = await getCurrentUser();
+				setUser(data.user);
+				localStorage.setItem("user", JSON.stringify(data.user));
+			} catch {
+				// Token invalid or network issue; the 401 handling covers the former.
+			}
+		}
+		window.addEventListener("approval-required", onApprovalRequired);
+		return () =>
+			window.removeEventListener("approval-required", onApprovalRequired);
+	}, []);
+
 	async function login(email: string, password: string) {
 		const data = await loginUser({ email, password });
 		setUser(data.user);
@@ -92,6 +110,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		localStorage.setItem("user", JSON.stringify(data.user));
 	}
 
+	async function refreshUser() {
+		const data = await getCurrentUser();
+		setUser(data.user);
+		localStorage.setItem("user", JSON.stringify(data.user));
+	}
 
 	function updateUser(updates: Partial<AuthUser>) {
 		setUser((prev) => {
@@ -112,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				logout,
 				loginWithGoogle,
 				updateUser,
+				refreshUser,
 			}}
 		>
 			{children}

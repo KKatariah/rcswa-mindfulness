@@ -1,6 +1,7 @@
 from rest_framework.permissions import BasePermission
 
 from .access import can_edit_forum_item, is_admin
+from .models import Enrollment
 
 
 class IsAdminOrStaff(BasePermission):
@@ -31,3 +32,21 @@ class IsAuthorOrAdmin(BasePermission):
 
     def has_object_permission(self, request, view, obj):
         return can_edit_forum_item(request.user, obj)
+
+
+def user_is_approved(u):
+    """Admins/staff, or anyone with an ACTIVE enrollment."""
+    if not (u and u.is_authenticated):
+        return False
+    if is_admin(u):
+        return True
+    return Enrollment.objects.filter(user=u, status=Enrollment.Status.ACTIVE).exists()
+
+
+class IsApproved(BasePermission):
+    """Authenticated AND approved. Use in place of IsAuthenticated."""
+
+    message = "Your account is awaiting admin approval."
+
+    def has_permission(self, request, view):
+        return user_is_approved(request.user)

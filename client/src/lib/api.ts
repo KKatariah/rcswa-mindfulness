@@ -69,6 +69,12 @@ async function throwForStatus(res: Response): Promise<never> {
 		}
 		throw new Error("Your session has expired. Please log in again.");
 	}
+	// The server says this account isn't approved (never approved, or un-approved
+	// mid-session). Tell AuthContext to re-sync; ApprovalGate then redirects.
+	if (res.status === 403 && /awaiting admin approval/i.test(String(detail ?? ""))) {
+		window.dispatchEvent(new Event("approval-required"));
+		throw new Error("Your account is awaiting admin approval.");
+	}
 	if (res.status === 429) {
 		const seconds = /(\d+) seconds?/.exec(String(detail ?? ""))?.[1];
 		throw new Error(
@@ -288,6 +294,10 @@ export function updateUser(
 
 export function deleteUser(id: number): Promise<void> {
 	return request(`/users/${id}/`, { method: "DELETE" });
+}
+
+export function resetUserPassword(id: number): Promise<{ temporary_password: string }> {
+	return request(`/users/${id}/reset-password/`, { method: "POST" });
 }
 
 type CohortInput = { name: string; year: number; start_date: string; end_date: string };

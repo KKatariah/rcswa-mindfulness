@@ -305,7 +305,7 @@ def user_overview(user):
         "notifications": {
             "push_devices": PushSubscription.objects.filter(user=user).count(),
             "push_denied": pref.push_denied if pref else False,
-            "reminder_time": pref.reminder_time.strftime("%H:%M") if pref else "08:00",
+            "reminder_time": pref.reminder_time.strftime("%H:%M") if pref else "17:00",
             "daily_content_reminder": pref.daily_content_reminder if pref else True,
             "daily_survey_reminder": pref.daily_survey_reminder if pref else False,
         },

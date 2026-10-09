@@ -1,6 +1,7 @@
 import Head from "next/head";
 import { useState, type FormEvent } from "react";
 import AppShell from "@/components/main/AppShell";
+import Modal from "@/components/main/Modal";
 import NotificationSetupModal from "@/components/notifications/NotificationSetupModal";
 import UpcomingSession from "@/components/modules/UpcomingSession";
 import Card from "@/components/ui/Card";
@@ -51,6 +52,7 @@ const FIELD_CLASS =
   "rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue";
 const OUTLINE_BUTTON_CLASS =
   "rounded-lg border border-brand-blue px-4 py-2 text-sm font-medium text-brand-blue transition-colors hover:bg-brand-blue/5";
+const ADMIN_EMAIL = "sarah.j.moore@rcswa.edu.au";
 
 function sanitizeDisplayName(value: string) {
   return value.replace(/[^\p{L}\s'-]/gu, "").slice(0, DISPLAY_NAME_MAX_LENGTH);
@@ -117,6 +119,7 @@ function ChangePasswordForm() {
   const [newPassword, setNewPassword] = useState("");
   const [success, setSuccess] = useState(false);
   const { submitting, error, run } = useFormSubmit("Failed to change password");
+  const [showForgotModal, setShowForgotModal] = useState(false);
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -131,36 +134,67 @@ function ChangePasswordForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-3">
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {success && <p className="text-sm text-green-600">Password changed successfully.</p>}
+    <>
+      <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-3">
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {success && <p className="text-sm text-green-600">Password changed successfully.</p>}
 
-      <input
-        type="password"
-        required
-        value={currentPassword}
-        onChange={(e) => setCurrentPassword(e.target.value)}
-        placeholder="Current password"
-        className={FIELD_CLASS}
-      />
-      <input
-        type="password"
-        required
-        minLength={8}
-        value={newPassword}
-        onChange={(e) => setNewPassword(e.target.value)}
-        placeholder="New password (min. 8 characters)"
-        className={FIELD_CLASS}
-      />
+        <input
+          type="password"
+          required
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          placeholder="Current password"
+          className={FIELD_CLASS}
+        />
+        <button
+          type="button"
+          onClick={() => setShowForgotModal(true)}
+          className="-mt-1 w-fit text-sm text-brand-blue hover:underline"
+        >
+          Forgot your current password?
+        </button>
+        <input
+          type="password"
+          required
+          minLength={8}
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          placeholder="New password (min. 8 characters)"
+          className={FIELD_CLASS}
+        />
 
-      <button
-        type="submit"
-        disabled={submitting}
-        className="w-fit rounded-lg bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-blue-dark disabled:opacity-60"
-      >
-        {submitting ? "Changing..." : "Change Password"}
-      </button>
-    </form>
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-fit rounded-lg bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-blue-dark disabled:opacity-60"
+        >
+          {submitting ? "Changing..." : "Change Password"}
+        </button>
+      </form>
+
+      <Modal isOpen={showForgotModal} onClose={() => setShowForgotModal(false)} title="Forgot your password?">
+        <div className="flex flex-col gap-6 text-center">
+          <p className="text-[15px] text-ink">
+            Please email admin Sarah at{" "}
+            <a
+              href={`mailto:${ADMIN_EMAIL}?subject=Password%20reset%20request`}
+              className="font-semibold text-brand-blue hover:underline"
+            >
+              {ADMIN_EMAIL}
+            </a>{" "}
+            to reset your password.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowForgotModal(false)}
+            className="h-12 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white"
+          >
+            Close
+          </button>
+        </div>
+      </Modal>
+    </>
   );
 }
 
