@@ -1,4 +1,3 @@
-
 """
 Django settings for server project.
 
@@ -28,7 +27,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'REMOVED#'
+SECRET_KEY = 'REMOVED'
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
@@ -185,8 +184,10 @@ VAPID_ADMIN_EMAIL = os.environ.get(
 FORUM_MAX_PINNED_THREADS = 5
 
 REST_FRAMEWORK = {
+    # Safety net for any view that doesn't set its own permission_classes.
+    # IsApproved already requires an authenticated user.
     "DEFAULT_PERMISSION_CLASSES": [
-        "rest_framework.permissions.IsAuthenticated",
+        "app.permissions.IsApproved",
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'rest_framework.authentication.TokenAuthentication',

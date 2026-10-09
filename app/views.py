@@ -1,4 +1,5 @@
 import re
+import secrets
 import unicodedata
 
 from django.conf import settings as django_settings
@@ -37,7 +38,7 @@ from .models import (
 )
 
 from .notifications import notify_survey_unlocked
-from .permissions import IsAdminOrStaff, IsAdminOrSelf
+from .permissions import IsAdminOrStaff, IsAdminOrSelf, IsApproved, user_is_approved
 from .throttles import AuthRateThrottle
 from .exports import cohort_names, survey_responses_csv
 
@@ -113,6 +114,12 @@ def _active_cohort_start_date(user):
     return enrollment.cohort.start_date.isoformat() if enrollment else None
 
 
+def _enrollment_status(user):
+    """Status of the user's most recent enrollment, or None if they have none."""
+    e = Enrollment.objects.filter(user=user).order_by("-enrolled_at").first()
+    return e.status if e else None
+
+
 def _user_payload(user):
     return {
         "id": user.id,
@@ -124,6 +131,8 @@ def _user_payload(user):
         "auth_provider": user.auth_provider,
         "cohort_start_date": _active_cohort_start_date(user),
         "forum_rules_accepted": user.forum_rules_accepted_at is not None,
+        "is_approved": user_is_approved(user),
+        "enrollment_status": _enrollment_status(user),
     }
 
 
@@ -195,7 +204,7 @@ def login_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])  # plain IsAuthenticated: pending users must be able to log out
 def logout_view(request):
     request.user.auth_token.delete()
     return Response(
@@ -325,17 +334,17 @@ class ModuleViewSet(viewsets.ModelViewSet):
         if self.action == "summary":
             return [AllowAny()]
         if self.action in ("create", "update", "partial_update", "destroy", "reorder", "progress"):
-            return [IsAuthenticated(), IsAdminOrStaff()]
+            return [IsApproved(), IsAdminOrStaff()]
         # The home page lists the programme for logged-out visitors. This override replaces
         # the action's own permission_classes, so it has to allow it here.
         if self.action == "summary":
             return [AllowAny()]
-        return [IsAuthenticated()]
+        return [IsApproved()]
 
 
 class ContentItemViewSet(viewsets.ModelViewSet):
     serializer_class = ContentItemSerializer
-    permission_classes = [IsAuthenticated, IsAdminOrStaff]
+    permission_classes = [IsApproved, IsAdminOrStaff]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
@@ -365,7 +374,7 @@ class ContentItemViewSet(viewsets.ModelViewSet):
 class CohortViewSet(viewsets.ModelViewSet):
     queryset = Cohort.objects.all().order_by("-start_date")
     serializer_class = CohortSerializer
-    permission_classes = [IsAuthenticated, IsAdminOrStaff]
+    permission_classes = [IsApproved, IsAdminOrStaff]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
 
@@ -375,10 +384,10 @@ class AdditionalResourceViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_permissions(self):
-        # Any authenticated user can read; only admins/staff can write.
+        # Any approved user can read; only admins/staff can write.
         if self.action in ("list", "retrieve"):
-            return [IsAuthenticated()]
-        return [IsAuthenticated(), IsAdminOrStaff()]
+            return [IsApproved()]
+        return [IsApproved(), IsAdminOrStaff()]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -408,7 +417,7 @@ class AdditionalResourceViewSet(viewsets.ModelViewSet):
 
 class EnrollmentViewSet(viewsets.ModelViewSet):
     serializer_class = EnrollmentSerializer
-    permission_classes = [IsAuthenticated, IsAdminOrStaff]
+    permission_classes = [IsApproved, IsAdminOrStaff]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
@@ -429,6 +438,7 @@ class ContentCompletionViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
+    permission_classes = [IsApproved]
     serializer_class = ContentCompletionSerializer
 
     def get_queryset(self):
@@ -467,6 +477,7 @@ class ContentViewViewSet(
 ):
     """Auto-recorded when a student opens a content item; separate from manual completion."""
 
+    permission_classes = [IsApproved]
     serializer_class = ContentViewSerializer
 
     def get_queryset(self):
@@ -620,8 +631,8 @@ class ForumThreadViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         if self.action in ["partial_update", "destroy"]:
-            return [IsAuthenticated(), HasAcceptedForumRules(), IsAuthorOrAdmin()]
-        return [IsAuthenticated(), HasAcceptedForumRules()]
+            return [IsApproved(), HasAcceptedForumRules(), IsAuthorOrAdmin()]
+        return [IsApproved(), HasAcceptedForumRules()]
 
 
 class ForumPostViewSet(
@@ -684,11 +695,19 @@ class ForumPostViewSet(
 
     def get_permissions(self):
         if self.action in ["partial_update", "destroy"]:
-            return [IsAuthenticated(), HasAcceptedForumRules(), IsAuthorOrAdmin()]
-        return [IsAuthenticated(), HasAcceptedForumRules()]
+            return [IsApproved(), HasAcceptedForumRules(), IsAuthorOrAdmin()]
+        return [IsApproved(), HasAcceptedForumRules()]
 
 
 # ── User profile ───────────────────────────────────────────────────────────────
+
+# No look-alike characters (0/O, 1/l/I), since the admin will be copying or reading this out.
+_TEMP_PASSWORD_CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789"
+
+
+def _generate_temp_password(length=12):
+    return "".join(secrets.choice(_TEMP_PASSWORD_CHARS) for _ in range(length))
+
 
 class UserProfileViewSet(
     mixins.ListModelMixin,
@@ -697,9 +716,9 @@ class UserProfileViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsApproved]
     serializer_class = UserDisplayNameSerializer
-    http_method_names = ["get", "patch", "delete", "head", "options"]
+    http_method_names = ["get", "patch", "delete", "head", "options", "post"]
 
     def get_queryset(self):
         u = self.request.user
@@ -721,12 +740,27 @@ class UserProfileViewSet(
         """An admin's view of one person: profile, enrollments, module progress, surveys, forum activity."""
         return Response(_user_overview(self.get_object()))
 
+    @action(detail=True, methods=["post"], url_path="reset-password")
+    def reset_password(self, request, pk=None):
+        """Admin sets a random temporary password and returns it once so it can be sent to the student."""
+        user = self.get_object()
+        if user.pk == request.user.pk or user.role == User.Role.ADMIN:
+            raise PermissionDenied("Admin passwords can't be reset here.")
+        if user.auth_provider == "google" or not user.has_usable_password():
+            raise ValidationError({"detail": "This account signs in with Google, so it has no password to reset."})
+        temp_password = _generate_temp_password()
+        user.set_password(temp_password)
+        user.save(update_fields=["password"])
+        # Sign them out everywhere; the old token is no longer valid.
+        Token.objects.filter(user=user).delete()
+        return Response({"temporary_password": temp_password})
+
     def get_permissions(self):
         if self.action in ("partial_update", "update"):
-            return [IsAuthenticated(), IsAdminOrSelf()]
-        if self.action in ("destroy", "overview"):
-            return [IsAuthenticated(), IsAdminOrStaff()]
-        return [IsAuthenticated()]
+            return [IsApproved(), IsAdminOrSelf()]
+        if self.action in ("destroy", "overview", "reset_password"):
+            return [IsApproved(), IsAdminOrStaff()]
+        return [IsApproved()]
 
     def perform_destroy(self, instance):
         if instance.pk == self.request.user.pk:
@@ -747,13 +781,13 @@ class SurveyViewSet(viewsets.ModelViewSet):
     GET /surveys/manage/            admin list with questions and response counts
     GET /surveys/{id}/responses/    admin view of one survey's responses
     """
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsApproved]
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     _ADMIN_ACTIONS = ("create", "partial_update", "destroy", "manage", "responses")
 
     def get_permissions(self):
         if self.action in self._ADMIN_ACTIONS:
-            return [IsAuthenticated(), IsAdminOrStaff()]
+            return [IsApproved(), IsAdminOrStaff()]
         # Falls back to permission_classes, which @action(permission_classes=...) overrides (e.g. export).
         return super().get_permissions()
 
@@ -818,7 +852,7 @@ class SurveyViewSet(viewsets.ModelViewSet):
             )
         return ctx
 
-    @action(detail=False, methods=["get"], url_path="export", permission_classes=[IsAuthenticated, IsAdminOrStaff])
+    @action(detail=False, methods=["get"], url_path="export", permission_classes=[IsApproved, IsAdminOrStaff])
     def export(self, request):
         """Admin-only CSV of survey responses.
 
@@ -871,7 +905,7 @@ class SurveyResponseViewSet(
     mixins.UpdateModelMixin,
     viewsets.GenericViewSet,
 ):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsApproved]
     http_method_names = ["post", "patch", "head", "options"]
 
     def get_queryset(self):
@@ -926,7 +960,7 @@ class PushSubscriptionViewSet(
     is reassigned to the currently authenticated user.
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsApproved]
     serializer_class = PushSubscriptionSerializer
 
     def get_queryset(self):
@@ -963,7 +997,7 @@ class NotificationPreferenceViewSet(
     PATCH /api/notifications/preferences/me/ — update
     """
 
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsApproved]
     serializer_class = NotificationPreferenceSerializer
     http_method_names = ["get", "patch", "head", "options"]
 
@@ -1000,13 +1034,13 @@ def vapid_public_key_view(request):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])  # plain IsAuthenticated: pending users read their status here
 def current_user(request):
     return Response({"user": _user_payload(request.user)})
 
 
 @api_view(["PATCH"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsApproved])
 def update_profile_view(request):
     serializer = ProfileUpdateSerializer(request.user, data=request.data, partial=True)
     if serializer.is_valid():
@@ -1019,7 +1053,7 @@ def update_profile_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsApproved])
 def change_password_view(request):
     if not request.user.has_usable_password():
         return Response(
@@ -1056,7 +1090,7 @@ def change_password_view(request):
 # ── Admin dashboard & program status ─────────────────────────────────────────────
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated, IsAdminOrStaff])
+@permission_classes([IsApproved, IsAdminOrStaff])
 def dashboard_stats_view(request):
     return Response({
         "total_enrolled": Enrollment.objects.filter(status=Enrollment.Status.ACTIVE).count(),
@@ -1069,7 +1103,7 @@ def dashboard_stats_view(request):
 
 
 @api_view(["POST"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsApproved])
 def accept_forum_rules_view(request):
     user = request.user
     if user.forum_rules_accepted_at is None:
@@ -1079,6 +1113,6 @@ def accept_forum_rules_view(request):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsApproved])
 def program_status_view(request):
     return Response({"is_active": _is_program_active()})

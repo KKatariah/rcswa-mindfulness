@@ -3,6 +3,7 @@ import { useRouter } from "next/router";
 import { useEffect, useState, type FormEvent } from "react";
 import Navbar from "@/components/main/Navbar";
 import Sidebar from "@/components/main/Sidebar";
+import Modal from "@/components/main/Modal";
 import NotificationSetupModal from "@/components/notifications/NotificationSetupModal";
 import NextSession from "@/components/modules/NextSession";
 import { LockIcon } from "@/components/ui/icons";
@@ -25,6 +26,8 @@ type SaveStatus = "idle" | "saving" | "success" | "error";
 
 // Set max length of displayname!
 const DISPLAY_NAME_MAX_LENGTH = 20;
+
+const ADMIN_EMAIL = "sarah.j.moore@rcswa.edu.au";
 
 function sanitizeDisplayName(value: string) {
   return value.replace(/[^\p{L}\s'-]/gu, "").slice(0, DISPLAY_NAME_MAX_LENGTH);
@@ -80,6 +83,7 @@ function ChangePasswordForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -108,38 +112,73 @@ function ChangePasswordForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-3">
-      {error && <p className="text-sm text-red-600">{error}</p>}
-      {success && (
-        <p className="text-sm text-green-600">Password changed successfully.</p>
-      )}
+    <>
+      <form onSubmit={handleSubmit} className="mt-3 flex flex-col gap-3">
+        {error && <p className="text-sm text-red-600">{error}</p>}
+        {success && (
+          <p className="text-sm text-green-600">Password changed successfully.</p>
+        )}
 
-      <input
-        type="password"
-        required
-        value={currentPassword}
-        onChange={(e) => setCurrentPassword(e.target.value)}
-        placeholder="Current password"
-        className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
-      <input
-        type="password"
-        required
-        minLength={8}
-        value={newPassword}
-        onChange={(e) => setNewPassword(e.target.value)}
-        placeholder="New password (min. 8 characters)"
-        className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
-      />
+        <input
+          type="password"
+          required
+          value={currentPassword}
+          onChange={(e) => setCurrentPassword(e.target.value)}
+          placeholder="Current password"
+          className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button
+          type="button"
+          onClick={() => setShowForgotModal(true)}
+          className="-mt-1 w-fit text-sm text-blue-500 hover:underline"
+        >
+          Forgot your current password?
+        </button>
+        <input
+          type="password"
+          required
+          minLength={8}
+          value={newPassword}
+          onChange={(e) => setNewPassword(e.target.value)}
+          placeholder="New password (min. 8 characters)"
+          className="rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
 
-      <button
-        type="submit"
-        disabled={isSubmitting}
-        className="w-fit rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-600 disabled:opacity-60"
+        <button
+          type="submit"
+          disabled={isSubmitting}
+          className="w-fit rounded-lg bg-blue-500 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-blue-600 disabled:opacity-60"
+        >
+          {isSubmitting ? "Changing..." : "Change Password"}
+        </button>
+      </form>
+
+      <Modal
+        isOpen={showForgotModal}
+        onClose={() => setShowForgotModal(false)}
+        title="Forgot your password?"
       >
-        {isSubmitting ? "Changing..." : "Change Password"}
-      </button>
-    </form>
+        <div className="flex flex-col gap-6 text-center">
+          <p className="text-[15px] text-ink">
+            Please email admin Sarah at{" "}
+            <a
+              href={`mailto:${ADMIN_EMAIL}?subject=Password%20reset%20request`}
+              className="font-semibold text-brand-blue hover:underline"
+            >
+              {ADMIN_EMAIL}
+            </a>{" "}
+            to reset your password.
+          </p>
+          <button
+            type="button"
+            onClick={() => setShowForgotModal(false)}
+            className="h-12 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white"
+          >
+            Close
+          </button>
+        </div>
+      </Modal>
+    </>
   );
 }
 

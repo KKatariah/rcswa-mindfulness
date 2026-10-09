@@ -9,6 +9,8 @@ type LoginModalProps = {
 	onClose: () => void;
 };
 
+const SUPPORT_EMAIL = "sarah.j.moore@rcswa.edu.au";
+
 export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 	const router = useRouter();
 	const { login, loginWithGoogle } = useAuth();
@@ -16,6 +18,13 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 	const [password, setPassword] = useState("");
 	const [error, setError] = useState<string | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [view, setView] = useState<"login" | "forgot">("login");
+
+	function handleClose() {
+		setView("login");
+		setError(null);
+		onClose();
+	}
 
 	async function handleSubmit(event: FormEvent) {
 		event.preventDefault();
@@ -24,7 +33,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 
 		try {
 			await login(email, password);
-			onClose();
+			handleClose();
 			await router.push("/modules");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Login failed");
@@ -38,15 +47,44 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 		setError(null);
 		try {
 			await loginWithGoogle(credentialResponse.credential);
-			onClose();
+			handleClose();
 			await router.push("/modules");
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Google login failed");
 		}
 	}
 
+	if (view === "forgot") {
+		return (
+			<Modal isOpen={isOpen} onClose={handleClose} title="Forgot password?">
+				<div className="flex flex-col gap-6 text-center">
+					<p className="text-[15px] text-ink">
+						Email Sarah to get a temporary password.
+						{" "}
+						<a
+							href={`mailto:${SUPPORT_EMAIL}?subject=Temporary%20password%20request`}
+							className="font-semibold text-brand-blue hover:underline"
+						>
+							{SUPPORT_EMAIL}
+						</a>
+					</p>
+					<p className="text-sm text-muted">
+						Once you log in with the temporary password, change it from your Profile page.
+					</p>
+					<button
+						type="button"
+						onClick={() => setView("login")}
+						className="h-12 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white"
+					>
+						Back to log in
+					</button>
+				</div>
+			</Modal>
+		);
+	}
+
 	return (
-		<Modal isOpen={isOpen} onClose={onClose} title="Log in">
+		<Modal isOpen={isOpen} onClose={handleClose} title="Log in">
 			<form onSubmit={handleSubmit} className="flex flex-col gap-6">
 				{error && (
 					<p className="text-sm text-red-600" role="alert">
@@ -82,6 +120,16 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 						placeholder="Enter your password"
 						className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
 					/>
+					<button
+						type="button"
+						onClick={() => {
+							setError(null);
+							setView("forgot");
+						}}
+						className="w-fit text-sm font-semibold text-brand-blue hover:underline"
+					>
+						Forgot password?
+					</button>
 				</div>
 
 				<button
