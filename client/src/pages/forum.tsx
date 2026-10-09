@@ -22,6 +22,8 @@ import {
 import type { ForumPost, ForumThread, ForumThreadDetail } from "@/types/forum";
 
 import { UserAvatar } from "@/components/ui/UserAvatar";
+import { PencilIcon, PinIcon, TrashIcon } from "@/components/ui/icons";
+import { pageTitle } from "@/lib/pageTitle";
 
 // ── Icons ──────────────────────────────────────────────────────────────────────
 // Small local icons so we don't need to touch the shared icon set for one page.
@@ -311,16 +313,18 @@ function PostCard({ post, onEdit, onDelete }: PostCardProps) {
                     setDraft(post.body);
                     setEditing(true);
                   }}
-                  className="text-xs font-semibold text-brand-blue hover:underline"
+                  aria-label="Edit post"
+                  title="Edit"
                 >
-                  Edit
+                  <PencilIcon className="size-4 text-muted hover:text-brand-blue" />
                 </button>
                 <button
                   type="button"
                   onClick={() => onDelete(post.id)}
-                  className="text-xs font-semibold text-red-500 hover:underline"
+                  aria-label="Delete post"
+                  title="Delete"
                 >
-                  Delete
+                  <TrashIcon className="size-4 text-muted hover:text-red-500" />
                 </button>
               </div>
             )}
@@ -479,9 +483,13 @@ function ThreadDetailView({
                   <button
                     type="button"
                     onClick={handlePinToggle}
-                    className="text-xs font-semibold text-amber-600 hover:underline"
+                    aria-label={thread.is_pinned ? "Unpin thread" : "Pin thread"}
+                    title={thread.is_pinned ? "Unpin" : "Pin"}
                   >
-                    {thread.is_pinned ? "Unpin" : "Pin"}
+                    <PinIcon
+                      className={`size-4 hover:text-amber-600 ${thread.is_pinned ? "text-amber-600" : "text-muted"}`}
+                      fill={thread.is_pinned ? "currentColor" : "none"}
+                    />
                   </button>
                 )}
                 {thread.opening_post?.can_edit && !editingOpening && (
@@ -491,18 +499,20 @@ function ThreadDetailView({
                       setDraftOpening(thread.opening_post!.body);
                       setEditingOpening(true);
                     }}
-                    className="text-xs font-semibold text-brand-blue hover:underline"
+                    aria-label="Edit post"
+                    title="Edit"
                   >
-                    Edit
+                    <PencilIcon className="size-4 text-muted hover:text-brand-blue" />
                   </button>
                 )}
                 {thread.can_edit && !editingOpening && (
                   <button
                     type="button"
                     onClick={onDeleteThread}
-                    className="text-xs font-semibold text-red-500 hover:underline"
+                    aria-label="Delete thread"
+                    title="Delete"
                   >
-                    Delete
+                    <TrashIcon className="size-4 text-muted hover:text-red-500" />
                   </button>
                 )}
               </div>
@@ -1082,7 +1092,7 @@ export default function ForumPage() {
   return (
     <>
       <Head>
-        <title>Forum — RCSWA Wellbeing</title>
+        <title>{pageTitle("Forum")}</title>
       </Head>
 
       <AppShell

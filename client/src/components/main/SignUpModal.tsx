@@ -2,6 +2,7 @@ import { useState, type FormEvent } from "react";
 import { useRouter } from "next/router";
 import Modal from "@/components/main/Modal";
 import { useAuth } from "@/context/AuthContext";
+import { landingPathFor } from "@/components/main/ApprovalGate";
 import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
 
 type SignUpModalProps = {
@@ -49,9 +50,9 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 
 		setIsSubmitting(true);
 		try {
-			await register(email, cleanedFullName, password);
+			const signedIn = await register(email, cleanedFullName, password);
 			onClose();
-			await router.push("/modules");
+			await router.push(landingPathFor(signedIn));
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Registration failed");
 		} finally {
@@ -63,9 +64,9 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 		if (!credentialResponse.credential) return;
 		setError(null);
 		try {
-			await loginWithGoogle(credentialResponse.credential);
+			const signedIn = await loginWithGoogle(credentialResponse.credential);
 			onClose();
-			await router.push("/modules");
+			await router.push(landingPathFor(signedIn));
 		} catch (err) {
 			setError(err instanceof Error ? err.message : "Google sign up failed");
 		}

@@ -526,6 +526,9 @@ class SurveyResponse(models.Model):
         related_name="responses",
     )
     answers = models.JSONField()
+    # The survey's questions as the participant saw them, so answers given before an
+    # admin edits, reorders or removes a question can be flagged against the new version.
+    questions = models.JSONField(default=list)
     submitted_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -534,6 +537,41 @@ class SurveyResponse(models.Model):
                 fields=["user", "survey"], name="unique_survey_response_user_survey"
             ),
         ]
+
+    def save(self, *args, **kwargs):
+        if not self.questions and self.survey_id:
+            self.questions = self.survey.questions or []
+        super().save(*args, **kwargs)
+
+    def question_changes(self, current=None):
+        """How the survey's questions differ from the ones this participant answered.
+
+        Returns {question_id: {"status": ..., "previous": question or None}} where status is
+        "edited" (answered, but the question has changed since), "removed" (answered, but no
+        longer in the survey) or "added" (added after this response, so never asked).
+        Section headings are ignored: they introduce a question rather than change it.
+        """
+        if not self.questions:
+            return {}  # No record of what was asked; nothing to compare against.
+        current = self.survey.questions if current is None else current
+
+        def definition(q):
+            return {k: v for k, v in q.items() if k != "section"}
+
+        before = {q.get("id"): q for q in self.questions if isinstance(q, dict)}
+        now = {q.get("id"): q for q in current or [] if isinstance(q, dict)}
+        answered = self.answers or {}
+        changes = {}
+        for qid, old in before.items():
+            if qid not in answered:
+                continue
+            if qid not in now:
+                changes[qid] = {"status": "removed", "previous": old}
+            elif definition(old) != definition(now[qid]):
+                changes[qid] = {"status": "edited", "previous": old}
+        for qid in now.keys() - before.keys():
+            changes[qid] = {"status": "added", "previous": None}
+        return changes
 
     def __str__(self):
         return f"{self.user} — {self.survey}"

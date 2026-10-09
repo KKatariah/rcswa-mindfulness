@@ -176,3 +176,113 @@ test("participant sees edited section heading and a multi-question journal promp
 		});
 	}
 });
+
+test("admin adds and removes questions, and participants see the new set", async ({ browser, page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/surveys");
+	await page.getByRole("button", { name: "New Survey" }).click();
+	await page.getByLabel("Title").fill("Extra check-in");
+	await page.getByLabel(/^Code/).fill("extra-e2e");
+	await page.getByRole("button", { name: "Create" }).click();
+	await expect(page.getByRole("tab", { name: "Questions (13)" })).toBeVisible();
+
+	await page.getByRole("button", { name: "Remove question q13" }).click();
+	await page.getByRole("button", { name: "Free text" }).click();
+	await expect(page.getByLabel("Question", { exact: true }).last()).toBeFocused();
+	await page.getByLabel("Question", { exact: true }).last().fill("Anything else you'd like to share?");
+	await page.getByRole("button", { name: "Save changes" }).click();
+	await expect(page.getByRole("status")).toHaveText("Saved.");
+	await expect(page.getByRole("tab", { name: "Questions (13)" })).toBeVisible();
+	await expect(page.getByLabel("Question", { exact: true }).last()).toHaveValue("Anything else you'd like to share?");
+	const surveyId = page.url().split("/").pop();
+
+	const reader = await browser.newPage();
+	await loginAs(reader, request, READER);
+	await reader.goto(`/surveys/${surveyId}`);
+	await expect(reader.getByText("Anything else you'd like to share?")).toBeVisible();
+	await expect(reader.getByText("How are you feeling this week?")).toHaveCount(0);
+	await reader.close();
+});
+
+test("editing an answered question flags the earlier answers", async ({ page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/surveys/2");
+	const q1 = page.getByLabel("Question", { exact: true }).first();
+	const original = await q1.inputValue();
+	await q1.fill("How many times did you meditate?");
+	await saveSurvey(page);
+	await expect(page.getByRole("status")).toHaveText("Saved.");
+
+	await page.getByRole("tab", { name: /Responses/ }).click();
+	await expect(page.getByText(/Highlighted answers were given before/)).toBeVisible();
+	await expect(page.getByRole("row").filter({ hasText: "How many times did you meditate?" })).toContainText(
+		"1 on an earlier version",
+	);
+	await expect(page.locator(`td[title*="${original}"]`)).toHaveCount(1);
+
+	await page.getByRole("tab", { name: /Questions/ }).click();
+	await q1.fill(original);
+	await saveSurvey(page);
+	await page.getByRole("tab", { name: /Responses/ }).click();
+	await expect(page.getByText(/Highlighted answers were given before/)).toHaveCount(0);
+});
+
+test("admin reorders questions with the keyboard and participants see the new order", async ({ browser, page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/surveys/1");
+	const last = page.getByRole("button", { name: "Move question 13" });
+	await last.focus();
+	await page.keyboard.press("ArrowUp");
+	await saveSurvey(page);
+	await expect(page.getByRole("status")).toHaveText("Saved.");
+	await expect(page.locator("[data-reorder-id]").nth(11)).toHaveAttribute("data-reorder-id", "q13");
+
+	const reader = await browser.newPage();
+	await loginAs(reader, request, READER);
+	await reader.goto("/surveys/1");
+	await expect(reader.getByRole("group", { name: /^13\.\s*In your daily life/ })).toBeVisible();
+	await reader.close();
+
+	await page.getByRole("button", { name: "Move question 12" }).focus();
+	await page.keyboard.press("ArrowDown");
+	await saveSurvey(page);
+	await expect(page.locator("[data-reorder-id]").nth(12)).toHaveAttribute("data-reorder-id", "q13");
+});
+
+test("changing an answered question's type saves it as a new question and keeps old answers", async ({ page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/surveys/2");
+	// q3 is the first 0–6 rating question; make it a 1–10 scale, then free text.
+	const card = page.locator('[data-reorder-id="q3"]');
+	await card.getByRole("button", { name: "1–10" }).click();
+	await expect(card.getByLabel("Highest")).toHaveValue("10");
+	await card.locator("#type-q3").click();
+	await page.getByRole("option", { name: "Free text" }).click();
+	await expect(card.getByText(/will be kept with the old version/)).toBeVisible();
+	await saveSurvey(page);
+	await expect(page.getByRole("status")).toHaveText("Saved.");
+	await expect(page.locator('[data-reorder-id="q3"]')).toHaveCount(0);
+	const renamed = page.locator("[data-reorder-id]").nth(2);
+	await expect(renamed).not.toHaveAttribute("data-reorder-id", "q3");
+	await expect(renamed.getByText("Free text", { exact: true }).first()).toBeVisible();
+
+	await page.getByRole("tab", { name: /Responses/ }).click();
+	await expect(page.getByRole("columnheader", { name: /q3.*removed/i })).toBeVisible();
+	await expect(page.getByText(/Highlighted answers were given before/)).toBeVisible();
+});
+
+test("skip rules can be set and cleared", async ({ page, request }) => {
+	await loginAs(page, request, ADMIN);
+	await page.goto("/admin/surveys/1");
+	const card = page.locator('[data-reorder-id="q7"]');
+	// Select closes on scroll, so settle the scroll before opening it.
+	await card.locator("#skip-q7").scrollIntoViewIfNeeded();
+	await page.waitForTimeout(100);
+	await card.locator("#skip-q7").click();
+	await page.getByRole("option", { name: "Question 1 (q1)" }).click();
+	await expect(card.getByLabel("Skip when the answer is")).toHaveValue("0");
+	await card.locator("#skip-q7").click();
+	await page.getByRole("option", { name: "Never skip" }).click();
+	await expect(card.getByLabel("Skip when the answer is")).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Save changes" })).toBeDisabled();
+});

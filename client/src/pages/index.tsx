@@ -16,6 +16,7 @@ import {
 	UsersIcon,
 } from "@/components/ui/icons";
 import { weekLabel } from "@/lib/weeks";
+import { pageTitle } from "@/lib/pageTitle";
 
 const HOW_IT_WORKS = [
 	{
@@ -84,7 +85,7 @@ export default function Home() {
 	return (
 		<>
 			<Head>
-				<title>RCSWA Wellbeing</title>
+				<title>{pageTitle()}</title>
 				<meta
 					name="description"
 					content="An 8-week guided meditation journey"

@@ -840,6 +840,7 @@ class SurveyViewSet(viewsets.ModelViewSet):
                 "cohort": cohorts.get(r.user_id, ""),
                 "submitted_at": r.submitted_at,
                 "answers": r.answers,
+                "question_changes": r.question_changes(survey.questions),
             }
             for r in responses
         ])

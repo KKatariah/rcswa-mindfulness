@@ -9,6 +9,7 @@ import { EnrollmentStatusBadge, RoleBadge } from "@/components/admin/Badges";
 import { PencilIcon } from "@/components/ui/icons";
 import { listCohorts, listEnrollments, listUsers } from "@/lib/api";
 import type { AdminUser, Cohort, Enrollment } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 export default function AdminUsersPage() {
 	const [users, setUsers] = useState<AdminUser[]>([]);
@@ -89,7 +90,7 @@ export default function AdminUsersPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Users — Admin</title>
+				<title>{adminPageTitle("Users")}</title>
 			</Head>
 
 			<div className="flex flex-wrap items-center justify-between gap-3">

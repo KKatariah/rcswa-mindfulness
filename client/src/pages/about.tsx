@@ -3,6 +3,7 @@ import Image from "next/image";
 import Navbar from "@/components/main/Navbar";
 import Footer from "@/components/main/Footer";
 import { LinkedinIcon, GlobeIcon } from "@/components/ui/icons";
+import { pageTitle } from "@/lib/pageTitle";
 
 const SARAH_EMAIL = "sarah.j.moore@rcswa.edu.au";
 
@@ -32,7 +33,7 @@ export default function AboutPage() {
 	return (
 		<>
 			<Head>
-				<title>About Us | RCSWA Wellbeing</title>
+				<title>{pageTitle("About Us")}</title>
 				<meta
 					name="description"
 					content="Learn about Dr Sarah Moore and the Rural Clinical School of Western Australia — the team behind this mindfulness programme for medical students."

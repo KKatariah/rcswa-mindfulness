@@ -10,6 +10,7 @@ import { useDragReorder, type ReorderHandlers } from "@/hooks/useDragReorder";
 import { listModulesAdmin, createModule, deleteModule, reorderModules } from "@/lib/api";
 import type { AdminModule } from "@/types/admin";
 import { weekLabel } from "@/lib/weeks";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 type ModuleFormState = { week_number: string; title: string; description: string; is_published: boolean };
 
@@ -123,7 +124,7 @@ export default function AdminModulesPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Modules — Admin</title>
+				<title>{adminPageTitle("Modules")}</title>
 			</Head>
 
 			<div className="flex items-center justify-between">

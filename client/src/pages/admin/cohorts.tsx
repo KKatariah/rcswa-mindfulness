@@ -6,6 +6,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { PlusIcon, PencilIcon, TrashIcon } from "@/components/ui/icons";
 import { listCohorts, listEnrollments, createCohort, updateCohort, deleteCohort } from "@/lib/api";
 import type { Cohort } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 type CohortFormState = { name: string; year: string; start_date: string; end_date: string };
 
@@ -220,7 +221,7 @@ export default function AdminCohortsPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Cohorts — Admin</title>
+				<title>{adminPageTitle("Cohorts")}</title>
 			</Head>
 
 			<div className="flex items-center justify-between">
