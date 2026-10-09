@@ -1022,7 +1022,6 @@ class NotificationPreferenceViewSet(
         return NotificationPreference.objects.filter(user=self.request.user)
 
 
-
 # ── Notification history (in-app inbox) ────────────────────────────────────────
 
 class NotificationHistoryViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
