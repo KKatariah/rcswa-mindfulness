@@ -11,6 +11,7 @@ import { usePagedList } from "@/hooks/usePagedList";
 import { listCohorts, listEnrollments, updateEnrollment, deleteUser } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import type { Cohort, Enrollment } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 export default function AdminApprovalsPage() {
 	const pending = usePagedList((page) => listEnrollments({ status: "pending", ...page }), [], {
@@ -62,7 +63,7 @@ export default function AdminApprovalsPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Approvals — Admin</title>
+				<title>{adminPageTitle("Approvals")}</title>
 			</Head>
 
 			<AdminPageHeader title="Approvals">

@@ -13,6 +13,7 @@ import { useFormSubmit } from "@/hooks/useFormSubmit";
 import { listCohorts, listEnrollments, createCohort, updateCohort, deleteCohort } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import type { Cohort } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 type CohortFormState = { name: string; year: string; start_date: string; end_date: string };
 
@@ -160,7 +161,7 @@ export default function AdminCohortsPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Cohorts — Admin</title>
+				<title>{adminPageTitle("Cohorts")}</title>
 			</Head>
 
 			<AdminPageHeader title="Cohorts">

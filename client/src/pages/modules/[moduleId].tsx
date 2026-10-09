@@ -5,6 +5,7 @@ import Head from "next/head";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
 import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import ModuleHeader from "@/components/modules/ModuleHeader";
 import ModuleContent from "@/components/modules/ModuleContent";
 import Card from "@/components/ui/Card";
@@ -22,6 +23,7 @@ import {
 } from "@/lib/api";
 import { weekLabel } from "@/lib/weeks";
 import type { ContentBlock } from "@/types/module";
+import { pageTitle } from "@/lib/pageTitle";
 
 // Background photo by Michael Metschl (Pexels): https://www.pexels.com/photo/18284929/
 
@@ -136,9 +138,16 @@ export default function ModulePage() {
 	return (
 		<>
 			<Head>
-				<title>{module.title}</title>
+				<title>{pageTitle(module.title)}</title>
 			</Head>
-			<AppShell rightRail={<UpcomingSession />}>
+			<AppShell
+				rightRail={
+					<div className="space-y-4">
+						<UpcomingSession />
+						<NotificationsPanel />
+					</div>
+				}
+			>
 				<Card className="flex min-w-0 flex-col">
 					<ModuleHeader
 						embedded

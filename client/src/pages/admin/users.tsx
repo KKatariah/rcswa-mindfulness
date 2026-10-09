@@ -16,6 +16,7 @@ import { useAsync } from "@/hooks/useAsync";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { listCohorts, listUsers, type Page } from "@/lib/api";
 import type { AdminUser, Cohort, Enrollment } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 const PAGE_SIZE = 25;
 
@@ -81,7 +82,7 @@ export default function AdminUsersPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Users — Admin</title>
+				<title>{adminPageTitle("Users")}</title>
 			</Head>
 
 			<AdminPageHeader title="Users">

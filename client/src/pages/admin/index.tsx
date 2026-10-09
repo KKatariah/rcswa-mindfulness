@@ -10,6 +10,7 @@ import { useAsync } from "@/hooks/useAsync";
 import { getDashboardStats } from "@/lib/api";
 import { weekLabel } from "@/lib/weeks";
 import type { DashboardStats } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
 	return (
@@ -60,7 +61,7 @@ export default function AdminDashboardPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Dashboard — Admin</title>
+				<title>{adminPageTitle("Dashboard")}</title>
 			</Head>
 
 			<AdminPageHeader title="Dashboard" />

@@ -203,4 +203,11 @@ export type AdminSurveyResponse = {
 	cohort: string;
 	submitted_at: string;
 	answers: Record<string, number | string>;
+	/** Questions that differ from the version this participant answered; `previous` is what they saw. */
+	question_changes: Record<string, QuestionChange>;
+};
+
+export type QuestionChange = {
+	status: "edited" | "removed" | "added";
+	previous: SurveyQuestion | null;
 };

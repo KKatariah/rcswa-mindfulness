@@ -31,8 +31,9 @@ export default function AppShell({
 
 				<div className="min-w-0">{children}</div>
 
+				{/* Capped to the viewport and scrollable, so a tall rail (e.g. an open notifications panel) stays reachable while sticky. Its scrollbar is hidden so it doesn't sit next to the notification list's own. */}
 				{rightRail && (
-					<div className="min-w-0 md:col-start-2 xl:sticky xl:top-24 xl:col-start-3">
+					<div className="min-w-0 md:col-start-2 xl:sticky xl:top-24 xl:col-start-3 xl:-mx-2 xl:max-h-[calc(100dvh-7.5rem)] xl:overflow-y-auto xl:overscroll-contain xl:px-2 xl:pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
 						{rightRail}
 					</div>
 				)}

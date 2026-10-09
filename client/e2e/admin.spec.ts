@@ -96,6 +96,9 @@ test("admin reorders resources within a category by drag and keyboard", async ({
 
 	await section.getByRole("button", { name: "Reorder Order C" }).press("ArrowDown");
 	await expect.poll(ours).toEqual(["Order A", "Order C", "Order B"]);
+	await expect(section.getByRole("status")).toContainText("order changed");
+	await section.getByRole("button", { name: "Save order" }).click();
+	await expect(section.getByRole("status")).toHaveCount(0);
 
 	await page.reload();
 	await expect.poll(ours).toEqual(["Order A", "Order C", "Order B"]);
@@ -146,6 +149,8 @@ test.describe("on a phone", () => {
 		await expect.poll(ours).toEqual(["Touch B", "Touch C", "Touch A"]);
 		// The drag moved the row rather than scrolling the page.
 		expect(await page.evaluate(() => window.scrollY)).toBe(scrollBefore);
+		await section.getByRole("button", { name: "Save order" }).click();
+		await expect(section.getByRole("status")).toHaveCount(0);
 		await page.reload();
 		await expect.poll(ours).toEqual(["Touch B", "Touch C", "Touch A"]);
 	});
@@ -191,14 +196,25 @@ test("admin drags content items within a module", async ({ page, request }) => {
 	const names = async () => (await handles.evaluateAll((els) => els.map((el) => el.getAttribute("aria-label"))));
 	const [first, second] = await names();
 
+	// Dragging only previews the new order until it's saved.
 	await handles.nth(1).dragTo(page.locator("[data-reorder-id]").first());
 	await expect.poll(names).toEqual([second, first]);
+	await expect(page.getByRole("status")).toContainText("Content item order changed");
+	await page.getByRole("button", { name: "Discard" }).click();
+	await expect.poll(names).toEqual([first, second]);
+
+	await handles.nth(1).dragTo(page.locator("[data-reorder-id]").first());
+	await expect.poll(names).toEqual([second, first]);
+	await page.getByRole("button", { name: "Save order" }).click();
+	await expect(page.getByRole("status")).toHaveCount(0);
 	await page.reload();
 	await expect.poll(names).toEqual([second, first]);
 
 	// Put it back with the keyboard.
 	await page.getByRole("button", { name: first! }).press("ArrowUp");
 	await expect.poll(names).toEqual([first, second]);
+	await page.getByRole("button", { name: "Save order" }).click();
+	await expect(page.getByRole("status")).toHaveCount(0);
 	await page.reload();
 	await expect.poll(names).toEqual([first, second]);
 });

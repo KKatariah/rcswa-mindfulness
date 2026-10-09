@@ -1,12 +1,15 @@
 import Head from "next/head";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
+import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import { FullPageMessage } from "@/components/ui/feedback";
 import PageHeader from "@/components/ui/PageHeader";
 import SurveyLinks, { type SurveyLinkItem } from "@/components/surveys/SurveyLinks";
 import { useAsync } from "@/hooks/useAsync";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { listSurveys } from "@/lib/api";
+import { pageTitle } from "@/lib/pageTitle";
 
 async function loadSurveyLinks(): Promise<SurveyLinkItem[]> {
 	try {
@@ -35,9 +38,16 @@ export default function SurveysHomePage() {
 	return (
 		<>
 			<Head>
-				<title>Weekly Surveys</title>
+				<title>{pageTitle("Weekly Surveys")}</title>
 			</Head>
-			<AppShell>
+			<AppShell
+				rightRail={
+					<div className="space-y-4">
+						<UpcomingSession />
+						<NotificationsPanel />
+					</div>
+				}
+			>
 				<div className="flex min-w-0 flex-col gap-4">
 					<PageHeader
 						title="Weekly Surveys"

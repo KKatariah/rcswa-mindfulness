@@ -11,6 +11,7 @@ import { useAsync } from "@/hooks/useAsync";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { updateProfile, changePassword, getNotificationPreferences, updateNotificationPreferences } from "@/lib/api";
+import { pageTitle } from "@/lib/pageTitle";
 
 type ReminderKey = "daily_content_reminder" | "survey_unlocked_reminder" | "daily_survey_reminder";
 type Reminders = Record<ReminderKey, boolean>;
@@ -245,7 +246,7 @@ export default function ProfilePage() {
   return (
     <>
       <Head>
-        <title>Profile</title>
+        <title>{pageTitle("Profile")}</title>
       </Head>
 
       <AppShell rightRail={<UpcomingSession />}>

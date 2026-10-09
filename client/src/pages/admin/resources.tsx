@@ -24,6 +24,7 @@ import {
 import { errorMessage } from "@/lib/errors";
 import { safeUrl } from "@/lib/safeUrl";
 import type { AdditionalResourceCategory, AdminAdditionalResource } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 const CATEGORY_OPTIONS: { value: AdditionalResourceCategory; label: string }[] = [
 	{ value: "book", label: "Book" },
@@ -175,12 +176,24 @@ export default function AdminResourcesPage() {
 	const [editing, setEditing] = useState<AdminAdditionalResource | null>(null);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 	const [newCategory, setNewCategory] = useState<AdditionalResourceCategory>("book");
+	// Dragged orders waiting to be saved, per category, like every other edit on the admin pages.
+	const [pendingOrders, setPendingOrders] = useState<Partial<Record<AdditionalResourceCategory, number[]>>>({});
+	const [savingOrder, setSavingOrder] = useState<AdditionalResourceCategory | null>(null);
 	const [deleting, setDeleting] = useState<AdminAdditionalResource | null>(null);
 	const { draggingId, startDrag, handleKey } = useDragReorder<number>();
 
 	const sections = useMemo(
-		() => SECTIONS.map((s) => ({ ...s, items: resources.filter((r) => r.category === s.category).sort(byOrder) })),
-		[resources],
+		() =>
+			SECTIONS.map((s) => {
+				const saved = resources.filter((r) => r.category === s.category).sort(byOrder);
+				const pending = pendingOrders[s.category];
+				if (!pending) return { ...s, saved, items: saved };
+				// Resources added or deleted since the drag keep the pending order for the rest.
+				const byId = new Map(saved.map((r) => [r.id, r]));
+				const kept = pending.filter((id) => byId.has(id)).map((id) => byId.get(id)!);
+				return { ...s, saved, items: [...kept, ...saved.filter((r) => !pending.includes(r.id))] };
+			}),
+		[resources, pendingOrders],
 	);
 
 	function openCreate(category: AdditionalResourceCategory = "book") {
@@ -189,22 +202,33 @@ export default function AdminResourcesPage() {
 		setModalOpen(true);
 	}
 
+	function setPendingOrder(category: AdditionalResourceCategory, ids: number[] | null) {
+		setPendingOrders((prev) => {
+			const next = { ...prev };
+			if (ids) next[category] = ids;
+			else delete next[category];
+			return next;
+		});
+	}
+
 	// Drags are local to one category; the server stores each category's order separately.
-	function reorderHandlers(category: AdditionalResourceCategory): ReorderHandlers<number> {
-		const snapshot = resources;
-		return {
-			onMove: (ids) => setResources((prev) => withOrder(prev, category, ids)),
-			onCancel: () => setResources(snapshot),
-			onDrop: async (ids) => {
-				setDeleteError(null);
-				try {
-					await reorderAdditionalResources(category, ids);
-				} catch (err) {
-					setResources(snapshot);
-					setDeleteError(errorMessage(err, "Failed to reorder resources"));
-				}
-			},
-		};
+	function reorderHandlers(category: AdditionalResourceCategory, savedIds: number[]): ReorderHandlers<number> {
+		const update = (ids: number[]) => setPendingOrder(category, ids.join() === savedIds.join() ? null : ids);
+		return { onMove: update, onDrop: () => {}, onCancel: update };
+	}
+
+	async function saveOrder(category: AdditionalResourceCategory, ids: number[]) {
+		setSavingOrder(category);
+		setDeleteError(null);
+		try {
+			await reorderAdditionalResources(category, ids);
+			setResources((prev) => withOrder(prev, category, ids));
+			setPendingOrder(category, null);
+		} catch (err) {
+			setDeleteError(errorMessage(err, "Failed to reorder resources"));
+		} finally {
+			setSavingOrder(null);
+		}
 	}
 
 	function openEdit(resource: AdminAdditionalResource) {
@@ -248,7 +272,7 @@ export default function AdminResourcesPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Resources — Admin</title>
+				<title>{adminPageTitle("Resources")}</title>
 			</Head>
 
 			<AdminPageHeader title="Resources">
@@ -264,7 +288,7 @@ export default function AdminResourcesPage() {
 			) : error ? (
 				<Card as="p" variant="admin" className="mt-6 p-6 text-sm text-red-600">{error}</Card>
 			) : (
-				sections.map(({ category, heading, items }) => (
+				sections.map(({ category, heading, saved, items }) => (
 					<section key={category} aria-labelledby={`resources-${category}`} className="mt-8">
 						<div className="flex items-center justify-between">
 							<h2 id={`resources-${category}`} className="text-lg font-bold text-ink">
@@ -296,8 +320,8 @@ export default function AdminResourcesPage() {
 									<td className="px-3 py-3">
 										<DragHandle
 											label={`Reorder ${resource.title}`}
-											onPointerDown={(e) => startDrag(e, resource.id, items.map((r) => r.id), reorderHandlers(category))}
-											onKeyDown={(e) => handleKey(e, resource.id, items.map((r) => r.id), reorderHandlers(category))}
+											onPointerDown={(e) => startDrag(e, resource.id, items.map((r) => r.id), reorderHandlers(category, saved.map((r) => r.id)))}
+											onKeyDown={(e) => handleKey(e, resource.id, items.map((r) => r.id), reorderHandlers(category, saved.map((r) => r.id)))}
 										/>
 									</td>
 									<td className="px-5 py-3">
@@ -325,6 +349,32 @@ export default function AdminResourcesPage() {
 								</tr>
 							))}
 						</AdminTable>
+						{pendingOrders[category] && (
+							<div
+								role="status"
+								className="mt-3 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between"
+							>
+								<p>{heading} order changed. Save to show students the new order.</p>
+								<div className="flex shrink-0 gap-2">
+									<button
+										type="button"
+										onClick={() => setPendingOrder(category, null)}
+										disabled={savingOrder === category}
+										className="h-10 rounded-xl border border-amber-300 bg-white px-4 font-semibold text-ink disabled:opacity-50"
+									>
+										Discard
+									</button>
+									<button
+										type="button"
+										onClick={() => saveOrder(category, items.map((r) => r.id))}
+										disabled={savingOrder === category}
+										className="h-10 rounded-xl bg-brand-blue px-4 font-bold text-white disabled:opacity-50"
+									>
+										{savingOrder === category ? "Saving…" : "Save order"}
+									</button>
+								</div>
+							</div>
+						)}
 					</section>
 				))
 			)}

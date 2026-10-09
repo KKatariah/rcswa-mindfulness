@@ -1,9 +1,10 @@
-"""Push subscriptions and notification preferences."""
+"""Push subscriptions, notification preferences and the in-app inbox."""
 
 
 from rest_framework import serializers
 
 from ..models import (
+    NotificationLog,
     NotificationPreference,
     PushSubscription,
 )
@@ -38,3 +39,46 @@ class NotificationPreferenceSerializer(serializers.ModelSerializer):
         if value.minute or value.second:
             raise serializers.ValidationError("Reminder time must be on the hour (e.g. 08:00).")
         return value
+
+
+class NotificationLogSerializer(serializers.ModelSerializer):
+    """A delivered notification as shown in the user's in-app inbox.
+
+    The log doesn't store the message text, so title/body/url are rebuilt from
+    the type and module the same way the senders build their push payloads.
+    """
+
+    title = serializers.SerializerMethodField()
+    body = serializers.SerializerMethodField()
+    url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NotificationLog
+        fields = ["id", "type", "channel", "sent_at", "read_at", "title", "body", "url"]
+        read_only_fields = fields
+
+    def get_title(self, obj):
+        Type = NotificationLog.NotificationType
+        week = obj.module.week_label if obj.module else None
+        if obj.type == Type.CONTENT_REMINDER:
+            return "Time for your daily meditation"
+        if obj.type == Type.SURVEY_PROMPT:
+            return "Your survey is ready"
+        if obj.type == Type.CONTENT_UPDATE:
+            return f"New content: {week}" if week else "New content"
+        if obj.type == Type.MODULE_ADDED:
+            return f"{week} is now available" if week else "A new week is now available"
+        return obj.get_type_display()
+
+    def get_body(self, obj):
+        if obj.type == NotificationLog.NotificationType.CONTENT_REMINDER and obj.content_item:
+            return obj.content_item.title
+        return obj.module.title if obj.module else ""
+
+    def get_url(self, obj):
+        if obj.type == NotificationLog.NotificationType.SURVEY_PROMPT:
+            return "/surveys"
+        if obj.module:
+            # The frontend module route is keyed by id, not week number.
+            return f"/modules/{obj.module.id}/"
+        return None

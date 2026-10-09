@@ -19,6 +19,7 @@ import { errorMessage } from "@/lib/errors";
 import { deleteModuleMessage } from "@/lib/modules";
 import { weekLabel } from "@/lib/weeks";
 import type { AdminModule } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 type ModuleFormState = { week_number: string; title: string; description: string; is_published: boolean };
 
@@ -104,7 +105,7 @@ export default function AdminModulesPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Modules — Admin</title>
+				<title>{adminPageTitle("Modules")}</title>
 			</Head>
 
 			<AdminPageHeader title="Modules">

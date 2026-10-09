@@ -565,3 +565,32 @@ export async function getVapidPublicKey(): Promise<string | undefined> {
 export function savePushSubscription(subscription: { endpoint: string; p256dh: string; auth: string }): Promise<unknown> {
 	return request("/notifications/subscriptions/", { method: "POST", body: subscription });
 }
+
+export type NotificationType =
+	| "content_reminder"
+	| "survey_prompt"
+	| "content_update"
+	| "module_added";
+
+export type ReceivedNotification = {
+	id: number;
+	type: NotificationType;
+	channel: "inapp" | "push";
+	sent_at: string;
+	read_at: string | null;
+	title: string;
+	body: string;
+	url: string | null;
+};
+
+export function getNotificationHistory(): Promise<ReceivedNotification[]> {
+	return request("/notifications/history/");
+}
+
+export function markNotificationRead(id: number): Promise<ReceivedNotification> {
+	return request(`/notifications/history/${id}/read/`, { method: "POST" });
+}
+
+export function markAllNotificationsRead(): Promise<{ marked: number }> {
+	return request("/notifications/history/read-all/", { method: "POST" });
+}

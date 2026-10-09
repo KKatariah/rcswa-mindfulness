@@ -48,4 +48,5 @@ from .surveys import (  # noqa: F401
 from .notifications import (  # noqa: F401
     PushSubscriptionSerializer,
     NotificationPreferenceSerializer,
+    NotificationLogSerializer,
 )

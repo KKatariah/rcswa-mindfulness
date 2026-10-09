@@ -3,6 +3,7 @@ import Link from "next/link";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
 import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import Card from "@/components/ui/Card";
 import { FullPageMessage } from "@/components/ui/feedback";
 import PageHeader from "@/components/ui/PageHeader";
@@ -11,6 +12,7 @@ import { useAsync } from "@/hooks/useAsync";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { listModules, listProgress, type ApiModule } from "@/lib/api";
 import { weekLabel } from "@/lib/weeks";
+import { pageTitle } from "@/lib/pageTitle";
 
 type WeekRow = {
 	module: ApiModule;
@@ -102,10 +104,17 @@ export default function ModulesIndexPage() {
 	return (
 		<>
 			<Head>
-				<title>Progress</title>
+				<title>{pageTitle("Your Progress")}</title>
 			</Head>
 			{/* The rail column is always reserved so the layout doesn't jump once data arrives. */}
-			<AppShell rightRail={<>{ready && <UpcomingSession modules={data.modules} />}</>}>
+			<AppShell
+				rightRail={
+					<div className="space-y-4">
+						{ready && <UpcomingSession modules={data.modules} completedItemIds={data.completedItemIds} />}
+						<NotificationsPanel />
+					</div>
+				}
+			>
 				<div className="flex min-w-0 flex-col gap-4">
 					<PageHeader title="Your Progress" description="Track your 8-week meditation journey" />
 

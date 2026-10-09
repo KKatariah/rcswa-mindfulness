@@ -2,16 +2,43 @@ import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import SurveyQuestions from "@/components/surveys/SurveyQuestions";
+import type { SurveyQuestion } from "@/types/admin";
+
+const scale = (n: number, text: string, extra: Partial<SurveyQuestion> = {}): SurveyQuestion => ({
+	id: `q${n}`,
+	type: "likert",
+	text,
+	min: 0,
+	max: 6,
+	scale_labels: { "0": "Never", "6": "Always" },
+	...extra,
+});
+const skipIfNoPractice = { skip_if: { question_id: "q1", value: 0 } };
+
+/** Same shape as the standard weekly survey (app/survey_template.py). */
+const STANDARD: SurveyQuestion[] = [
+	{ id: "q1", type: "integer", text: "Times meditated?", unit: "times", section: "About your formal practice" },
+	{ id: "q2", type: "integer", text: "Minutes per session?", unit: "minutes", ...skipIfNoPractice },
+	...[3, 4, 5, 6].map((n) => scale(n, `Formal ${n}`, skipIfNoPractice)),
+	scale(7, "Informal 7", { section: "About your informal practice" }),
+	...[8, 9, 10, 11, 12].map((n) => scale(n, `Informal ${n}`)),
+	{
+		id: "q13",
+		type: "longtext",
+		text: "How are you feeling this week? What has been your experience with the mindfulness intervention this week?",
+	},
+];
 
 function renderSurvey(props: Partial<Parameters<typeof SurveyQuestions>[0]> = {}) {
 	const onSubmit = vi.fn();
-	render(<SurveyQuestions onSubmit={onSubmit} {...props} />);
+	render(<SurveyQuestions questions={STANDARD} onSubmit={onSubmit} {...props} />);
 	return { onSubmit, user: userEvent.setup() };
 }
 
-/** The radio for `value` on scale question `id`. */
-const rating = (id: number, value: number) =>
-	document.querySelector<HTMLInputElement>(`input[name="question-${id}"][value="${value}"]`)!;
+/** The radio for `value` on the scale question numbered `n`. */
+const rating = (n: number, value: number) =>
+	document.querySelector<HTMLInputElement>(`input[name="question-${n}"][value="${value}"]`)!;
+const journal = () => screen.getByPlaceholderText("Enter reflection...");
 
 describe("SurveyQuestions", () => {
 	it("shows two number questions and ten 0–6 rating questions", () => {
@@ -23,28 +50,32 @@ describe("SurveyQuestions", () => {
 		}
 	});
 
-	it("submits every answer keyed by question number", async () => {
+	it("submits every answer keyed by question id", async () => {
 		const { onSubmit, user } = renderSurvey();
 		const [times, minutes] = screen.getAllByRole("spinbutton");
 		await user.type(times, "5");
 		await user.type(minutes, "20");
 		await user.click(rating(3, 4));
 		await user.click(rating(12, 6));
-		await user.type(screen.getByPlaceholderText("Enter reflection..."), "Calmer this week.");
+		await user.type(journal(), "Calmer this week.");
 
 		await user.click(screen.getByRole("button", { name: "Submit survey" }));
 
-		expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ 1: 5, 2: 20, 3: 4, 12: 6, 13: "Calmer this week." });
+		expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ q1: 5, q2: 20, q3: 4, q12: 6, q13: "Calmer this week." });
 	});
 
 	it("can be submitted having done no meditation, skipping questions 2–6", async () => {
 		const { onSubmit, user } = renderSurvey();
+		await user.click(rating(3, 2));
 		await user.type(screen.getAllByRole("spinbutton")[0], "0");
+		expect(screen.getAllByRole("spinbutton")[1]).toBeDisabled();
+		expect(rating(4, 1)).toBeDisabled();
 		await user.click(rating(7, 3));
 
 		await user.click(screen.getByRole("button", { name: "Submit survey" }));
 
-		expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ 1: 0, 7: 3 });
+		// The rating given before q1 was set to 0 is dropped along with the skipped questions.
+		expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ q1: 0, q7: 3 });
 	});
 
 	it("keeps one rating per question", async () => {
@@ -55,7 +86,7 @@ describe("SurveyQuestions", () => {
 		expect(rating(5, 5)).toBeChecked();
 
 		await user.click(screen.getByRole("button", { name: "Submit survey" }));
-		expect(onSubmit.mock.calls[0][0]).toEqual({ 5: 5 });
+		expect(onSubmit.mock.calls[0][0]).toEqual({ q5: 5 });
 	});
 
 	it("doesn't submit twice while a submission is in progress", async () => {
@@ -68,17 +99,16 @@ describe("SurveyQuestions", () => {
 
 	it("counts journal words as they're typed", async () => {
 		const { user } = renderSurvey();
-		const journal = screen.getByRole("textbox", { name: "Reflective Journal" });
-		expect(journal).toHaveAccessibleDescription("0 words (aim for 100-250)");
-		await user.type(journal, "one");
-		expect(journal).toHaveAccessibleDescription("1 word (aim for 100-250)");
-		await user.type(journal, "  two\nthree ");
-		expect(journal).toHaveAccessibleDescription("3 words (aim for 100-250)");
+		expect(journal()).toHaveAccessibleDescription("0 words (aim for 100-250)");
+		await user.type(journal(), "one");
+		expect(journal()).toHaveAccessibleDescription("1 word (aim for 100-250)");
+		await user.type(journal(), "  two\nthree ");
+		expect(journal()).toHaveAccessibleDescription("3 words (aim for 100-250)");
 	});
 
 	it("caps the journal at the server's 5000-character limit", () => {
 		renderSurvey();
-		expect(screen.getByRole("textbox", { name: "Reflective Journal" })).toHaveAttribute("maxlength", "5000");
+		expect(journal()).toHaveAttribute("maxlength", "5000");
 	});
 
 	describe("clearing selections", () => {
@@ -95,7 +125,7 @@ describe("SurveyQuestions", () => {
 			await user.type(screen.getAllByRole("spinbutton")[0], "3");
 			await user.click(rating(3, 2));
 			await user.click(rating(9, 4));
-			await user.type(screen.getByPlaceholderText("Enter reflection..."), "Keep me");
+			await user.type(journal(), "Keep me");
 
 			await user.click(screen.getByRole("button", { name: "Clear selections" }));
 			const confirm = screen.getByRole("alertdialog", { name: "Clear selections?" });
@@ -105,7 +135,7 @@ describe("SurveyQuestions", () => {
 			expect(rating(3, 2)).not.toBeChecked();
 			expect(rating(9, 4)).not.toBeChecked();
 			await user.click(screen.getByRole("button", { name: "Submit survey" }));
-			expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ 1: 3, 13: "Keep me" });
+			expect(onSubmit).toHaveBeenCalledExactlyOnceWith({ q1: 3, q13: "Keep me" });
 		});
 
 		it("keeps the ratings if the user cancels", async () => {
@@ -118,32 +148,31 @@ describe("SurveyQuestions", () => {
 		});
 	});
 
-	describe("admin-edited wording", () => {
+	describe("survey-defined questions", () => {
 		it("uses the survey's own question and section text", () => {
-			renderSurvey({
-				questionText: { 1: "Sessions this week?", 2: "Minutes per session?" },
-				sectionText: { 1: "About your sitting practice", 7: "About everyday mindfulness" },
-				formalQuestions: [{ id: 3, text: "Custom focus question" }],
-			});
-			expect(screen.getByText("1. Sessions this week?")).toBeInTheDocument();
-			expect(screen.getByText("2. Minutes per session?")).toBeInTheDocument();
-			expect(screen.getByRole("heading", { name: "About your sitting practice" })).toBeInTheDocument();
-			expect(screen.getByRole("heading", { name: "About everyday mindfulness" })).toBeInTheDocument();
-			expect(screen.getByRole("group", { name: /Custom focus question$/ })).toBeInTheDocument();
+			renderSurvey();
+			expect(screen.getByText(/^1\. Times meditated\?/)).toBeInTheDocument();
+			expect(screen.getByRole("heading", { name: "About your formal practice" })).toBeInTheDocument();
+			expect(screen.getByRole("heading", { name: "About your informal practice" })).toBeInTheDocument();
+			expect(screen.getByRole("group", { name: /Formal 3$/ })).toBeInTheDocument();
+		});
+
+		it("explains the skip rule under the question that triggers it", () => {
+			renderSurvey();
+			expect(screen.getByText(/If you answer 0 to question 1, skip to question 7\./)).toBeInTheDocument();
 		});
 
 		it("lists each question in the journal prompt separately", () => {
-			renderSurvey({ questionText: { 13: "How was your week? What did you notice? Anything else" } });
-			const prompts = screen.getAllByRole("listitem").map((item) => item.textContent);
-			expect(prompts).toEqual(["How was your week?", "What did you notice?", "Anything else"]);
-		});
-
-		it("falls back to the standard journal prompts", () => {
 			renderSurvey();
 			expect(screen.getAllByRole("listitem").map((item) => item.textContent)).toEqual([
 				"How are you feeling this week?",
 				"What has been your experience with the mindfulness intervention this week?",
 			]);
+		});
+
+		it("sizes each rating scale from the question's range", () => {
+			renderSurvey({ questions: [scale(1, "Five point", { min: 1, max: 5 })] });
+			expect(within(screen.getByRole("group")).getAllByRole("radio")).toHaveLength(5);
 		});
 	});
 });

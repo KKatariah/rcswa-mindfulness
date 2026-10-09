@@ -2,6 +2,8 @@ import type { ReactNode } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import AppShell from "@/components/main/AppShell";
+import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import Card from "@/components/ui/Card";
 import { FullPageMessage } from "@/components/ui/feedback";
 import PageHeader from "@/components/ui/PageHeader";
@@ -11,6 +13,7 @@ import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { listAdditionalResources } from "@/lib/api";
 import { safeUrl } from "@/lib/safeUrl";
 import type { AdditionalResourceCategory, AdminAdditionalResource } from "@/types/admin";
+import { pageTitle } from "@/lib/pageTitle";
 
 type Resource = {
   id: number;
@@ -152,10 +155,17 @@ export default function ResourcesPage() {
   return (
     <>
       <Head>
-        <title>Resources | RCSWA Wellbeing</title>
+        <title>{pageTitle("Resources")}</title>
         <meta name="description" content="Books, documentaries, and online programmes to support your mindfulness journey." />
       </Head>
-      <AppShell>
+      <AppShell
+        rightRail={
+          <div className="space-y-4">
+            <UpcomingSession />
+            <NotificationsPanel />
+          </div>
+        }
+      >
         <div className="min-w-0 space-y-4">
             <PageHeader title="Resources" description="Helpful materials to support your meditation journey" />
 

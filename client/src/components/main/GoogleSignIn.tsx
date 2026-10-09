@@ -1,6 +1,7 @@
 import { GoogleLogin } from "@react-oauth/google";
 import { useAuth } from "@/context/AuthContext";
 import { errorMessage } from "@/lib/errors";
+import type { AuthUser } from "@/types/user";
 
 /** "or" divider plus the Google button, shown under the log-in and sign-up forms. */
 export default function GoogleSignIn({
@@ -10,7 +11,7 @@ export default function GoogleSignIn({
 	failureMessage,
 }: {
 	onStart: () => void;
-	onSignedIn: () => Promise<void>;
+	onSignedIn: (user: AuthUser) => Promise<void>;
 	onError: (message: string) => void;
 	failureMessage: string;
 }) {
@@ -20,8 +21,7 @@ export default function GoogleSignIn({
 		if (!credential) return;
 		onStart();
 		try {
-			await loginWithGoogle(credential);
-			await onSignedIn();
+			await onSignedIn(await loginWithGoogle(credential));
 		} catch (err) {
 			onError(errorMessage(err, failureMessage));
 		}

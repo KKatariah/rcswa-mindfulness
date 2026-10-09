@@ -4,6 +4,8 @@ import Modal from "@/components/main/Modal";
 import GoogleSignIn from "@/components/main/GoogleSignIn";
 import { FormActions, FormError, TextField } from "@/components/ui/form";
 import { useAuth } from "@/context/AuthContext";
+import type { AuthUser } from "@/types/user";
+import { landingPathFor } from "@/components/main/ApprovalGate";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
 
 type LoginModalProps = {
@@ -27,16 +29,15 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 		onClose();
 	}
 
-	async function finish() {
+	async function finish(signedIn: AuthUser) {
 		handleClose();
-		await router.push("/modules");
+		await router.push(landingPathFor(signedIn));
 	}
 
 	function handleSubmit(event: FormEvent) {
 		event.preventDefault();
 		void run(async () => {
-			await login(email, password);
-			await finish();
+			await finish(await login(email, password));
 		});
 	}
 

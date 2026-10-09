@@ -11,6 +11,7 @@ import { getUserOverview, listCohorts } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { SURVEY_TYPE_LABELS } from "@/lib/surveys";
 import type { Cohort, UserOverview } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 function formatDate(iso: string | null) {
 	if (!iso) return "—";
@@ -119,7 +120,7 @@ export default function AdminUserProfilePage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>{`${name} — Admin`}</title>
+				<title>{adminPageTitle(name)}</title>
 			</Head>
 
 			{backLink}
