@@ -96,7 +96,8 @@ async function request<T>(path: string, options?: RequestOptions): Promise<T> {
 }
 
 /** One page of a long list (users, enrollments, forum threads); `count` is the total across all pages. */
-export type Page<T> = { count: number; results: T[] };
+// next/previous are the server's links to the neighbouring pages; the app pages by offset instead.
+export type Page<T> = { count: number; next?: string | null; previous?: string | null; results: T[] };
 export type PageParams = { limit?: number; offset?: number };
 
 function query(params: Record<string, string | number | undefined>): string {
@@ -166,17 +167,22 @@ export async function changePassword(payload: {
 
 export type ApiContentItem = {
 	id: number;
+	module: number;
 	title: string;
 	type: "video" | "audio";
 	provider: string;
 	embed_url: string;
 	display_order: number;
+	day_offset: number | null;
 };
 
 export type ApiModule = {
 	id: number;
 	week_number: number;
 	title: string;
+	description: string;
+	summary: string;
+	is_published: boolean;
 	// ISO date the student's cohort reaches this week; null when not in an active cohort.
 	unlock_at: string | null;
 	is_unlocked: boolean;
@@ -508,6 +514,7 @@ export type ApiSurveyDetail = ApiSurvey & {
 		max?: number;
 		unit?: string;
 		section?: string;
+		scale_labels?: Record<string, string>;
 		skip_if?: {
 			question_id: string;
 			value: number;

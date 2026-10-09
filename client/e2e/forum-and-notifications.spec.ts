@@ -68,3 +68,29 @@ test("the notification setup modal opens from the profile page", async ({ page, 
 	await dialog.getByRole("button", { name: "Close" }).click();
 	await expect(dialog).toHaveCount(0);
 });
+
+test("blocking notifications is explained and remembered", async ({ page, request }) => {
+	await loginAs(page, request, STUDENT);
+	// Answer the permission prompt with "Block". The push APIs only need to exist: a refusal stops
+	// before the service worker is registered, so this runs the same in every browser engine.
+	await page.addInitScript(() => {
+		Object.defineProperty(window, "Notification", { value: { requestPermission: async () => "denied" } });
+		if (!("PushManager" in window)) Object.defineProperty(window, "PushManager", { value: function PushManager() {} });
+		if (!("serviceWorker" in navigator)) Object.defineProperty(navigator, "serviceWorker", { value: {} });
+	});
+	const headers = { Authorization: `Token ${await apiToken(request, STUDENT)}` };
+	const preferences = `${API}/notifications/preferences/me/`;
+
+	try {
+		await page.goto("/profile");
+		await page.getByRole("button", { name: "Set up notifications" }).click();
+		await page.getByRole("dialog").getByRole("button", { name: "Enable notifications" }).click();
+
+		await expect(page.getByRole("dialog")).toContainText("Notifications are blocked for this site");
+		await expect
+			.poll(async () => (await (await request.get(preferences, { headers })).json()).push_denied)
+			.toBe(true);
+	} finally {
+		await request.patch(preferences, { headers, data: { push_denied: false } });
+	}
+});

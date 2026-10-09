@@ -14,6 +14,7 @@ export type AdminContentItem = {
 	provider: "youtube" | "soundcloud" | "";
 	embed_url: string;
 	display_order: number;
+	day_offset: number | null;
 };
 
 export type AdminModule = {
@@ -24,6 +25,7 @@ export type AdminModule = {
 	summary: string;
 	is_published: boolean;
 	is_unlocked: boolean;
+	unlock_at: string | null;
 	content_items: AdminContentItem[];
 };
 

@@ -25,6 +25,8 @@ export type ForumThread = {
   reply_count: number;
   can_edit: boolean;
   is_pinned: boolean;
+  // Position among pinned threads (1 = top); 0 when not pinned.
+  pin_order: number;
   can_pin: boolean;
 };
 
