@@ -204,7 +204,7 @@ export default function ModuleProgress({ moduleId, items }: { moduleId: number; 
 										</div>
 										<dl className="mt-3 grid grid-cols-2 gap-y-1.5 text-sm">
 											<dt className="text-muted">Cohort</dt>
-											<dd className="text-right text-ink-soft">{s.cohort_name}</dd>
+											<dd className="min-w-0 wrap-anywhere text-right text-ink-soft">{s.cohort_name}</dd>
 											<dt className="text-muted">Content</dt>
 											<dd className="flex justify-end"><ItemDots items={items} student={s} /></dd>
 											<dt className="text-muted">Survey</dt>
