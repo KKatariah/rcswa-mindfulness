@@ -148,10 +148,13 @@ export default function AdminDashboardPage() {
 						</div>
 					</Section>
 
-					<div className="grid gap-4 sm:grid-cols-3">
+					<div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
 						<StatCard label="Forum threads" value={stats.forum_activity.thread_count} />
 						<StatCard label="Forum posts" value={stats.forum_activity.post_count} />
 						<StatCard label="Active participants" value={stats.forum_activity.active_participants} />
+						<Link href="/admin/moderation" className="rounded-2xl focus-visible:outline-2 focus-visible:outline-brand-blue">
+							<StatCard label="Reported posts" value={stats.forum_activity.reported_post_count} />
+						</Link>
 					</div>
 				</div>
 			) : null}

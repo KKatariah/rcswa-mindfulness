@@ -29,6 +29,9 @@ from .forum import (  # noqa: F401
     ForumThreadSerializer,
     ForumThreadDetailSerializer,
     ForumThreadCreateSerializer,
+    ForumFlagCreateSerializer,
+    ModeratedPostSerializer,
+    ReportedPostSerializer,
     FORUM_POST_MAX_CHARS,
 )
 from .surveys import (  # noqa: F401

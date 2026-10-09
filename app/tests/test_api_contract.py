@@ -15,6 +15,7 @@ from ..models import (
     ContentCompletion,
     ContentItem,
     Enrollment,
+    ForumFlag,
     ForumPost,
     ForumThread,
     Module,
@@ -114,6 +115,21 @@ class ApiContractTests(APITestCase):
         self.client.force_authenticate(self.admin)
         self.assertMatches(self.client.get("/api/users/"), "Page<AdminUser>")
         self.assertMatches(self.client.get(f"/api/users/{self.student.pk}/overview/"), "UserOverview")
+
+    def test_admin_forum_moderation(self, _fire):
+        other = User.objects.create_user(email="other@test.local", password="Calm-River-42")
+        reply = ForumPost.objects.filter(thread=self.thread, is_head_post=False).get()
+        ForumFlag.objects.create(post=reply, flagged_by=other, reason="Unkind")
+        self.client.force_authenticate(self.admin)
+        self.assertMatches(self.client.get("/api/forum/posts/reported/"), "Page<ReportedPost>")
+        self.assertMatches(
+            self.client.post(f"/api/forum/posts/{reply.pk}/moderate/", {"action": "ban", "ban_days": 7}, format="json"),
+            "ModeratedPost",
+        )
+        self.assertMatches(self.client.get("/api/forum/posts/removed/"), "Page<ModeratedPost>")
+        self.assertMatches(self.client.post(f"/api/forum/posts/{reply.pk}/restore/"), "ModeratedPost")
+        self.assertMatches(self.client.get("/api/users/?forum_banned=true"), "Page<AdminUser>")
+        self.assertMatches(self.client.delete(f"/api/users/{self.student.pk}/forum-ban/"), "AdminUser")
 
     def test_admin_cohorts_and_enrollments(self, _fire):
         self.client.force_authenticate(self.admin)

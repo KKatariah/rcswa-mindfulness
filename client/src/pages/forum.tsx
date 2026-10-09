@@ -11,6 +11,7 @@ import {
 import Head from "next/head";
 import { useRouter } from "next/router";
 import ForumRulesModal, { ForumRulesSummary } from "@/components/forum/ForumRulesModal";
+import ReportPostDialog from "@/components/forum/ReportPostDialog";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
 import UpcomingSession from "@/components/modules/UpcomingSession";
@@ -19,6 +20,7 @@ import Card from "@/components/ui/Card";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import {
   ChevronLeftIcon,
+  FlagIcon,
   MessageCircleIcon,
   MoreHorizontalIcon,
   PencilIcon,
@@ -39,6 +41,7 @@ import {
   createForumThread,
   deleteForumPost,
   deleteForumThread,
+  flagForumPost,
   getForumThread,
   getProgramStatus,
   listForumThreads,
@@ -72,6 +75,14 @@ function formatFullDate(iso: string) {
 
 function isAdminUser(user: AuthUser | null) {
   return user?.role === "admin";
+}
+
+/** Why this user can't post, if an admin has banned them from the forum. */
+function banNotice(user: AuthUser | null) {
+  if (!user?.forum_banned) return null;
+  return user.forum_banned_until
+    ? `You've been banned from posting in the forum until ${formatFullDate(user.forum_banned_until)}.`
+    : "You've been banned from posting in the forum.";
 }
 
 // Matches FORUM_POST_MAX_CHARS in app/serializers/forum.py.
@@ -292,6 +303,14 @@ const deleteAction = (label: string, onSelect: () => void): MenuAction => ({
   onSelect,
 });
 
+// Once reported, it stays "Reported" until a moderator deals with it.
+const reportAction = (hasFlagged: boolean, onSelect: () => void): MenuAction => ({
+  label: hasFlagged ? "Reported" : "Report",
+  icon: <FlagIcon className="size-4" />,
+  onSelect,
+  disabled: hasFlagged,
+});
+
 /** Grows a textarea to fit its text as it changes. */
 function useAutosize(value: string) {
   const ref = useRef<HTMLTextAreaElement>(null);
@@ -487,16 +506,29 @@ function ReadOnlyNotice({ children }: { children: ReactNode }) {
 function ReplyItem({
   post,
   highlighted,
+  canReport,
+  banned,
   onEdit,
   onDelete,
+  onReport,
 }: {
   post: ForumPost;
   highlighted: boolean;
+  canReport: boolean;
+  banned: boolean;
   onEdit: (id: number, body: string) => Promise<void>;
   onDelete: (id: number) => void;
+  onReport: (post: ForumPost) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const ref = useRef<HTMLLIElement>(null);
+
+  const actions: MenuAction[] = [];
+  if (post.can_edit) {
+    if (!banned) actions.push(editAction(() => setEditing(true)));
+    actions.push(deleteAction("Delete reply", () => onDelete(post.id)));
+  }
+  if (canReport && !post.is_own) actions.push(reportAction(post.has_flagged, () => onReport(post)));
 
   // A reply you just posted scrolls into view and is briefly tinted.
   useEffect(() => {
@@ -524,12 +556,8 @@ function ReplyItem({
               </>
             }
           />
-          {post.can_edit && !editing && (
-            <PostMenu
-              className="-my-1.5 -mr-2"
-              label={`Actions for reply by ${post.author_name}`}
-              actions={[editAction(() => setEditing(true)), deleteAction("Delete reply", () => onDelete(post.id))]}
-            />
+          {!editing && (
+            <PostMenu className="-my-1.5 -mr-2" label={`Actions for reply by ${post.author_name}`} actions={actions} />
           )}
         </div>
 
@@ -587,6 +615,7 @@ type ThreadDetailViewProps = {
   onDeletePost: (id: number) => void;
   onDeleteThread: () => void;
   onPinThread: (id: number, is_pinned: boolean) => Promise<void>;
+  onReport: (post: ForumPost, kind: "thread" | "reply") => void;
   isActive: boolean;
   user: AuthUser | null;
 };
@@ -600,6 +629,7 @@ function ThreadDetailView({
   onDeletePost,
   onDeleteThread,
   onPinThread,
+  onReport,
   isActive,
   user,
 }: ThreadDetailViewProps) {
@@ -610,6 +640,10 @@ function ThreadDetailView({
   const repliesHeadingId = useId();
   const openingPost = thread.opening_post;
   const replyCount = thread.replies.length;
+  const banned = !!user?.forum_banned;
+  // Admins act on posts directly rather than reporting them.
+  const canReport = !isAdminUser(user) && !banned;
+  const notice = banNotice(user);
 
   // Opening a thread swaps the whole view, so move focus to it for screen readers.
   useEffect(() => {
@@ -629,8 +663,11 @@ function ThreadDetailView({
   if (thread.can_pin) {
     threadActions.push(pinAction(thread.is_pinned, handlePinToggle));
   }
-  if (openingPost?.can_edit) threadActions.push(editAction(() => setEditingOpening(true)));
+  if (openingPost?.can_edit && !banned) threadActions.push(editAction(() => setEditingOpening(true)));
   if (thread.can_edit) threadActions.push(deleteAction("Delete thread", onDeleteThread));
+  if (canReport && openingPost && !openingPost.is_own) {
+    threadActions.push(reportAction(openingPost.has_flagged, () => onReport(openingPost, "thread")));
+  }
 
   return (
     <div className="space-y-4">
@@ -681,7 +718,7 @@ function ThreadDetailView({
           </h2>
           {replyCount === 0 ? (
             <p className="px-6 pb-6 pt-2 text-sm text-muted">
-              No replies yet{isActive ? " — start the conversation below." : "."}
+              No replies yet{isActive && !notice ? " — start the conversation below." : "."}
             </p>
           ) : (
             <ol className="divide-y divide-gray-100 pb-2 pt-1">
@@ -690,15 +727,20 @@ function ThreadDetailView({
                   key={post.id}
                   post={post}
                   highlighted={post.id === highlightPostId}
+                  canReport={canReport}
+                  banned={banned}
                   onEdit={onEditPost}
                   onDelete={onDeletePost}
+                  onReport={(p) => onReport(p, "reply")}
                 />
               ))}
             </ol>
           )}
         </section>
 
-        {isActive ? (
+        {isActive && notice ? (
+          <p className="rounded-b-[10px] border-t border-gray-200 bg-surface-muted px-6 py-4 text-sm text-muted">{notice}</p>
+        ) : isActive ? (
           <div className="rounded-b-[10px] border-t border-gray-200 bg-surface-muted">
             <Composer
               bare
@@ -852,10 +894,13 @@ function FeedView({
   user,
 }: FeedViewProps) {
   const isAdmin = isAdminUser(user);
+  const notice = banNotice(user);
 
   return (
     <div className="flex flex-col gap-4">
-      {isActive ? (
+      {isActive && notice ? (
+        <ReadOnlyNotice>{notice}</ReadOnlyNotice>
+      ) : isActive ? (
         <Composer
           heading={
             <div className="flex items-center gap-3">
@@ -944,6 +989,8 @@ function parseThreadId(value: string | string[] | undefined) {
 
 type PendingDelete = { kind: "post" | "thread"; id: number };
 
+type PendingReport = { post: ForumPost; kind: "thread" | "reply" };
+
 const DELETE_PROMPTS = {
   post: { title: "Delete this reply?", confirmLabel: "Delete reply" },
   thread: { title: "Delete this thread and all its replies?", confirmLabel: "Delete thread" },
@@ -984,6 +1031,7 @@ export default function ForumPage() {
   const [highlightPostId, setHighlightPostId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
+  const [pendingReport, setPendingReport] = useState<PendingReport | null>(null);
 
   // A new search keeps the current list on screen until its results arrive.
   const firstLoad = threadList.loading && threads.length === 0 && !search;
@@ -1059,6 +1107,13 @@ export default function ForumPage() {
     if (!detail.opening_post) return;
     await updateForumPost(detail.opening_post.id, { body });
     await refreshThreads();
+  }
+
+  async function handleReport(reason: string) {
+    if (!pendingReport) return;
+    await flagForumPost(pendingReport.post.id, reason);
+    // Shows the post as "Reported" in its menu.
+    await reloadThread();
   }
 
   async function confirmDelete() {
@@ -1163,6 +1218,7 @@ export default function ForumPage() {
                     onDeletePost={(id) => setPendingDelete({ kind: "post", id })}
                     onDeleteThread={() => setPendingDelete({ kind: "thread", id: selectedThread.id })}
                     onPinThread={handlePinThread}
+                    onReport={(post, kind) => setPendingReport({ post, kind })}
                     isActive={isActive}
                     user={user}
                   />
@@ -1196,11 +1252,19 @@ export default function ForumPage() {
       {pendingDelete && (
         <ConfirmDialog
           title={DELETE_PROMPTS[pendingDelete.kind].title}
-          message="This can't be undone."
+          message={isAdminUser(user) ? "You can restore it later from Admin › Moderation." : "This can't be undone."}
           confirmLabel={DELETE_PROMPTS[pendingDelete.kind].confirmLabel}
           danger
           onConfirm={confirmDelete}
           onCancel={() => setPendingDelete(null)}
+        />
+      )}
+
+      {pendingReport && (
+        <ReportPostDialog
+          kind={pendingReport.kind}
+          onSubmit={handleReport}
+          onClose={() => setPendingReport(null)}
         />
       )}
 

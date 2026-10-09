@@ -13,6 +13,8 @@ export type ForumPost = {
   is_own: boolean;
   // Written by whoever started the thread.
   is_thread_author: boolean;
+  // The viewer has reported it and a moderator hasn't dealt with that report yet.
+  has_flagged: boolean;
 };
 
 export type ForumThread = {

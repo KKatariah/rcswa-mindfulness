@@ -252,3 +252,11 @@ export function BellIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function FlagIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...base} {...props}>
+      <path d="M4 22V4M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1" />
+    </svg>
+  );
+}

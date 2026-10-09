@@ -51,6 +51,7 @@ class UserDisplayNameSerializer(serializers.ModelSerializer):
 class AdminUserSerializer(serializers.ModelSerializer):
     # Their most recent enrollment, so the Users list needs no separate enrollments request.
     enrollment = serializers.SerializerMethodField()
+    forum_banned = serializers.BooleanField(source="is_forum_banned", read_only=True)
 
     class Meta:
         model = User
@@ -64,6 +65,8 @@ class AdminUserSerializer(serializers.ModelSerializer):
             "is_staff",
             "created_at",
             "enrollment",
+            "forum_banned",
+            "forum_banned_until",
         ]
         read_only_fields = fields
 

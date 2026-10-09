@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { isNavActive, SidebarLink, type NavItem } from "@/components/main/Sidebar";
-import { BarChart2Icon, CalendarIcon, BookOpenIcon, UsersIcon, CheckIcon, FolderIcon, ClipboardIcon } from "@/components/ui/icons";
+import { BarChart2Icon, CalendarIcon, BookOpenIcon, UsersIcon, CheckIcon, FolderIcon, ClipboardIcon, FlagIcon } from "@/components/ui/icons";
 
 const NAV_ITEMS: NavItem[] = [
   { label: "Dashboard", href: "/admin", icon: BarChart2Icon },
@@ -11,6 +11,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: "Resources", href: "/admin/resources", icon: FolderIcon },
   { label: "Users", href: "/admin/users", icon: UsersIcon },
   { label: "Approvals", href: "/admin/approvals", icon: CheckIcon },
+  { label: "Moderation", href: "/admin/moderation", icon: FlagIcon },
 ];
 
 export default function AdminSidebar() {

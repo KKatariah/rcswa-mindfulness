@@ -22,6 +22,7 @@ from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q
+from django.utils import timezone
 
 # Matches the video ID out of any common YouTube share/watch link shape:
 # watch?v=, youtu.be/, /embed/, /shorts/, with or without extra query params
@@ -125,6 +126,16 @@ class User(AbstractUser):
     # Wrong passwords in a row, and when a lock from too many of them ends (see app/lockout.py).
     failed_login_count = models.PositiveSmallIntegerField(default=0)
     locked_until = models.DateTimeField(null=True, blank=True)
+    # Set when an admin bans the user from posting in the forum; they can still read it.
+    # The ban ends at forum_banned_until, or lasts until lifted when that is null.
+    forum_banned_at = models.DateTimeField(null=True, blank=True)
+    forum_banned_until = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def is_forum_banned(self):
+        if self.forum_banned_at is None:
+            return False
+        return self.forum_banned_until is None or self.forum_banned_until > timezone.now()
 
     def save(self, *args, **kwargs):
         # Superusers are always app admins.
@@ -711,11 +722,77 @@ class ForumPost(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     edited_at = models.DateTimeField(null=True, blank=True)
-    # Soft-delete flag. delete() is NOT overridden per spec.
+    # Soft-delete flag. delete() is NOT overridden per spec. Deleting a thread's opening
+    # post removes the whole thread from the forum; admins can see and restore either.
     is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    # The author, or the admin who removed it. SET_NULL: the record outlives the account.
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         ordering = ["created_at"]
 
+    def soft_delete(self, by):
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.deleted_by = by
+        self.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
+
+    def restore(self):
+        self.is_deleted = False
+        self.deleted_at = None
+        self.deleted_by = None
+        self.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
+
     def __str__(self):
         return f"Post by {self.author} in {self.thread}"
+
+
+class ForumFlag(models.Model):
+    """A report that a post breaks the forum rules, waiting for an admin to act on it."""
+
+    class Resolution(models.TextChoices):
+        DISMISSED = "dismissed", "Dismissed"
+        HIDDEN = "hidden", "Post hidden"
+        BANNED = "banned", "Author banned"
+
+    post = models.ForeignKey(ForumPost, on_delete=models.CASCADE, related_name="flags")
+    # SET_NULL: the report stays in the moderation history if the reporter's account goes.
+    flagged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="forum_flags",
+        null=True,
+    )
+    reason = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Null while the report is open.
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        null=True,
+        blank=True,
+    )
+    resolution = models.CharField(max_length=10, choices=Resolution.choices, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            # One open report per person per post; they can report it again once it's been dealt with.
+            models.UniqueConstraint(
+                fields=["post", "flagged_by"],
+                condition=Q(resolved_at__isnull=True),
+                name="forum_flag_one_open_per_reporter",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Flag on post {self.post_id} by {self.flagged_by}"

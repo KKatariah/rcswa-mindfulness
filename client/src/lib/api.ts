@@ -11,7 +11,10 @@ import type {
 	AdminAdditionalResource,
 	AdminSurvey,
 	AdminSurveyResponse,
+	ModeratedPost,
+	ModerationAction,
 	ModuleProgress,
+	ReportedPost,
 	UserOverview,
 } from "@/types/admin";
 
@@ -275,6 +278,43 @@ export function deleteForumPost(id: number): Promise<void> {
 	return request(`/forum/posts/${id}/`, { method: "DELETE" });
 }
 
+/** Reports a post to the moderators. Reporting the same post again while the first report is open is a no-op. */
+export function flagForumPost(id: number, reason: string): Promise<{ detail: string }> {
+	return request(`/forum/posts/${id}/flag/`, { method: "POST", body: { reason } });
+}
+
+// ── Admin: forum moderation ────────────────────────────────────────────────────
+
+/** Posts with open reports, most recently reported first. */
+export function listReportedPosts(params: PageParams = {}): Promise<Page<ReportedPost>> {
+	return request(`/forum/posts/reported/${query(params)}`);
+}
+
+/** Deleted posts and threads (by their author or an admin), most recently deleted first. */
+export function listRemovedPosts(params: PageParams = {}): Promise<Page<ModeratedPost>> {
+	return request(`/forum/posts/removed/${query(params)}`);
+}
+
+/** Closes a post's open reports: dismiss leaves it up, hide removes it, ban also bans its author. */
+export function moderateForumPost(id: number, action: ModerationAction, banDays: ForumBanDays = null): Promise<ModeratedPost> {
+	return request(`/forum/posts/${id}/moderate/`, { method: "POST", body: { action, ban_days: banDays } });
+}
+
+export function restoreForumPost(id: number): Promise<ModeratedPost> {
+	return request(`/forum/posts/${id}/restore/`, { method: "POST" });
+}
+
+/** A ban length in days, or null for until an admin lifts it. Matches FORUM_BAN_DAYS in app/moderation.py. */
+export type ForumBanDays = 1 | 7 | 30 | null;
+
+export function banUserFromForum(userId: number, days: ForumBanDays): Promise<AdminUser> {
+	return request(`/users/${userId}/forum-ban/`, { method: "POST", body: { days } });
+}
+
+export function liftForumBan(userId: number): Promise<AdminUser> {
+	return request(`/users/${userId}/forum-ban/`, { method: "DELETE" });
+}
+
 export function getProgramStatus(): Promise<{ is_active: boolean }> {
 	return request("/program-status/");
 }
@@ -282,7 +322,9 @@ export function getProgramStatus(): Promise<{ is_active: boolean }> {
 // ── Admin: users, cohorts & enrollments ────────────────────────────────────────
 
 /** Newest first; `search` matches name, display name or email. */
-export function listUsers(params: { search?: string; role?: string } & PageParams = {}): Promise<Page<AdminUser>> {
+export function listUsers(
+	params: { search?: string; role?: string; forum_banned?: "true" } & PageParams = {},
+): Promise<Page<AdminUser>> {
 	return request(`/users/${query(params)}`);
 }
 

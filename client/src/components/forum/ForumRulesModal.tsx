@@ -34,7 +34,7 @@ export const FORUM_RULES: { title: string; body: string }[] = [
 	},
 	{
 		title: "Report, don't retaliate",
-		body: "If a post feels harmful, flag it to the moderator rather than responding in kind.",
+		body: "If a post feels harmful, report it to the moderators (use Report in the post's ⋯ menu) rather than responding in kind.",
 	},
 ];
 
