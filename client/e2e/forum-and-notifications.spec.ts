@@ -66,3 +66,43 @@ test("the notification setup modal opens from the profile page", async ({ page, 
 	await dialog.getByRole("button", { name: "Close" }).click();
 	await expect(dialog).toHaveCount(0);
 });
+
+test("a student reads notifications from the dropdown", async ({ page, request }) => {
+	await loginAs(page, request, STUDENT);
+	await page.goto("/modules");
+
+	// The unread count shows before the panel is opened.
+	const toggle = page.getByRole("button", { name: /^Notifications/ });
+	await expect(toggle).toContainText("12 unread");
+	await expect(toggle).toHaveAttribute("aria-expanded", "false");
+	await toggle.click();
+	await expect(toggle).toHaveAttribute("aria-expanded", "true");
+
+	// Long lists scroll inside the panel instead of stretching the page.
+	const list = page.getByRole("region", { name: "Notification list" });
+	const { scrollHeight, clientHeight } = await list.evaluate((el) => ({ scrollHeight: el.scrollHeight, clientHeight: el.clientHeight }));
+	expect(scrollHeight).toBeGreaterThan(clientHeight);
+
+	await page.getByRole("button", { name: "Mark as read: Your survey is ready" }).click();
+	await expect(toggle).toContainText("11 unread");
+	await expect(page.getByRole("button", { name: "Mark as read: Your survey is ready" })).toHaveCount(0);
+
+	// Following a notification marks it read too, and it stays read after a reload.
+	await page.getByRole("link", { name: /Week 2 is now available/ }).click();
+	await expect(page).toHaveURL(/\/modules\/\d+\/?$/);
+	await page.goto("/modules");
+	await expect(toggle).toContainText("10 unread");
+
+	await toggle.click();
+	await page.getByRole("button", { name: "Mark all as read" }).click();
+	await expect(toggle).not.toContainText("unread");
+	await page.reload();
+	await expect(page.getByRole("button", { name: /^Notifications/ })).not.toContainText("unread");
+});
+
+test("the notifications dropdown shows an empty state when nothing has been sent", async ({ page, request }) => {
+	await loginAs(page, request, OTHER);
+	await page.goto("/modules");
+	await page.getByRole("button", { name: /^Notifications/ }).click();
+	await expect(page.getByText("No notifications yet")).toBeVisible();
+});

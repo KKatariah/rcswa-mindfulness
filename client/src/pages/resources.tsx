@@ -2,6 +2,8 @@ import Head from "next/head";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import AppShell from "@/components/main/AppShell";
+import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import { BookOpenIcon, VideoIcon, GlobeIcon, ExternalLinkIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { listAdditionalResources } from "@/lib/api";
@@ -134,7 +136,14 @@ export default function ResourcesPage() {
         <title>Resources | RCSWA Wellbeing</title>
         <meta name="description" content="Books, documentaries, and online programmes to support your mindfulness journey." />
       </Head>
-      <AppShell>
+      <AppShell
+        rightRail={
+          <div className="space-y-4">
+            <UpcomingSession />
+            <NotificationsPanel />
+          </div>
+        }
+      >
         <div className="min-w-0 space-y-4">
             <header className="rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_4px_4px_-6px_rgba(0,0,0,0.05)]">
               <h1 className="text-2xl font-extrabold text-ink sm:text-3xl">Resources</h1>

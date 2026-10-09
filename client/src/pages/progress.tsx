@@ -5,6 +5,7 @@ import Link from "next/link";
 import AppShell from "@/components/main/AppShell";
 import NextSession from "@/components/modules/NextSession";
 import UpcomingSession, { findUpcomingModule } from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import { CheckIcon, PlayIcon, LockIcon } from "@/components/ui/icons";
 import { weekLabel } from "@/lib/weeks";
 
@@ -38,13 +39,16 @@ export default function ProgressPage() {
       </Head>
       <AppShell
         rightRail={
-          next ? (
-            <Link href={`/modules/${next.id}`} className="block rounded-[10px] focus-visible:outline-2 focus-visible:outline-brand-blue-dark">
-              <NextSession compactOnMobile moduleTitle={`${weekLabel(next.number)}: ${next.title}`} />
-            </Link>
-          ) : hasUpcoming ? (
-            <UpcomingSession modules={modules} />
-          ) : <div className="rounded-[10px] bg-white p-5 text-sm text-muted">{completed === weeks.length ? "You’ve completed all available modules." : "Upcoming modules will become available on their unlock dates."}</div>
+          <div className="space-y-4">
+            {next ? (
+              <Link href={`/modules/${next.id}`} className="block rounded-[10px] focus-visible:outline-2 focus-visible:outline-brand-blue-dark">
+                <NextSession compactOnMobile moduleTitle={`${weekLabel(next.number)}: ${next.title}`} />
+              </Link>
+            ) : hasUpcoming ? (
+              <UpcomingSession modules={modules} />
+            ) : <div className="rounded-[10px] bg-white p-5 text-sm text-muted">{completed === weeks.length ? "You’ve completed all available modules." : "Upcoming modules will become available on their unlock dates."}</div>}
+            <NotificationsPanel />
+          </div>
         }
       >
         <div className="space-y-4">

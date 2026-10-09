@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { API, loginAs, STUDENT } from "./helpers";
+import { ADMIN, API, loginAs, STUDENT } from "./helpers";
 
 test("week 3 is locked in the list and its page refuses to open", async ({ page, request }) => {
 	const token = await loginAs(page, request, STUDENT);
@@ -54,4 +54,15 @@ test("home page shows the programme and a logged-out visitor sees no profile lin
 	await expect(page.getByText("Unable to load the programme right now.")).toHaveCount(0);
 	await expect(page.getByRole("heading", { name: "The 8-Week Programme" })).toBeVisible();
 	await expect(page.getByRole("link", { name: /profile picture/ })).toHaveCount(0);
+});
+
+test("with nothing left to unlock, Next Session points at the first unfinished week", async ({ page, request }) => {
+	// The admin has no cohort schedule and hasn't completed anything.
+	await loginAs(page, request, ADMIN);
+	for (const path of ["/modules", "/surveys"]) {
+		await page.goto(path);
+		const card = page.locator("section", { hasText: "Next Session" });
+		await expect(card).toContainText("Introduction");
+		await expect(card).toContainText("Available now");
+	}
 });

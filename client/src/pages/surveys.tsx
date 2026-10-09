@@ -3,6 +3,8 @@ import Head from "next/head";
 import { useRouter } from "next/router";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
+import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import SurveyHeader from "@/components/surveys/SurveyHeader";
 import SurveyLinks, {type SurveyLinkItem } from "@/components/surveys/SurveyLinks";
 import { useAuth } from "@/context/AuthContext";
@@ -66,7 +68,14 @@ export default function SurveysHomePage() {
 			<Head>
 				<title>Weekly Surveys</title>
 			</Head>
-			<AppShell>
+			<AppShell
+				rightRail={
+					<div className="space-y-4">
+						<UpcomingSession />
+						<NotificationsPanel />
+					</div>
+				}
+			>
 				<main
 					aria-label="Weekly surveys"
 					tabIndex={0}

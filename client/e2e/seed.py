@@ -5,7 +5,8 @@ from django.core.management import call_command
 from django.utils import timezone
 
 from app.models import (
-    Cohort, ContentCompletion, ContentItem, Enrollment, ForumPost, ForumThread, Module, Survey, SurveyResponse, User,
+    Cohort, ContentCompletion, ContentItem, Enrollment, ForumPost, ForumThread, Module, NotificationLog, Survey,
+    SurveyResponse, User,
 )
 
 PASSWORD = "Calm-River-42"
@@ -67,5 +68,26 @@ Enrollment.objects.create(user=rules_user, cohort=cohort, status=Enrollment.Stat
 # Never agrees: used by the bypass tests, which must leave it unaccepted.
 holdout = User.objects.create_user(email="holdout@e2e.local", password=PASSWORD, full_name="Hal Holdout")
 Enrollment.objects.create(user=holdout, cohort=cohort, status=Enrollment.Status.ACTIVE)
+
+# Notifications the student has received, for the inbox page.
+now = timezone.now()
+for type_, module_week, hours_ago in (
+    (NotificationLog.NotificationType.MODULE_ADDED, 2, 30),
+    (NotificationLog.NotificationType.SURVEY_PROMPT, 1, 2),
+):
+    NotificationLog.objects.create(
+        user=student, type=type_, module=Module.objects.get(week_number=module_week),
+        channel=NotificationLog.Channel.PUSH, status=NotificationLog.Status.SENT,
+        scheduled_for=now - timedelta(hours=hours_ago), sent_at=now - timedelta(hours=hours_ago),
+    )
+# Older daily reminders, enough to make the list scroll.
+reminder_item = ContentItem.objects.filter(module__week_number=1).first()
+for days_ago in range(2, 12):
+    NotificationLog.objects.create(
+        user=student, type=NotificationLog.NotificationType.CONTENT_REMINDER,
+        module=reminder_item.module, content_item=reminder_item,
+        channel=NotificationLog.Channel.PUSH, status=NotificationLog.Status.SENT,
+        scheduled_for=now - timedelta(days=days_ago), sent_at=now - timedelta(days=days_ago),
+    )
 
 print("e2e seed complete")

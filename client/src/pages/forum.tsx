@@ -5,6 +5,8 @@ import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
 import { useAuth } from "@/context/AuthContext";
 import ForumRulesModal, { ForumRulesSummary } from "@/components/forum/ForumRulesModal";
+import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import {
   acceptForumRules,
   createForumPost,
@@ -876,6 +878,7 @@ function ForumSidebar({
 }) {
   return (
     <div className="hidden min-w-0 space-y-4 xl:block">
+      <UpcomingSession />
       <div className="rounded-[10px] border border-gray-200 bg-white p-5 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
         <p className="text-sm font-bold text-ink">Search</p>
         <div className="mt-3 flex items-center gap-2 rounded-xl border border-gray-200 bg-surface-muted px-3 py-2">
@@ -892,6 +895,7 @@ function ForumSidebar({
         <p className="mb-3 text-sm font-bold text-ink">Forum rules</p>
         <ForumRulesSummary />
       </div>
+      <NotificationsPanel />
     </div>
   );
 }
@@ -1083,9 +1087,17 @@ export default function ForumPage() {
 
       <AppShell
         rightRail={
-          !selectedThread ? (
-            <ForumSidebar query={query} onQueryChange={setQuery} />
-          ) : undefined
+          <ForumSidebar
+            query={query}
+            onQueryChange={(value) => {
+              setQuery(value);
+              // Search filters the thread list, so leave an open thread to show results.
+              if (selectedThread) {
+                setSelectedThread(null);
+                void refreshThreads();
+              }
+            }}
+          />
         }
       >
         <main aria-label="Forum" className="flex min-w-0 flex-col gap-4">

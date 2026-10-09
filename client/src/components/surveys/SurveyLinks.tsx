@@ -31,7 +31,7 @@ function SurveyStatusIcon({ status }: { status: SurveyLinkStatus }) {
 	}
 
 	if (status === "current") {
-		return <PlayIcon className="ml-0.5 size-3.5" aria-hidden="true" />;
+		return <PlayIcon className="ml-0.5 size-4" aria-hidden="true" />;
 	}
 
 	return <LockIcon className="size-4" aria-hidden="true" />;
@@ -43,15 +43,15 @@ export default function SurveyLinks({ items = DEFAULT_SURVEYS }: SurveyLinksProp
 			<ul>
 				{items.map((item) => {
 					const isLocked = item.status === "locked";
-					const rowClassName = `flex min-h-[45px] items-center gap-3 border-b border-gray-200 px-3.5 text-sm font-semibold last:border-b-0 ${
+					const rowClassName = `flex items-center gap-4 px-6 py-4 font-semibold ${
 						isLocked ? "text-muted" : "text-ink"
 					}`;
-					const iconClassName = `flex size-6 shrink-0 items-center justify-center rounded-full ${
+					const iconClassName = `flex size-8 shrink-0 items-center justify-center rounded-full ${
 						item.status === "locked" ? "bg-gray-100 text-gray-400" : "bg-brand-blue text-white"
 					}`;
 
 					return (
-						<li key={item.id}>
+						<li key={item.id} className="border-b border-gray-100 last:border-b-0">
 							{isLocked ? (
 								<div className={rowClassName} aria-disabled="true">
 									<span className={iconClassName}><SurveyStatusIcon status={item.status} /></span>

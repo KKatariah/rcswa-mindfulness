@@ -6,6 +6,7 @@ import Navbar from "@/components/main/Navbar";
 import Footer from "@/components/main/Footer";
 import Sidebar from "@/components/main/Sidebar";
 import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import { CheckIcon, LockIcon, PlayIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { listModules, listProgress, type ApiModule } from "@/lib/api";
@@ -222,8 +223,9 @@ export default function ModulesIndexPage() {
 							)}
 						</div>
 
-						<div className="min-w-0 md:col-start-2 xl:col-start-3 md:sticky md:top-20 lg:top-24">
-							{!loading && !authLoading && !error && <UpcomingSession modules={modules} />}
+						<div className="min-w-0 space-y-4 md:col-start-2 xl:col-start-3 md:sticky md:top-20 lg:top-24 xl:-mx-2 xl:max-h-[calc(100dvh-7.5rem)] xl:overflow-y-auto xl:overscroll-contain xl:px-2 xl:pb-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+							{!loading && !authLoading && !error && <UpcomingSession modules={modules} completedItemIds={completedItemIds} />}
+							<NotificationsPanel />
 						</div>
 					</div>
 				</div>

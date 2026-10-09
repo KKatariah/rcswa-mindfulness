@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import NextSession from "@/components/modules/NextSession";
-import { listModules } from "@/lib/api";
+import { listModules, listProgress } from "@/lib/api";
 import { weekLabel } from "@/lib/weeks";
 
 type SessionModule = {
 	id: number;
 	week_number: number;
+	title?: string;
+	content_items?: { id: number }[];
 	unlock_at: string | null;
 	is_unlocked: boolean;
 };
@@ -49,12 +52,33 @@ function unlockLabels(unlockAt: string) {
 	};
 }
 
+/** First open week the user hasn't finished, using the same rule as the Progress page. */
+function findUnfinishedModule<T extends SessionModule>(modules: T[], completedItemIds: Set<number>): T | undefined {
+	return modules
+		.filter((module) => module.is_unlocked)
+		.sort((a, b) => a.week_number - b.week_number)
+		.find((module) => {
+			const items = module.content_items ?? [];
+			return items.length === 0 || !items.every((item) => completedItemIds.has(item.id));
+		});
+}
+
 /**
- * Next Session card for the next module that hasn't unlocked yet.
- * Pass `modules` when the page has already loaded them; otherwise the list is fetched.
+ * Next Session card for the next module that hasn't unlocked yet. Once every
+ * week is open (or the user has no cohort schedule), it points at the first
+ * open week the user hasn't finished, so the card doesn't vanish from the rail.
+ * Pass `modules` and `completedItemIds` when the page has already loaded them;
+ * otherwise they are fetched.
  */
-export default function UpcomingSession({ modules }: { modules?: SessionModule[] }) {
+export default function UpcomingSession({
+	modules,
+	completedItemIds,
+}: {
+	modules?: SessionModule[];
+	completedItemIds?: Set<number>;
+}) {
 	const [fetched, setFetched] = useState<SessionModule[]>([]);
+	const [fetchedCompleted, setFetchedCompleted] = useState<Set<number> | null>(null);
 
 	useEffect(() => {
 		if (modules) return;
@@ -68,8 +92,38 @@ export default function UpcomingSession({ modules }: { modules?: SessionModule[]
 		return () => { cancelled = true; };
 	}, [modules]);
 
-	const upcoming = findUpcomingModule(modules ?? fetched);
-	if (!upcoming?.unlock_at) return null;
+	useEffect(() => {
+		if (completedItemIds) return;
+		const token = localStorage.getItem("token");
+		if (!token) return;
+
+		let cancelled = false;
+		listProgress(token)
+			.then((data) => { if (!cancelled) setFetchedCompleted(new Set(data.map((c) => c.content_item))); })
+			.catch((error) => console.error("Failed to load progress for next session:", error));
+		return () => { cancelled = true; };
+	}, [completedItemIds]);
+
+	const list = modules ?? fetched;
+	const completed = completedItemIds ?? fetchedCompleted;
+	const upcoming = findUpcomingModule(list);
+	if (!upcoming?.unlock_at) {
+		// Wait for progress so the card doesn't flash a week that's already done.
+		if (!completed) return null;
+		const unfinished = findUnfinishedModule(list, completed);
+		if (!unfinished) {
+			return list.some((module) => module.is_unlocked) ? (
+				<div className="rounded-[10px] bg-white p-5 text-sm text-muted">You’ve completed all available modules.</div>
+			) : null;
+		}
+		return (
+			<Link href={`/modules/${unfinished.id}`} className="block rounded-[10px] focus-visible:outline-2 focus-visible:outline-brand-blue-dark">
+				<NextSession
+					moduleTitle={unfinished.title ? `${weekLabel(unfinished.week_number)}: ${unfinished.title}` : weekLabel(unfinished.week_number)}
+				/>
+			</Link>
+		);
+	}
 
 	return (
 		<NextSession

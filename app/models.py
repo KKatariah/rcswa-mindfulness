@@ -430,6 +430,8 @@ class NotificationLog(models.Model):
         default=Status.PENDING,
         db_index=True,
     )
+    # Set when the user marks it read in the in-app notifications panel.
+    read_at = models.DateTimeField(null=True, blank=True)
 
     def __str__(self):
         return f"{self.get_type_display()} to {self.user} ({self.status})"

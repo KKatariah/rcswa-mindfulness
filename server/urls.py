@@ -13,6 +13,7 @@ from app.views import (
     ForumPostViewSet,
     ForumThreadViewSet,
     ModuleViewSet,
+    NotificationHistoryViewSet,
     NotificationPreferenceViewSet,
     PushSubscriptionViewSet,
     SurveyResponseViewSet,
@@ -34,6 +35,7 @@ router.register("surveys", SurveyViewSet, basename="survey")
 router.register("survey-responses", SurveyResponseViewSet, basename="survey-response")
 router.register("notifications/subscriptions", PushSubscriptionViewSet, basename="push-subscription")
 router.register("notifications/preferences", NotificationPreferenceViewSet, basename="notification-preference")
+router.register("notifications/history", NotificationHistoryViewSet, basename="notification-history")
 router.register("cohorts", CohortViewSet, basename="cohort")
 router.register("enrollments", EnrollmentViewSet, basename="enrollment")
 router.register("additional-resources", AdditionalResourceViewSet, basename="additional-resource")
