@@ -2,6 +2,7 @@ import { useState } from "react";
 import { createPortal } from "react-dom";
 import Modal from "@/components/main/Modal";
 import { errorMessage } from "@/lib/errors";
+import Button from "@/components/ui/Button";
 
 export const FORUM_RULES: { title: string; body: string }[] = [
 	{
@@ -153,29 +154,29 @@ export default function ForumRulesModal({ isOpen, onClose, onAccept }: ForumRule
 							<button
 								type="button"
 								onClick={onClose}
-								className="h-12 rounded-xl border border-gray-200 px-5 text-[15px] font-bold text-ink hover:bg-surface-muted"
+								className="h-12 rounded-xl border border-gray-200 px-5 text-md font-bold text-ink hover:bg-surface-muted"
 							>
 								Not now
 							</button>
-							<button
+							<Button
 								type="button"
 								onClick={handleSubmit}
 								disabled={!agreed || submitting}
-								className="h-12 rounded-xl bg-brand-blue-dark px-5 text-[15px] font-bold text-white disabled:opacity-50"
+								variant="dark" size="lg" className="px-5"
 							>
 								{submitting ? "Saving…" : "Continue to forum"}
-							</button>
+							</Button>
 						</div>
 					</>
 				) : (
 					<div className="mt-6 flex justify-end">
-						<button
+						<Button
 							type="button"
 							onClick={onClose}
-							className="h-12 rounded-xl bg-brand-blue-dark px-5 text-[15px] font-bold text-white"
+							variant="dark" size="lg" className="px-5"
 						>
 							Got it
-						</button>
+						</Button>
 					</div>
 				)}
 			</div>

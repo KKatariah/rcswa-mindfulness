@@ -1,8 +1,9 @@
 import type { ComponentProps, InputHTMLAttributes, ReactNode } from "react";
+import Button from "@/components/ui/Button";
 
 type FieldSize = "md" | "lg";
 
-const TEXT_SIZES: Record<FieldSize, string> = { md: "text-sm", lg: "text-[15px]" };
+const TEXT_SIZES: Record<FieldSize, string> = { md: "text-sm", lg: "text-md" };
 const FOCUS = "rounded-xl border border-gray-200 text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue";
 
 /** Classes for a text input. `md` suits inline admin forms, `lg` modals. */
@@ -86,24 +87,24 @@ export function FormActions({
 	size?: FieldSize;
 	className?: string;
 }) {
-	const height = size === "md" ? "h-11 text-sm" : "h-12 text-[15px]";
+	const height = size === "md" ? "h-11 text-sm" : "h-12 text-md";
 	return (
 		<div className={`flex gap-3 ${className}`}>
-			<button
+			<Button
 				type="submit"
 				disabled={submitting}
-				className={`${height} flex-1 rounded-xl bg-brand-blue-dark font-bold text-white disabled:opacity-50`}
+				variant="dark" size={size} className="flex-1"
 			>
 				{submitting ? busyLabel : submitLabel}
-			</button>
+			</Button>
 			{onCancel && (
-				<button
+				<Button
 					type="button"
 					onClick={onCancel}
-					className={`${height} flex-1 rounded-xl border border-gray-200 font-semibold text-ink`}
+					variant="secondary" size={null} className={`${height} flex-1 rounded-xl font-semibold`}
 				>
 					Cancel
-				</button>
+				</Button>
 			)}
 		</div>
 	);

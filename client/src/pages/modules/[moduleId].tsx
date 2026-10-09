@@ -3,7 +3,6 @@ import { useRouter } from "next/router";
 import Link from "next/link";
 import Head from "next/head";
 import AppShell from "@/components/main/AppShell";
-import Footer from "@/components/main/Footer";
 import UpcomingSession from "@/components/modules/UpcomingSession";
 import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import ModuleHeader from "@/components/modules/ModuleHeader";
@@ -153,16 +152,15 @@ export default function ModulePage() {
 						embedded
 						title={module.title}
 						durationMinutes={module.content_items.length * 10}
-						description={weekLabel(module.week_number)}
+						eyebrow={weekLabel(module.week_number)}
 						viewed={data.viewed}
 					/>
 
-					<hr className="mx-6 mt-6 border-0 border-t border-gray-200 sm:mx-10 lg:mx-12" />
+					<hr className="mx-6 mt-6 border-0 border-t border-gray-200 sm:mx-8" />
 					<ModuleContent blocks={toBlocks(module, completions)} embedded onToggleComplete={handleToggleComplete} />
 				</Card>
 			</AppShell>
 
-			<Footer />
 		</>
 	);
 }

@@ -28,6 +28,9 @@ import { errorMessage } from "@/lib/errors";
 import { deleteModuleMessage } from "@/lib/modules";
 import type { AdminModule, AdminContentItem } from "@/types/admin";
 import { adminPageTitle } from "@/lib/pageTitle";
+import Button from "@/components/ui/Button";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { weekLabel } from "@/lib/weeks";
 
 type ContentItemFormState = {
 	title: string;
@@ -92,7 +95,7 @@ function ContentItemForm({
 	}
 
 	return (
-		<Card as="form" variant="admin" onSubmit={handleSubmit} className="flex flex-col gap-4 p-5">
+		<Card as="form" onSubmit={handleSubmit} className="flex flex-col gap-4 p-5">
 			<FormError message={error} />
 
 			<TextField
@@ -307,10 +310,14 @@ export default function AdminModuleEditorPage() {
 			<Head>
 				<title>{adminPageTitle(module.title)}</title>
 			</Head>
-			{/* The page is all form fields; screen readers still need a page title. */}
-			<h1 className="sr-only">Edit module: {module.title}</h1>
+			{/* The stored title exactly as in the Title field below, with the week as a label above it. */}
+			<AdminPageHeader
+				title={module.title}
+				eyebrow={weekLabel(module.week_number)}
+				back={{ href: "/admin/modules", label: "All modules" }}
+			/>
 
-			<Card as="form" variant="admin" onSubmit={handleMetaSubmit} className="p-5">
+			<Card as="form" onSubmit={handleMetaSubmit} className="mt-4 p-5">
 				{meta.error && <ErrorBanner className="mb-4">{meta.error}</ErrorBanner>}
 				<div className="grid gap-4 sm:grid-cols-2">
 					<TextField
@@ -370,13 +377,13 @@ export default function AdminModuleEditorPage() {
 					/>
 					Published
 				</label>
-				<button
+				<Button
 					type="submit"
 					disabled={meta.submitting}
-					className="mt-4 h-11 rounded-xl bg-brand-blue-dark px-6 text-sm font-bold text-white disabled:opacity-50"
+					variant="dark" size="md" className="mt-4 px-6"
 				>
 					{meta.submitting ? "Saving…" : "Save module"}
-				</button>
+				</Button>
 			</Card>
 
 			{deleteError && <ErrorBanner className="mt-4">{deleteError}</ErrorBanner>}
@@ -384,13 +391,13 @@ export default function AdminModuleEditorPage() {
 			<div className="mt-6 flex items-center justify-between">
 				<h2 className="text-lg font-extrabold text-ink">Content items</h2>
 				{!addingItem && (
-					<button
+					<Button
 						type="button"
 						onClick={() => setAddingItem(true)}
-						className="rounded-xl bg-brand-blue px-4 py-2 text-sm font-bold text-white"
+						variant="primary" size={null} className="rounded-xl px-4 py-2 text-sm font-bold"
 					>
 						Add content item
-					</button>
+					</Button>
 				)}
 			</div>
 
@@ -400,7 +407,7 @@ export default function AdminModuleEditorPage() {
 				)}
 
 				{module.content_items.length === 0 && !addingItem && (
-					<Card as="p" variant="admin" className="p-6 text-sm text-muted">
+					<Card as="p" className="p-6 text-sm text-muted">
 						No content items yet.
 					</Card>
 				)}
@@ -416,7 +423,6 @@ export default function AdminModuleEditorPage() {
 					) : (
 						<Card
 							key={item.id}
-							variant="admin"
 							data-reorder-id={item.id}
 							className={`flex items-center justify-between gap-3 p-4 ${draggingId === item.id ? "opacity-50" : ""}`}
 						>
@@ -453,7 +459,8 @@ export default function AdminModuleEditorPage() {
 				)}
 			</div>
 
-			{pendingItemOrder && (
+			{/* Only once the drag ends: toggling mid-drag (each time the row passes its old spot) resized the page and made the sticky sidebar jump. */}
+			{pendingItemOrder && draggingId === null && (
 				<div
 					role="status"
 					className="mt-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between"
@@ -468,14 +475,14 @@ export default function AdminModuleEditorPage() {
 						>
 							Discard
 						</button>
-						<button
+						<Button
 							type="button"
 							onClick={saveItemOrder}
 							disabled={savingItemOrder}
-							className="h-10 rounded-xl bg-brand-blue px-4 font-bold text-white disabled:opacity-50"
+							variant="primary" size={null} className="h-10 rounded-xl px-4 font-bold disabled:opacity-50"
 						>
 							{savingItemOrder ? "Saving…" : "Save order"}
-						</button>
+						</Button>
 					</div>
 				</div>
 			)}

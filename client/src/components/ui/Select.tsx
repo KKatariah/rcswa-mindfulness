@@ -74,7 +74,7 @@ export default function Select({
 				onClick={() => setOpen((o) => !o)}
 				aria-haspopup="listbox"
 				aria-expanded={open}
-				className={`flex items-center justify-between gap-2 rounded-xl border border-gray-200 px-4 text-left text-[14px] text-ink outline-none focus:ring-2 focus:ring-brand-blue ${className}`}
+				className={`flex items-center justify-between gap-2 rounded-xl border border-gray-200 px-4 text-left text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue ${className}`}
 			>
 				<span className={`truncate ${selected ? "" : "text-muted"}`}>
 					{selected ? selected.label : placeholder}

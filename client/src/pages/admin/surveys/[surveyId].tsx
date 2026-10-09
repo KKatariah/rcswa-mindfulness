@@ -10,7 +10,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import DragHandle, { ReorderHelp } from "@/components/ui/DragHandle";
 import { ErrorBanner, LoadingState } from "@/components/ui/feedback";
 import { TextAreaField, TextField } from "@/components/ui/form";
-import { ChevronLeftIcon, PlusIcon, TrashIcon } from "@/components/ui/icons";
+import { PlusIcon, TrashIcon } from "@/components/ui/icons";
 import Select from "@/components/ui/Select";
 import Tabs from "@/components/ui/Tabs";
 import { useAsync } from "@/hooks/useAsync";
@@ -21,6 +21,9 @@ import { errorMessage } from "@/lib/errors";
 import { SURVEY_TYPE_LABELS, describeAnswerFormat } from "@/lib/surveys";
 import type { AdminSurvey, AdminSurveyResponse, SurveyQuestion } from "@/types/admin";
 import { adminPageTitle } from "@/lib/pageTitle";
+import Button from "@/components/ui/Button";
+import { formatDateTime } from "@/lib/dates";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 type Survey = Omit<AdminSurvey, "response_count">;
 type Tab = "questions" | "responses";
@@ -307,7 +310,7 @@ function QuestionsEditor({
 				</p>
 			)}
 
-			<Card variant="admin" className="grid gap-4 p-5 sm:grid-cols-2">
+			<Card className="grid gap-4 p-5 sm:grid-cols-2">
 				<TextField
 					id="survey-title"
 					label="Title"
@@ -337,7 +340,6 @@ function QuestionsEditor({
 			{draft.questions.map((q, index) => (
 				<Card
 					key={q.id}
-					variant="admin"
 					data-reorder-id={q.id}
 					className={`p-5 ${draggingId === q.id ? "opacity-50" : ""}`}
 				>
@@ -522,7 +524,7 @@ function QuestionsEditor({
 				</Card>
 			))}
 
-			<div className="flex flex-wrap items-center gap-2 rounded-2xl border border-dashed border-gray-300 bg-white p-4">
+			<div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-gray-300 bg-white p-4">
 				<span className="mr-1 text-sm font-semibold text-ink">Add a question:</span>
 				{NEW_QUESTION_TYPES.map(({ type, label }) => (
 					<button
@@ -539,14 +541,14 @@ function QuestionsEditor({
 
 			{error && <ErrorBanner>{error}</ErrorBanner>}
 
-			<div className="sticky bottom-4 flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.15)]">
-				<button
+			<div className="sticky bottom-4 flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.15)]">
+				<Button
 					type="submit"
 					disabled={saving || !dirty}
-					className="h-11 rounded-xl bg-brand-blue-dark px-6 text-sm font-bold text-white disabled:opacity-50"
+					variant="dark" size="md" className="px-6"
 				>
 					{saving ? "Saving…" : "Save changes"}
-				</button>
+				</Button>
 				{dirty ? (
 					<button
 						type="button"
@@ -625,15 +627,15 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 
 	return (
 		<div className="flex flex-col gap-4">
-			<Card variant="admin" className="p-5">
+			<Card className="p-5">
 				<SurveyExport surveyId={survey.id} />
 			</Card>
 
 			{responses.length === 0 ? (
-				<Card as="p" variant="admin" className="p-6 text-sm text-muted">No responses yet.</Card>
+				<Card as="p" className="p-6 text-sm text-muted">No responses yet.</Card>
 			) : (
 				<>
-					<Card variant="admin" className="p-5">
+					<Card className="p-5">
 						<h2 className="text-sm font-bold uppercase tracking-wide text-muted">Summary</h2>
 						<div role="region" aria-label="Summary table" tabIndex={0} className="mt-3 overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
 							<table className="w-full text-left text-sm">
@@ -678,7 +680,7 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 						</p>
 					)}
 
-					<Card variant="admin" role="region" aria-label="Responses table" tabIndex={0} className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
+					<Card role="region" aria-label="Responses table" tabIndex={0} className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
 						<table className="w-full text-left text-sm">
 							<thead>
 								<tr className="border-b border-gray-200 text-xs font-semibold uppercase tracking-wide text-muted">
@@ -688,7 +690,7 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 									{columns.map((q) => (
 										<th key={q.id} className="px-4 py-3 font-mono normal-case" title={q.text}>
 											{q.id}
-											{q.removed && <span className="ml-1 font-sans text-[10px] uppercase">(removed)</span>}
+											{q.removed && <span className="ml-1 font-sans text-2xs uppercase">(removed)</span>}
 										</th>
 									))}
 								</tr>
@@ -704,7 +706,7 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 										</td>
 										<td className="whitespace-nowrap px-4 py-3 text-ink-soft">{r.cohort || "—"}</td>
 										<td className="whitespace-nowrap px-4 py-3 text-ink-soft">
-											{new Date(r.submitted_at).toLocaleString()}
+											{formatDateTime(r.submitted_at)}
 										</td>
 										{columns.map((q) => {
 											const change = changeNote(r, q.id);
@@ -812,14 +814,11 @@ export default function AdminSurveyPage() {
 				<title>{adminPageTitle(survey.title)}</title>
 			</Head>
 
-			<Link href="/admin/surveys" className="inline-flex items-center gap-1 text-sm font-semibold text-muted hover:text-brand-blue">
-				<ChevronLeftIcon className="size-4" />
-				All surveys
-			</Link>
-			<h1 className="mt-2 text-2xl font-extrabold wrap-anywhere text-ink">{survey.title}</h1>
-			<p className="mt-1 text-sm text-muted">
-				{SURVEY_TYPE_LABELS[survey.type]} survey · <span className="font-mono">{survey.code}</span>
-			</p>
+			<AdminPageHeader
+				title={survey.title}
+				back={{ href: "/admin/surveys", label: "All surveys" }}
+				description={<>{SURVEY_TYPE_LABELS[survey.type]} survey · <span className="font-mono">{survey.code}</span></>}
+			/>
 
 			<Tabs tabs={tabs} active={tab} onChange={setTab} label="Survey sections" className="mt-5" />
 

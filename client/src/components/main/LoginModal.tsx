@@ -7,6 +7,7 @@ import { useAuth } from "@/context/AuthContext";
 import type { AuthUser } from "@/types/user";
 import { landingPathFor } from "@/components/main/ApprovalGate";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
+import Button from "@/components/ui/Button";
 
 type LoginModalProps = {
 	isOpen: boolean;
@@ -45,7 +46,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 		return (
 			<Modal isOpen={isOpen} onClose={handleClose} title="Forgot password?">
 				<div className="flex flex-col gap-6 text-center">
-					<p className="text-[15px] text-ink">
+					<p className="text-md text-ink">
 						Email Sarah to get a temporary password.
 						{" "}
 						<a
@@ -58,13 +59,13 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 					<p className="text-sm text-muted">
 						Once you log in with the temporary password, change it from your Profile page.
 					</p>
-					<button
+					<Button
 						type="button"
 						onClick={() => setView("login")}
-						className="h-12 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white"
+						variant="dark" size="lg"
 					>
 						Back to log in
-					</button>
+					</Button>
 				</div>
 			</Modal>
 		);

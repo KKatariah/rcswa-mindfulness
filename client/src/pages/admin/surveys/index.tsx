@@ -115,7 +115,7 @@ export default function AdminSurveysPage() {
 			</AdminTable>
 
 			{!loading && !error && surveys.length > 0 && (
-				<Card variant="admin" className="mt-6 p-5">
+				<Card className="mt-6 p-5">
 					<SurveyExport surveys={surveys} />
 				</Card>
 			)}

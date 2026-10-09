@@ -88,13 +88,13 @@ export default function AboutPage() {
 							>
 								{PAGE_CONTENT.sarah.name}
 							</h2>
-							<p className="mt-2 text-[15px] font-semibold text-brand-blue">
+							<p className="mt-2 text-md font-semibold text-brand-blue">
 								{PAGE_CONTENT.sarah.role}
 							</p>
-							<p className="mt-6 text-[15px] leading-relaxed text-muted">
+							<p className="mt-6 text-md leading-relaxed text-muted">
 								{PAGE_CONTENT.sarah.bio}
 							</p>
-							<p className="mt-4 text-[15px] leading-relaxed text-muted">
+							<p className="mt-4 text-md leading-relaxed text-muted">
 								{PAGE_CONTENT.sarah.phdIntro}{" "}
 								<a
 									href={PAGE_CONTENT.sarah.research}
@@ -158,7 +158,7 @@ export default function AboutPage() {
 							>
 								{PAGE_CONTENT.rcswa.name}
 							</h2>
-							<p className="mt-6 text-[15px] leading-relaxed text-muted">
+							<p className="mt-6 text-md leading-relaxed text-muted">
 								{PAGE_CONTENT.rcswa.description}
 							</p>
 							<div className="mt-8">
@@ -166,7 +166,7 @@ export default function AboutPage() {
 									href={PAGE_CONTENT.rcswa.href}
 									target="_blank"
 									rel="noopener noreferrer"
-									className="inline-flex h-12 items-center justify-center rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]"
+									className="inline-flex h-12 items-center justify-center rounded-xl bg-brand-blue px-6 text-md font-bold text-white shadow-button"
 								>
 									About the RCSWA
 								</a>

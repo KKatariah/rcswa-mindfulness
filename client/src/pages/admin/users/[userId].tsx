@@ -12,21 +12,13 @@ import { errorMessage } from "@/lib/errors";
 import { SURVEY_TYPE_LABELS } from "@/lib/surveys";
 import type { Cohort, UserOverview } from "@/types/admin";
 import { adminPageTitle } from "@/lib/pageTitle";
+import { formatClockTime, formatDate } from "@/lib/dates";
 
-function formatDate(iso: string | null) {
-	if (!iso) return "—";
-	// A bare YYYY-MM-DD would otherwise be read as UTC midnight and can show as the previous day.
-	return new Date(iso.length === 10 ? `${iso}T00:00` : iso).toLocaleDateString();
-}
 
-function formatTime(hhmm: string) {
-	const [h, m] = hhmm.split(":").map(Number);
-	return new Date(2000, 0, 1, h, m).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
 	return (
-		<section className="rounded-2xl border border-gray-200 bg-white p-5">
+		<section className="rounded-xl border border-gray-200 bg-white shadow-card p-5">
 			<h2 className="text-sm font-bold uppercase tracking-wide text-muted">{title}</h2>
 			<div className="mt-4">{children}</div>
 		</section>
@@ -35,7 +27,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
 	return (
-		<div className="rounded-2xl border border-gray-200 bg-white p-5">
+		<div className="rounded-xl border border-gray-200 bg-white shadow-card p-5">
 			<p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
 			<p className="mt-2 text-2xl font-extrabold text-ink">{value}</p>
 		</div>
@@ -82,7 +74,7 @@ export default function AdminUserProfilePage() {
 
 	const backLink = (
 		<Link href="/admin/users" className="inline-flex items-center gap-1 text-sm font-semibold text-muted hover:text-brand-blue">
-			<ChevronLeftIcon className="size-4" /> Users
+			<ChevronLeftIcon className="size-4" /> All users
 		</Link>
 	);
 
@@ -91,7 +83,7 @@ export default function AdminUserProfilePage() {
 			<AdminLayout>
 				{backLink}
 				{error ? (
-					<p className="mt-6 rounded-2xl border border-gray-200 bg-white p-6 text-sm text-red-600">{error}</p>
+					<p className="mt-6 rounded-xl border border-gray-200 bg-white shadow-card p-6 text-sm text-red-600">{error}</p>
 				) : (
 					<div className="mt-6 flex justify-center py-16">
 						<span className="text-sm text-muted">Loading…</span>
@@ -126,7 +118,7 @@ export default function AdminUserProfilePage() {
 			{backLink}
 
 			<div className="mt-4 flex flex-col gap-6">
-				<div className="flex flex-col gap-5 rounded-2xl border border-gray-200 bg-white p-5 sm:flex-row sm:items-start">
+				<div className="flex flex-col gap-5 rounded-xl border border-gray-200 bg-white shadow-card p-5 sm:flex-row sm:items-start">
 					<UserAvatar avatarUrl={user.avatar_url} fullName={name} size={72} className="shrink-0" />
 					<button
 						type="button"
@@ -294,7 +286,7 @@ export default function AdminUserProfilePage() {
 
 					<Section title="Notifications">
 						<dl className="grid grid-cols-[1fr_auto] gap-y-2 text-sm">
-							<Detail label="Reminder time">{formatTime(notifications.reminder_time)}</Detail>
+							<Detail label="Reminder time">{formatClockTime(notifications.reminder_time)}</Detail>
 							<Detail label="Daily meditation reminder"><YesNo value={notifications.daily_content_reminder} /></Detail>
 							<Detail label="Daily survey reminder"><YesNo value={notifications.daily_survey_reminder} /></Detail>
 							<Detail label="Push notifications">

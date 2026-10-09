@@ -13,7 +13,6 @@ import { useRouter } from "next/router";
 import ForumRulesModal, { ForumRulesSummary } from "@/components/forum/ForumRulesModal";
 import ReportPostDialog from "@/components/forum/ReportPostDialog";
 import AppShell from "@/components/main/AppShell";
-import Footer from "@/components/main/Footer";
 import UpcomingSession from "@/components/modules/UpcomingSession";
 import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import Card from "@/components/ui/Card";
@@ -52,6 +51,7 @@ import { pageTitle } from "@/lib/pageTitle";
 import { errorMessage } from "@/lib/errors";
 import type { ForumPost, ForumThread, ForumThreadDetail } from "@/types/forum";
 import type { AuthUser } from "@/types/user";
+import { formatDateTime } from "@/lib/dates";
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
 
@@ -69,10 +69,6 @@ function formatRelativeTime(iso: string) {
   });
 }
 
-function formatFullDate(iso: string) {
-  return new Date(iso).toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" });
-}
-
 function isAdminUser(user: AuthUser | null) {
   return user?.role === "admin";
 }
@@ -81,7 +77,7 @@ function isAdminUser(user: AuthUser | null) {
 function banNotice(user: AuthUser | null) {
   if (!user?.forum_banned) return null;
   return user.forum_banned_until
-    ? `You've been banned from posting in the forum until ${formatFullDate(user.forum_banned_until)}.`
+    ? `You've been banned from posting in the forum until ${formatDateTime(user.forum_banned_until)}.`
     : "You've been banned from posting in the forum.";
 }
 
@@ -157,7 +153,7 @@ const TAG_TONES = {
 /** Small pill after an author's name, e.g. "Author" or "You". */
 function AuthorTag({ tone, children }: { tone: keyof typeof TAG_TONES; children: ReactNode }) {
   return (
-    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${TAG_TONES[tone]}`}>{children}</span>
+    <span className={`shrink-0 rounded-full px-2 py-0.5 text-2xs font-semibold ${TAG_TONES[tone]}`}>{children}</span>
   );
 }
 
@@ -178,7 +174,7 @@ function AuthorLine({
       <span className="min-w-0 truncate text-sm font-semibold text-ink">{name}</span>
       {tags}
       <span className="text-xs text-muted">
-        <time dateTime={createdAt} title={formatFullDate(createdAt)}>
+        <time dateTime={createdAt} title={formatDateTime(createdAt)}>
           {formatRelativeTime(createdAt)}
         </time>
         {editedAt && " (edited)"}
@@ -497,7 +493,7 @@ function Composer({
 
 function ReadOnlyNotice({ children }: { children: ReactNode }) {
   return (
-    <p className="rounded-[10px] border border-gray-200 bg-white p-5 text-sm text-muted">{children}</p>
+    <p className="rounded-xl border border-gray-200 bg-white p-5 text-sm text-muted">{children}</p>
   );
 }
 
@@ -578,7 +574,7 @@ function BackButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-[0_6px_9px_rgba(0,0,0,0.05)] transition-colors hover:bg-surface-muted"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-card transition-colors hover:bg-surface-muted"
     >
       <ChevronLeftIcon className="size-4" />
       Back to forum
@@ -704,7 +700,7 @@ function ThreadDetailView({
                   onDone={() => setEditingOpening(false)}
                 />
               ) : (
-                <p className="mt-2 whitespace-pre-wrap wrap-anywhere text-[15px] leading-relaxed text-ink">{thread.body}</p>
+                <p className="mt-2 whitespace-pre-wrap wrap-anywhere text-md leading-relaxed text-ink">{thread.body}</p>
               )}
               {pinError && <p className="mt-2 text-sm font-medium text-red-600">{pinError}</p>}
             </div>
@@ -814,7 +810,7 @@ function ThreadRow({ thread, isFirst, isLast, isOnly, isAdmin, onSelect, onEdit,
         "w-full p-5 text-left transition-colors",
         editing ? "" : "cursor-pointer hover:bg-surface-muted",
         isFirst ? "" : "border-t border-gray-200",
-        isOnly ? "rounded-[10px]" : "",
+        isOnly ? "rounded-xl" : "",
         !isOnly && isFirst ? "rounded-t-[10px]" : "",
         !isOnly && isLast ? "rounded-b-[10px]" : "",
       ]
@@ -964,19 +960,16 @@ function ForumSearchField({ query, onQueryChange, className = "" }: SearchProps 
   );
 }
 
-function ForumSidebar({ query, onQueryChange }: SearchProps) {
+/** Same order as every other page's rail (Next Session, Notifications), then the forum's own extras. */
+function ForumSidebar() {
   return (
     <div className="hidden min-w-0 space-y-4 xl:block">
       <UpcomingSession />
-      <Card className="p-5">
-        <p className="text-sm font-bold text-ink">Search</p>
-        <ForumSearchField query={query} onQueryChange={onQueryChange} className="mt-3" />
-      </Card>
+      <NotificationsPanel />
       <Card className="p-5">
         <p className="mb-3 text-sm font-bold text-ink">Forum rules</p>
         <ForumRulesSummary />
       </Card>
-      <NotificationsPanel />
     </div>
   );
 }
@@ -1143,16 +1136,7 @@ export default function ForumPage() {
       </Head>
 
       <AppShell
-        rightRail={
-          <ForumSidebar
-            query={query}
-            onQueryChange={(value) => {
-              setQuery(value);
-              // Search filters the thread list, so leave an open thread to show results.
-              if (threadId !== null) closeThread();
-            }}
-          />
-        }
+        rightRail={<ForumSidebar />}
       >
         <section aria-label="Forum" className="flex min-w-0 flex-col gap-4">
           {loading ? (
@@ -1170,7 +1154,7 @@ export default function ForumPage() {
               <ForumRulesModal isOpen onAccept={handleAcceptRules} onClose={() => router.push("/modules")} />
             </Card>
           ) : error ? (
-            <div className="mx-auto max-w-md rounded-[10px] border border-red-200 bg-red-50 p-8 text-center">
+            <div className="mx-auto max-w-md rounded-xl border border-red-200 bg-red-50 p-8 text-center">
               <p className="font-semibold text-red-700">Something went wrong</p>
               <p className="mt-2 text-sm text-red-600">{error}</p>
               <button
@@ -1187,7 +1171,7 @@ export default function ForumPage() {
             <div className="flex items-start gap-6">
               <div className="min-w-0 flex-1">
                 {!isActive && (
-                  <div className="mb-4 rounded-[10px] border border-amber-200 bg-amber-50 p-4 text-center text-sm font-semibold text-amber-700">
+                  <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm font-semibold text-amber-700">
                     The program has ended — the forum is now read-only.
                   </div>
                 )}
@@ -1197,8 +1181,8 @@ export default function ForumPage() {
                       title="Forum"
                       description="Connect, share, and support each other on your wellness journeys"
                     />
-                    {/* The sidebar (with its search box) only shows on wide screens. */}
-                    <ForumSearchField query={query} onQueryChange={setQuery} className="mt-4 xl:hidden" />
+                    {/* Directly above the threads it filters, on every screen size. */}
+                    <ForumSearchField query={query} onQueryChange={setQuery} className="mt-4" />
                   </div>
                 )}
 
@@ -1268,7 +1252,6 @@ export default function ForumPage() {
         />
       )}
 
-      <Footer />
     </>
   );
 }

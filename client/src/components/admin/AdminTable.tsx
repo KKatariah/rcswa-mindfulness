@@ -39,7 +39,7 @@ export default function AdminTable({
 	return (
 		<div
 			{...scrollable}
-			className={`relative overflow-x-auto rounded-2xl border border-gray-200 bg-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue ${className}`}
+			className={`relative overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-card focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue ${className}`}
 		>
 			{loading ? (
 				<LoadingState />

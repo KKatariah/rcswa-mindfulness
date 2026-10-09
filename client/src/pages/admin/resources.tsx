@@ -25,6 +25,7 @@ import { errorMessage } from "@/lib/errors";
 import { safeUrl } from "@/lib/safeUrl";
 import type { AdditionalResourceCategory, AdminAdditionalResource } from "@/types/admin";
 import { adminPageTitle } from "@/lib/pageTitle";
+import Button from "@/components/ui/Button";
 
 const CATEGORY_OPTIONS: { value: AdditionalResourceCategory; label: string }[] = [
 	{ value: "book", label: "Book" },
@@ -282,11 +283,11 @@ export default function AdminResourcesPage() {
 			{deleteError && <ErrorBanner className="mt-4">{deleteError}</ErrorBanner>}
 
 			{loading ? (
-				<Card variant="admin" className="mt-6">
+				<Card className="mt-6">
 					<LoadingState />
 				</Card>
 			) : error ? (
-				<Card as="p" variant="admin" className="mt-6 p-6 text-sm text-red-600">{error}</Card>
+				<Card as="p" className="mt-6 p-6 text-sm text-red-600">{error}</Card>
 			) : (
 				sections.map(({ category, heading, saved, items }) => (
 					<section key={category} aria-labelledby={`resources-${category}`} className="mt-8">
@@ -297,7 +298,7 @@ export default function AdminResourcesPage() {
 							<button
 								type="button"
 								onClick={() => openCreate(category)}
-								className="flex items-center gap-1 text-[14px] font-semibold text-brand-blue"
+								className="flex items-center gap-1 text-sm font-semibold text-brand-blue"
 							>
 								<PlusIcon className="size-4" />
 								Add
@@ -349,7 +350,8 @@ export default function AdminResourcesPage() {
 								</tr>
 							))}
 						</AdminTable>
-						{pendingOrders[category] && (
+						{/* Only once the drag ends: toggling mid-drag (each time the row passes its old spot) resized the page and made the sticky sidebar jump. */}
+						{pendingOrders[category] && draggingId === null && (
 							<div
 								role="status"
 								className="mt-3 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between"
@@ -364,14 +366,14 @@ export default function AdminResourcesPage() {
 									>
 										Discard
 									</button>
-									<button
+									<Button
 										type="button"
 										onClick={() => saveOrder(category, items.map((r) => r.id))}
 										disabled={savingOrder === category}
-										className="h-10 rounded-xl bg-brand-blue px-4 font-bold text-white disabled:opacity-50"
+										variant="primary" size={null} className="h-10 rounded-xl px-4 font-bold disabled:opacity-50"
 									>
 										{savingOrder === category ? "Saving…" : "Save order"}
-									</button>
+									</Button>
 								</div>
 							</div>
 						)}

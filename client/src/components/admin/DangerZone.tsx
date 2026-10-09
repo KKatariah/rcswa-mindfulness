@@ -13,7 +13,7 @@ export default function DangerZone({
 	className?: string;
 }) {
 	return (
-		<div className={`flex items-center justify-between gap-4 rounded-2xl border border-red-200 bg-red-50 p-4 ${className}`}>
+		<div className={`flex items-center justify-between gap-4 rounded-xl border border-red-200 bg-red-50 p-4 ${className}`}>
 			<div>
 				<p className="text-sm font-semibold text-red-700">Danger zone</p>
 				<p className="text-xs text-red-700">{description}</p>

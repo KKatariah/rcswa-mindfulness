@@ -40,8 +40,8 @@ export default function Footer() {
     <footer className="bg-ink px-6 py-16 sm:px-10 lg:px-30">
       <div className="flex flex-col justify-between gap-12 lg:flex-row lg:items-start">
         <div className="max-w-xs">
-          <img src="/assets/branding/rcswa-logo-white.png" alt="RCSWA logo" width={803} height={730} className="h-24 w-auto" />
-          <p className="mt-4 text-[15px] text-white/50">
+          <img src="/assets/branding/rcswa-logo-white.png" alt="RCSWA logo" width={803} height={730} className="h-16 w-auto" />
+          <p className="mt-4 text-md text-white/50">
             An 8-week guided meditation journey for lasting wellbeing.
           </p>
         </div>
