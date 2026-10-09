@@ -4,6 +4,7 @@ import Link from "next/link";
 import AdminLayout from "@/components/admin/AdminLayout";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import AdminTable from "@/components/admin/AdminTable";
+import ForumRulesEditor from "@/components/admin/ForumRulesEditor";
 import Modal from "@/components/main/Modal";
 import Badge from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
@@ -28,12 +29,13 @@ import { adminPageTitle } from "@/lib/pageTitle";
 import type { AdminUser, ModeratedPost, ReportedPost } from "@/types/admin";
 import { formatDateTime } from "@/lib/dates";
 
-type Tab = "reported" | "removed" | "banned";
+type Tab = "reported" | "removed" | "banned" | "rules";
 
 const TABS: { id: Tab; label: string }[] = [
 	{ id: "reported", label: "Reported" },
 	{ id: "removed", label: "Removed posts" },
 	{ id: "banned", label: "Banned users" },
+	{ id: "rules", label: "Forum rules" },
 ];
 
 
@@ -430,6 +432,7 @@ export default function AdminModerationPage() {
 				{tab === "reported" && <ReportedPanel />}
 				{tab === "removed" && <RemovedPanel />}
 				{tab === "banned" && <BannedPanel />}
+				{tab === "rules" && <ForumRulesEditor />}
 			</div>
 		</AdminLayout>
 	);

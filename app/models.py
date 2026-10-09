@@ -132,6 +132,19 @@ class User(AbstractUser):
     forum_banned_until = models.DateTimeField(null=True, blank=True)
 
     @property
+    def has_accepted_forum_rules(self):
+        """Agreed to the rules, and nothing that needs agreeing to again has changed since."""
+        if self.forum_rules_accepted_at is None:
+            return False
+        changed_at = ForumRulesRevision.reaccept_required_since()
+        return changed_at is None or self.forum_rules_accepted_at >= changed_at
+
+    @property
+    def forum_rules_outdated(self):
+        """Agreed to an earlier version of the rules, and has to agree to the new ones."""
+        return self.forum_rules_accepted_at is not None and not self.has_accepted_forum_rules
+
+    @property
     def is_forum_banned(self):
         if self.forum_banned_at is None:
             return False
@@ -796,3 +809,41 @@ class ForumFlag(models.Model):
 
     def __str__(self):
         return f"Flag on post {self.post_id} by {self.flagged_by}"
+
+
+class ForumRulesRevision(models.Model):
+    """One saved version of the forum rules. Admins never edit a revision: each save
+    adds a new one, so the latest row is the current rules and the rest are history."""
+
+    # [{"title": "...", "body": "..."}, ...] in display order.
+    rules = models.JSONField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        null=True,
+        blank=True,
+    )
+    # False for small fixes (typos, wording): students who agreed before keep access.
+    requires_reaccept = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    @classmethod
+    def current(cls):
+        return cls.objects.order_by("-created_at", "-id").first()
+
+    @classmethod
+    def reaccept_required_since(cls):
+        """When the rules last changed in a way students must agree to again, or None."""
+        return (
+            cls.objects.filter(requires_reaccept=True)
+            .order_by("-created_at")
+            .values_list("created_at", flat=True)
+            .first()
+        )
+
+    def __str__(self):
+        return f"Forum rules saved {self.created_at:%Y-%m-%d %H:%M}"

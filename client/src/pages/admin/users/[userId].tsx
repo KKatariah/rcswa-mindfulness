@@ -142,7 +142,11 @@ export default function AdminUserProfilePage() {
 							<Detail label="Joined">{formatDate(user.created_at)}</Detail>
 							<Detail label="Signs in with">{user.auth_provider === "google" ? "Google" : "Email & password"}</Detail>
 							<Detail label="Forum rules">
-								{user.forum_rules_accepted_at ? `Accepted ${formatDate(user.forum_rules_accepted_at)}` : "Not accepted"}
+								{!user.forum_rules_accepted_at
+									? "Not accepted"
+									: user.forum_rules_outdated
+										? `Accepted an earlier version ${formatDate(user.forum_rules_accepted_at)}`
+										: `Accepted ${formatDate(user.forum_rules_accepted_at)}`}
 							</Detail>
 						</dl>
 					</div>

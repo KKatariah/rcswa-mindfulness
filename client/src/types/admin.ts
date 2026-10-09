@@ -54,7 +54,7 @@ export type ModuleProgress = {
 };
 
 export type UserOverview = {
-	user: AdminUser & { avatar_url: string; forum_rules_accepted_at: string | null };
+	user: AdminUser & { avatar_url: string; forum_rules_accepted_at: string | null; forum_rules_outdated: boolean };
 	// Newest first.
 	enrollments: {
 		id: number;

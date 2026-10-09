@@ -3,41 +3,7 @@ import { createPortal } from "react-dom";
 import Modal from "@/components/main/Modal";
 import { errorMessage } from "@/lib/errors";
 import Button from "@/components/ui/Button";
-
-export const FORUM_RULES: { title: string; body: string }[] = [
-	{
-		title: "Lead with kindness",
-		body: "Assume good intent, and offer feedback the way you'd want to receive it.",
-	},
-	{
-		title: "Respect confidentiality",
-		body: "What's shared here stays here. Don't repeat others' personal stories outside the forum.",
-	},
-	{
-		title: "Speak from your own experience",
-		body: "Use \"I\" statements rather than telling others what they should feel or do.",
-	},
-	{
-		title: "This isn't a substitute for professional care",
-		body: "If someone shares something serious, encourage them to seek support rather than trying to diagnose or fix it.",
-	},
-	{
-		title: "Avoid judgment or comparison",
-		body: "There's no \"right\" way to practice, and no need to rank experiences.",
-	},
-	{
-		title: "Stay on topic and spam-free",
-		body: "Keep posts relevant to mindfulness and this community; no advertising or self-promotion.",
-	},
-	{
-		title: "Disagree with care",
-		body: "Different perspectives are welcome, but engage respectfully without dismissing others.",
-	},
-	{
-		title: "Report, don't retaliate",
-		body: "If a post feels harmful, report it to the moderators (use Report in the post's ⋯ menu) rather than responding in kind.",
-	},
-];
+import type { ForumRule } from "@/types/forum";
 
 function RuleNumber({ n, small = false }: { n: number; small?: boolean }) {
 	return (
@@ -51,19 +17,19 @@ function RuleNumber({ n, small = false }: { n: number; small?: boolean }) {
 
 /** Full rules (title + description) as one grouped list. Scrolls on its own so
  *  the agree checkbox and buttons below it stay in view on short screens. */
-export function ForumRulesList() {
+export function ForumRulesList({ rules }: { rules: ForumRule[] }) {
 	return (
 		<ol
 			aria-label="Forum rules"
 			tabIndex={0}
 			className="max-h-[45vh] divide-y divide-gray-200 overflow-y-auto overscroll-contain rounded-2xl bg-surface-muted px-4 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 		>
-			{FORUM_RULES.map((rule, i) => (
-				<li key={rule.title} className="flex gap-3 py-3">
+			{rules.map((rule, i) => (
+				<li key={i} className="flex gap-3 py-3">
 					<RuleNumber n={i + 1} />
 					<div className="min-w-0">
 						<p className="text-sm font-bold text-ink">{rule.title}</p>
-						<p className="mt-0.5 text-sm leading-snug text-muted">{rule.body}</p>
+						{rule.body && <p className="mt-0.5 text-sm leading-snug text-muted">{rule.body}</p>}
 					</div>
 				</li>
 			))}
@@ -72,14 +38,14 @@ export function ForumRulesList() {
 }
 
 /** Compact sidebar version: rule titles only, with a link to the full rules. */
-export function ForumRulesSummary() {
+export function ForumRulesSummary({ rules }: { rules: ForumRule[] }) {
 	const [open, setOpen] = useState(false);
 
 	return (
 		<>
 			<ol className="space-y-2.5">
-				{FORUM_RULES.map((rule, i) => (
-					<li key={rule.title} className="flex items-start gap-2.5">
+				{rules.map((rule, i) => (
+					<li key={i} className="flex items-start gap-2.5">
 						<RuleNumber n={i + 1} small />
 						<span className="pt-0.5 text-sm text-ink">{rule.title}</span>
 					</li>
@@ -92,19 +58,22 @@ export function ForumRulesSummary() {
 			>
 				Read full rules
 			</button>
-			<ForumRulesModal isOpen={open} onClose={() => setOpen(false)} />
+			<ForumRulesModal rules={rules} isOpen={open} onClose={() => setOpen(false)} />
 		</>
 	);
 }
 
 type ForumRulesModalProps = {
+	rules: ForumRule[];
 	isOpen: boolean;
 	onClose: () => void;
 	/** When given, the modal asks the user to agree; otherwise it's read-only. */
 	onAccept?: () => Promise<void>;
+	/** The user agreed to an earlier version; says the rules have changed. */
+	updated?: boolean;
 };
 
-export default function ForumRulesModal({ isOpen, onClose, onAccept }: ForumRulesModalProps) {
+export default function ForumRulesModal({ rules, isOpen, onClose, onAccept, updated = false }: ForumRulesModalProps) {
 	const [agreed, setAgreed] = useState(false);
 	const [submitting, setSubmitting] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -130,11 +99,13 @@ export default function ForumRulesModal({ isOpen, onClose, onAccept }: ForumRule
 		<Modal isOpen={isOpen} onClose={onClose} title="Forum Rules" closeButtonAboveTitle>
 			<div className="text-left">
 				<p className="mb-5 text-center text-sm text-muted">
-					{onAccept
-						? "This is a supportive space. Please read and agree to these rules before joining the discussion."
-						: "This is a supportive space. Please keep these rules in mind when posting."}
+					{!onAccept
+						? "This is a supportive space. Please keep these rules in mind when posting."
+						: updated
+							? "The forum rules have been updated. Please read and agree to the new rules to keep using the forum."
+							: "This is a supportive space. Please read and agree to these rules before joining the discussion."}
 				</p>
-				<ForumRulesList />
+				<ForumRulesList rules={rules} />
 
 				{onAccept ? (
 					<>
