@@ -30,6 +30,7 @@ from .models import (
     ForumPost,
     ForumThread,
     Module,
+    NotificationLog,
     NotificationPreference,
     PushSubscription,
     Survey,
@@ -61,6 +62,7 @@ from .serializers import (
     ForumThreadSerializer,
     ModuleSerializer,
     ModuleSummarySerializer,
+    NotificationLogSerializer,
     NotificationPreferenceSerializer,
     PushSubscriptionSerializer,
     RegisterSerializer,
@@ -1017,6 +1019,50 @@ class NotificationPreferenceViewSet(
 
     def get_queryset(self):
         return NotificationPreference.objects.filter(user=self.request.user)
+
+
+# ── Notification history (in-app inbox) ────────────────────────────────────────
+
+class NotificationHistoryViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
+    """
+    GET  /api/notifications/history/           the current user's delivered
+                                               notifications, newest first
+    POST /api/notifications/history/{id}/read/ mark one as read
+    POST /api/notifications/history/read-all/  mark all of them as read
+
+    Failed and pending attempts never reached the user, so they are left out.
+    """
+
+    permission_classes = [IsApproved]
+    serializer_class = NotificationLogSerializer
+
+    # The inbox shows recent activity; older entries stay in the audit log.
+    LIMIT = 100
+
+    def get_queryset(self):
+        return (
+            NotificationLog.objects
+            .filter(user=self.request.user, status=NotificationLog.Status.SENT)
+            .select_related("module", "content_item")
+            .order_by("-sent_at", "-id")
+        )
+
+    def list(self, request, *args, **kwargs):
+        notifications = self.get_queryset()[: self.LIMIT]
+        return Response(self.get_serializer(notifications, many=True).data)
+
+    @action(detail=True, methods=["post"])
+    def read(self, request, pk=None):
+        notification = self.get_object()
+        if notification.read_at is None:
+            notification.read_at = timezone.now()
+            notification.save(update_fields=["read_at"])
+        return Response(self.get_serializer(notification).data)
+
+    @action(detail=False, methods=["post"], url_path="read-all")
+    def read_all(self, request):
+        marked = self.get_queryset().filter(read_at__isnull=True).update(read_at=timezone.now())
+        return Response({"marked": marked})
 
 
 # ── VAPID public key (unauthenticated) ─────────────────────────────────────────

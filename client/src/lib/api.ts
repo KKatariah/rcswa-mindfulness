@@ -972,3 +972,59 @@ export async function updateNotificationPreferences(
 
     return handleResponse<NotificationPreferences>(res);
 }
+
+export type NotificationType =
+    | "content_reminder"
+    | "survey_prompt"
+    | "content_update"
+    | "module_added";
+
+export type ReceivedNotification = {
+    id: number;
+    type: NotificationType;
+    channel: "inapp" | "email" | "push";
+    sent_at: string;
+    read_at: string | null;
+    title: string;
+    body: string;
+    url: string | null;
+};
+
+export async function getNotificationHistory(
+    token: string
+): Promise<ReceivedNotification[]> {
+    const res = await fetch(`${API_BASE_URL}/notifications/history/`, {
+        headers: {
+            Authorization: `Token ${token}`,
+        },
+    });
+
+    return handleResponse<ReceivedNotification[]>(res);
+}
+
+export async function markNotificationRead(
+    token: string,
+    id: number
+): Promise<ReceivedNotification> {
+    const res = await fetch(`${API_BASE_URL}/notifications/history/${id}/read/`, {
+        method: "POST",
+        headers: {
+            Authorization: `Token ${token}`,
+        },
+    });
+
+    return handleResponse<ReceivedNotification>(res);
+}
+
+export async function markAllNotificationsRead(
+    token: string
+): Promise<{ marked: number }> {
+    const res = await fetch(`${API_BASE_URL}/notifications/history/read-all/`, {
+        method: "POST",
+        headers: {
+            Authorization: `Token ${token}`,
+        },
+    });
+
+    return handleResponse<{ marked: number }>(res);
+}
