@@ -143,7 +143,7 @@ export default function ModulesIndexPage() {
 					<Sidebar responsive />
 
 					<div className="flex min-w-0 flex-col gap-4">
-							<div className="rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)] sm:p-8">
+							<div className="rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 								<h1 className="text-2xl font-extrabold text-ink sm:text-3xl">Your Progress</h1>
 								<p className="mt-1 text-muted">Track your 8-week meditation journey</p>
 							</div>
