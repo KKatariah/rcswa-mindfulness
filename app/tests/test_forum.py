@@ -312,6 +312,26 @@ class ForumTests(APITestCase):
         # Reply written by other — admin can still edit
         self.assertTrue(resp.data["replies"][0]["can_edit"])
 
+    # ── is_own / is_thread_author flags ────────────────────────────────────────
+
+    def test_is_own_and_is_thread_author_flags(self):
+        mine = ForumPost.objects.create(thread=self.thread, author=self.student, body="Thread author replying")
+        self.client.force_login(self.other)
+        resp = self.client.get(f"/api/forum/threads/{self.thread.pk}/")
+        self.assertFalse(resp.data["is_own"])
+        replies = {p["id"]: p for p in resp.data["replies"]}
+        self.assertTrue(replies[self.reply.pk]["is_own"])
+        self.assertFalse(replies[self.reply.pk]["is_thread_author"])
+        self.assertFalse(replies[mine.pk]["is_own"])
+        self.assertTrue(replies[mine.pk]["is_thread_author"])
+
+    def test_admin_is_own_false_on_others_posts(self):
+        """Unlike can_edit, is_own stays false for an admin viewing someone else's post."""
+        self.client.force_login(self.admin)
+        resp = self.client.get(f"/api/forum/threads/{self.thread.pk}/")
+        self.assertFalse(resp.data["is_own"])
+        self.assertFalse(resp.data["replies"][0]["is_own"])
+
     # ── Check 1: _derive_title no-space fallback ───────────────────────────────
 
     def test_title_capped_at_60_chars_for_no_space_body(self):

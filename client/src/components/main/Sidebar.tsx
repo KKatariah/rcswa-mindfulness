@@ -72,13 +72,6 @@ export default function Sidebar() {
               key={item.href}
               item={item}
               active={isNavActive(pathname, item.href)}
-              onClick={(event) => {
-                // Clicking Forum while on the forum goes back from a thread to the list.
-                if (pathname === "/forum" && item.href === "/forum") {
-                  event.preventDefault();
-                  window.dispatchEvent(new CustomEvent("forum:reset"));
-                }
-              }}
             />
           ))}
         </nav>

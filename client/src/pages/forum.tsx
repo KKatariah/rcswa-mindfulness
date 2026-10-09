@@ -1,4 +1,13 @@
-import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import {
+  type FormEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import ForumRulesModal, { ForumRulesSummary } from "@/components/forum/ForumRulesModal";
@@ -6,7 +15,14 @@ import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
 import Card from "@/components/ui/Card";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import { ChevronLeftIcon, MessageCircleIcon, SearchIcon } from "@/components/ui/icons";
+import {
+  ChevronLeftIcon,
+  MessageCircleIcon,
+  MoreHorizontalIcon,
+  PencilIcon,
+  SearchIcon,
+  TrashIcon,
+} from "@/components/ui/icons";
 import PageHeader from "@/components/ui/PageHeader";
 import { LoadMore } from "@/components/ui/paging";
 import { UserAvatar } from "@/components/ui/UserAvatar";
@@ -44,6 +60,10 @@ function formatRelativeTime(iso: string) {
     day: "numeric",
     month: "short",
   });
+}
+
+function formatFullDate(iso: string) {
+  return new Date(iso).toLocaleString("en-AU", { dateStyle: "medium", timeStyle: "short" });
 }
 
 function isAdminUser(user: AuthUser | null) {
@@ -110,50 +130,45 @@ function useForumPostCooldown(bypass: boolean) {
 
 // ── Small pieces ───────────────────────────────────────────────────────────────
 
-function Avatar({ name, avatarUrl }: { name: string; avatarUrl?: string | null }) {
-  return <UserAvatar avatarUrl={avatarUrl} fullName={name} size={36} className="shrink-0" />;
+function Avatar({ name, avatarUrl, size = 36 }: { name: string; avatarUrl?: string | null; size?: number }) {
+  return <UserAvatar avatarUrl={avatarUrl} fullName={name} size={size} className="shrink-0" />;
 }
 
-/** Author name with "2h ago" and "(edited)". */
-function AuthorLine({ name, createdAt, editedAt }: { name: string; createdAt: string; editedAt?: string | null }) {
+const TAG_TONES = {
+  author: "bg-brand-blue/10 text-brand-blue-dark",
+  you: "bg-gray-100 text-gray-600",
+} as const;
+
+/** Small pill after an author's name, e.g. "Author" or "You". */
+function AuthorTag({ tone, children }: { tone: keyof typeof TAG_TONES; children: ReactNode }) {
   return (
-    <div className="flex min-w-0 items-baseline gap-2">
-      <span className="min-w-0 truncate text-sm font-semibold text-ink">{name}</span>
-      <span className="text-xs text-muted">
-        {formatRelativeTime(createdAt)}
-        {editedAt && " (edited)"}
-      </span>
-    </div>
+    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${TAG_TONES[tone]}`}>{children}</span>
   );
 }
 
-const ACTION_TONES = {
-  pin: "text-amber-600",
-  edit: "text-brand-blue",
-  delete: "text-red-600",
-} as const;
-
-/** Small text button for Pin / Edit / Delete. */
-function TextAction({
-  tone,
-  onClick,
-  disabled,
-  children,
+/** Author name with any tags, "2h ago" (full date on hover) and "(edited)". */
+function AuthorLine({
+  name,
+  createdAt,
+  editedAt,
+  tags,
 }: {
-  tone: keyof typeof ACTION_TONES;
-  onClick: () => void;
-  disabled?: boolean;
-  children: ReactNode;
+  name: string;
+  createdAt: string;
+  editedAt?: string | null;
+  tags?: ReactNode;
 }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`text-xs font-semibold hover:underline disabled:opacity-50 ${ACTION_TONES[tone]}`}
-    >
-      {children}
-    </button>
+    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="min-w-0 truncate text-sm font-semibold text-ink">{name}</span>
+      {tags}
+      <span className="text-xs text-muted">
+        <time dateTime={createdAt} title={formatFullDate(createdAt)}>
+          {formatRelativeTime(createdAt)}
+        </time>
+        {editedAt && " (edited)"}
+      </span>
+    </div>
   );
 }
 
@@ -161,24 +176,142 @@ function PinnedLabel({ className }: { className: string }) {
   return <p className={`text-xs font-semibold uppercase tracking-wide text-amber-600 ${className}`}>Pinned</p>;
 }
 
+type MenuAction = { label: string; onSelect: () => void; icon?: ReactNode; danger?: boolean; disabled?: boolean };
+
+const MENU_ITEMS = '[role="menuitem"]:not(:disabled)';
+
+/** "⋯" button opening a small menu of actions (Pin / Edit / Delete) for a thread or reply. */
+function PostMenu({ label, actions, className = "" }: { label: string; actions: MenuAction[]; className?: string }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!open) return;
+    rootRef.current?.querySelector<HTMLElement>(MENU_ITEMS)?.focus();
+    function handlePointerDown(e: PointerEvent) {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
+
+  if (actions.length === 0) return null;
+
+  function handleKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    // Inside a clickable thread row: Enter / Space here mustn't open the thread.
+    e.stopPropagation();
+    if (!open) return;
+    const items = Array.from(rootRef.current?.querySelectorAll<HTMLElement>(MENU_ITEMS) ?? []);
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === "Escape") {
+      e.preventDefault();
+      setOpen(false);
+      buttonRef.current?.focus();
+    } else if (e.key === "ArrowDown") {
+      e.preventDefault();
+      items[(index + 1) % items.length]?.focus();
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      items[(index - 1 + items.length) % items.length]?.focus();
+    } else if (e.key === "Tab") {
+      setOpen(false);
+    }
+  }
+
+  return (
+    <div
+      ref={rootRef}
+      className={`relative shrink-0 ${className}`}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={handleKeyDown}
+    >
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={open ? menuId : undefined}
+        onClick={() => setOpen((o) => !o)}
+        className="grid size-8 place-items-center rounded-lg text-muted transition-colors hover:bg-surface-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue"
+      >
+        <MoreHorizontalIcon className="size-5" />
+      </button>
+      {open && (
+        <div
+          id={menuId}
+          role="menu"
+          aria-label={label}
+          className="absolute right-0 top-full z-20 mt-1 min-w-40 rounded-xl border border-gray-200 bg-white py-1 shadow-lg"
+        >
+          {actions.map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              role="menuitem"
+              disabled={action.disabled}
+              onClick={() => {
+                setOpen(false);
+                action.onSelect();
+              }}
+              className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium hover:bg-surface-muted focus:bg-surface-muted focus:outline-none disabled:opacity-50 ${action.danger ? "text-red-600" : "text-ink"}`}
+            >
+              {action.icon}
+              {action.label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+const editAction = (onSelect: () => void): MenuAction => ({
+  label: "Edit",
+  icon: <PencilIcon className="size-4" />,
+  onSelect,
+});
+
+const deleteAction = (label: string, onSelect: () => void): MenuAction => ({
+  label,
+  icon: <TrashIcon className="size-4" />,
+  danger: true,
+  onSelect,
+});
+
+/** Grows a textarea to fit its text as it changes. */
+function useAutosize(value: string) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [value]);
+  return ref;
+}
+
+const isSubmitShortcut = (e: KeyboardEvent) => e.key === "Enter" && (e.metaKey || e.ctrlKey);
+
 /** Textarea with Save / Cancel for editing a post in place. */
 function InlineEditor({
   initial,
-  rows = 3,
   onSave,
   onDone,
 }: {
   initial: string;
-  rows?: number;
   onSave: (body: string) => Promise<void>;
   onDone: () => void;
 }) {
   const [draft, setDraft] = useState(initial);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const textareaRef = useAutosize(draft);
 
   async function handleSave() {
-    if (!draft.trim()) return;
+    if (!draft.trim() || saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -193,13 +326,25 @@ function InlineEditor({
 
   return (
     // Inside a clickable thread row: typing or pressing a button here mustn't open the thread.
-    <div className="mt-3 space-y-2" onClick={(e) => e.stopPropagation()}>
+    <div className="mt-3 space-y-2" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
       <textarea
+        ref={textareaRef}
         value={draft}
         onChange={(e) => setDraft(e.target.value)}
-        rows={rows}
+        onKeyDown={(e) => {
+          if (isSubmitShortcut(e)) {
+            e.preventDefault();
+            handleSave();
+          } else if (e.key === "Escape") {
+            onDone();
+          }
+        }}
+        aria-label="Edit post"
+        aria-keyshortcuts="Control+Enter Meta+Enter"
+        autoFocus
+        rows={3}
         maxLength={POST_MAX_CHARS}
-        className="w-full resize-none rounded-xl border border-gray-200 p-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+        className="max-h-96 w-full resize-none rounded-xl border border-gray-200 bg-white p-3 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
       />
       {error && <p className="text-xs text-red-600">{error}</p>}
       <div className="flex gap-2">
@@ -214,7 +359,7 @@ function InlineEditor({
         <button
           type="button"
           onClick={onDone}
-          className="rounded-lg border border-gray-200 px-4 py-1.5 text-xs font-semibold text-ink"
+          className="rounded-lg border border-gray-200 bg-white px-4 py-1.5 text-xs font-semibold text-ink"
         >
           Cancel
         </button>
@@ -225,28 +370,37 @@ function InlineEditor({
 
 // ── Composer ───────────────────────────────────────────────────────────────────
 
+// Show a character count once a post is this close to the limit.
+const COUNTER_FROM = Math.floor(POST_MAX_CHARS * 0.8);
+
 /** Form for starting a thread or replying, with the client-side posting cooldown. */
 function Composer({
   heading,
+  label,
   placeholder,
   submitLabel,
   onSubmit,
   user,
+  bare = false,
 }: {
   heading: ReactNode;
+  label: string;
   placeholder: string;
   submitLabel: string;
   onSubmit: (body: string) => Promise<void>;
   user: AuthUser | null;
+  /** Leave off the card, for a composer that sits inside another card. */
+  bare?: boolean;
 }) {
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const { remaining, markPosted } = useForumPostCooldown(isAdminUser(user));
+  const textareaRef = useAutosize(body);
 
-  async function handleSubmit(e: FormEvent) {
-    e.preventDefault();
-    if (!body.trim() || remaining > 0) return;
+  async function handleSubmit(e?: FormEvent) {
+    e?.preventDefault();
+    if (!body.trim() || remaining > 0 || submitting) return;
     setError(null);
     setSubmitting(true);
     try {
@@ -260,32 +414,53 @@ function Composer({
     }
   }
 
-  return (
-    <Card as="form" onSubmit={handleSubmit} className="p-5">
+  const fields = (
+    <>
       {heading}
       <textarea
+        ref={textareaRef}
         value={body}
         onChange={(e) => setBody(e.target.value)}
+        onKeyDown={(e) => {
+          if (isSubmitShortcut(e)) {
+            e.preventDefault();
+            handleSubmit();
+          }
+        }}
+        aria-label={label}
+        aria-keyshortcuts="Control+Enter Meta+Enter"
         placeholder={placeholder}
         rows={3}
         maxLength={POST_MAX_CHARS}
-        className="mt-3 w-full resize-none rounded-xl border border-gray-200 bg-surface-muted p-3 text-sm text-ink placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-blue"
+        className={`mt-3 max-h-96 w-full resize-none rounded-xl border border-gray-200 p-3 text-sm text-ink placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-blue ${bare ? "bg-white" : "bg-surface-muted"}`}
       />
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-      <div className="mt-3 flex items-center justify-between">
-        {remaining > 0 ? (
-          <p className="text-xs text-muted">You can post again in {remaining}s</p>
-        ) : (
-          <span />
-        )}
+      <div className="mt-3 flex items-center justify-between gap-3">
+        <p className="text-xs text-muted" aria-live="polite">
+          {remaining > 0
+            ? `You can post again in ${remaining}s`
+            : body.length >= COUNTER_FROM
+              ? `${body.length} / ${POST_MAX_CHARS} characters`
+              : ""}
+        </p>
         <button
           type="submit"
           disabled={submitting || !body.trim() || remaining > 0}
-          className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
+          className="shrink-0 rounded-xl bg-slate-900 px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
         >
           {submitting ? "Posting…" : remaining > 0 ? `Wait ${remaining}s` : submitLabel}
         </button>
       </div>
+    </>
+  );
+
+  return bare ? (
+    <form onSubmit={handleSubmit} className="p-5">
+      {fields}
+    </form>
+  ) : (
+    <Card as="form" onSubmit={handleSubmit} className="p-5">
+      {fields}
     </Card>
   );
 }
@@ -296,49 +471,105 @@ function ReadOnlyNotice({ children }: { children: ReactNode }) {
   );
 }
 
-// ── Post card (reply) ──────────────────────────────────────────────────────────
+// ── Reply ──────────────────────────────────────────────────────────────────────
 
-function PostCard({
+function ReplyItem({
   post,
+  highlighted,
   onEdit,
   onDelete,
 }: {
   post: ForumPost;
+  highlighted: boolean;
   onEdit: (id: number, body: string) => Promise<void>;
   onDelete: (id: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const ref = useRef<HTMLLIElement>(null);
+
+  // A reply you just posted scrolls into view and is briefly tinted.
+  useEffect(() => {
+    if (!highlighted) return;
+    const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    ref.current?.scrollIntoView({ block: "nearest", behavior: reduceMotion ? "auto" : "smooth" });
+  }, [highlighted]);
 
   return (
-    <Card className="p-4">
-      <div className="flex items-start gap-3">
-        <Avatar name={post.author_name} avatarUrl={post.author_avatar_url} />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center justify-between gap-2">
-            <AuthorLine name={post.author_name} createdAt={post.created_at} editedAt={post.edited_at} />
-            {post.can_edit && !editing && (
-              <div className="flex shrink-0 items-center gap-3">
-                <TextAction tone="edit" onClick={() => setEditing(true)}>Edit</TextAction>
-                <TextAction tone="delete" onClick={() => onDelete(post.id)}>Delete</TextAction>
-              </div>
-            )}
-          </div>
-
-          {editing ? (
-            <InlineEditor initial={post.body} onSave={(body) => onEdit(post.id, body)} onDone={() => setEditing(false)} />
-          ) : (
-            <p className="mt-2 whitespace-pre-wrap wrap-anywhere text-sm text-gray-600">{post.body}</p>
+    <li
+      ref={ref}
+      className={`flex gap-3 px-6 py-4 transition-[background-color] duration-1000 ${highlighted ? "bg-brand-blue/10" : ""}`}
+    >
+      <Avatar name={post.author_name} avatarUrl={post.author_avatar_url} size={32} />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-2">
+          <AuthorLine
+            name={post.author_name}
+            createdAt={post.created_at}
+            editedAt={post.edited_at}
+            tags={
+              <>
+                {post.is_thread_author && <AuthorTag tone="author">Author</AuthorTag>}
+                {post.is_own && <AuthorTag tone="you">You</AuthorTag>}
+              </>
+            }
+          />
+          {post.can_edit && !editing && (
+            <PostMenu
+              className="-my-1.5 -mr-2"
+              label={`Actions for reply by ${post.author_name}`}
+              actions={[editAction(() => setEditing(true)), deleteAction("Delete reply", () => onDelete(post.id))]}
+            />
           )}
         </div>
+
+        {editing ? (
+          <InlineEditor initial={post.body} onSave={(body) => onEdit(post.id, body)} onDone={() => setEditing(false)} />
+        ) : (
+          <p className="mt-1 whitespace-pre-wrap wrap-anywhere text-sm leading-relaxed text-ink-soft">{post.body}</p>
+        )}
       </div>
-    </Card>
+    </li>
   );
 }
 
 // ── Thread detail ──────────────────────────────────────────────────────────────
 
+function BackButton({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-[0_6px_9px_rgba(0,0,0,0.05)] transition-colors hover:bg-surface-muted"
+    >
+      <ChevronLeftIcon className="size-4" />
+      Back to forum
+    </button>
+  );
+}
+
+/** Placeholder while a thread loads. */
+function ThreadSkeleton({ onBack }: { onBack: () => void }) {
+  return (
+    <div className="space-y-4">
+      <BackButton onClick={onBack} />
+      <Card className="p-6">
+        <p role="status" className="sr-only">Loading thread…</p>
+        <div aria-hidden="true" className="flex gap-3 motion-safe:animate-pulse">
+          <div className="size-11 shrink-0 rounded-full bg-gray-200" />
+          <div className="flex-1 space-y-3 pt-1">
+            <div className="h-3 w-32 rounded bg-gray-200" />
+            <div className="h-3 w-full rounded bg-gray-100" />
+            <div className="h-3 w-4/5 rounded bg-gray-100" />
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 type ThreadDetailViewProps = {
   thread: ForumThreadDetail;
+  highlightPostId: number | null;
   onBack: () => void;
   onReply: (body: string) => Promise<void>;
   onEditPost: (id: number, body: string) => Promise<void>;
@@ -351,6 +582,7 @@ type ThreadDetailViewProps = {
 
 function ThreadDetailView({
   thread,
+  highlightPostId,
   onBack,
   onReply,
   onEditPost,
@@ -362,7 +594,16 @@ function ThreadDetailView({
 }: ThreadDetailViewProps) {
   const [editingOpening, setEditingOpening] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  const headingId = useId();
+  const repliesHeadingId = useId();
   const openingPost = thread.opening_post;
+  const replyCount = thread.replies.length;
+
+  // Opening a thread swaps the whole view, so move focus to it for screen readers.
+  useEffect(() => {
+    headingRef.current?.focus({ preventScroll: true });
+  }, []);
 
   async function handlePinToggle() {
     setPinError(null);
@@ -373,86 +614,97 @@ function ThreadDetailView({
     }
   }
 
+  const threadActions: MenuAction[] = [];
+  if (thread.can_pin) {
+    threadActions.push({ label: thread.is_pinned ? "Unpin thread" : "Pin thread", onSelect: handlePinToggle });
+  }
+  if (openingPost?.can_edit) threadActions.push(editAction(() => setEditingOpening(true)));
+  if (thread.can_edit) threadActions.push(deleteAction("Delete thread", onDeleteThread));
+
   return (
     <div className="space-y-4">
-      <h1 className="sr-only">Forum thread</h1>
-      <button
-        type="button"
-        onClick={onBack}
-        className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-[0_6px_9px_rgba(0,0,0,0.05)] transition-colors hover:bg-surface-muted"
-      >
-        <ChevronLeftIcon className="size-4" />
-        Back to forum
-      </button>
+      <BackButton onClick={onBack} />
 
-      {/* Opening post */}
-      <div
-        className={`rounded-[10px] border bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${thread.is_pinned ? "border-amber-200" : "border-gray-200"}`}
-      >
-        {thread.is_pinned && <PinnedLabel className="mb-3" />}
+      <Card as="section" aria-labelledby={headingId}>
+        <h1 ref={headingRef} id={headingId} tabIndex={-1} className="sr-only">
+          {thread.title || "Forum thread"}
+        </h1>
 
-        <div className="flex items-start gap-3">
-          <Avatar name={thread.author_name} avatarUrl={thread.author_avatar_url} />
-          <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
-              <AuthorLine
-                name={thread.author_name}
-                createdAt={thread.created_at}
-                editedAt={thread.edited_at ?? openingPost?.edited_at ?? null}
-              />
-              {!editingOpening && (
-                <div className="flex shrink-0 items-center gap-3">
-                  {thread.can_pin && (
-                    <TextAction tone="pin" onClick={handlePinToggle}>{thread.is_pinned ? "Unpin" : "Pin"}</TextAction>
-                  )}
-                  {openingPost?.can_edit && (
-                    <TextAction tone="edit" onClick={() => setEditingOpening(true)}>Edit</TextAction>
-                  )}
-                  {thread.can_edit && <TextAction tone="delete" onClick={onDeleteThread}>Delete</TextAction>}
-                </div>
+        {/* Opening post */}
+        <div className="p-6">
+          {thread.is_pinned && <PinnedLabel className="mb-3" />}
+
+          <div className="flex items-start gap-3">
+            <Avatar name={thread.author_name} avatarUrl={thread.author_avatar_url} size={44} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-start justify-between gap-2">
+                <AuthorLine
+                  name={thread.author_name}
+                  createdAt={thread.created_at}
+                  editedAt={thread.edited_at ?? openingPost?.edited_at ?? null}
+                  tags={thread.is_own && <AuthorTag tone="you">You</AuthorTag>}
+                />
+                {!editingOpening && (
+                  <PostMenu className="-my-1.5 -mr-2" label="Thread actions" actions={threadActions} />
+                )}
+              </div>
+
+              {editingOpening && openingPost ? (
+                <InlineEditor
+                  initial={openingPost.body}
+                  onSave={(body) => onEditPost(openingPost.id, body)}
+                  onDone={() => setEditingOpening(false)}
+                />
+              ) : (
+                <p className="mt-2 whitespace-pre-wrap wrap-anywhere text-[15px] leading-relaxed text-ink">{thread.body}</p>
               )}
+              {pinError && <p className="mt-2 text-sm font-medium text-red-600">{pinError}</p>}
             </div>
-
-            {editingOpening && openingPost ? (
-              <InlineEditor
-                initial={openingPost.body}
-                rows={4}
-                onSave={(body) => onEditPost(openingPost.id, body)}
-                onDone={() => setEditingOpening(false)}
-              />
-            ) : (
-              <>
-                <p className="mt-2 whitespace-pre-wrap wrap-anywhere text-sm text-gray-600">{thread.body}</p>
-                {pinError && <p className="mt-2 text-sm font-medium text-red-600">{pinError}</p>}
-              </>
-            )}
           </div>
         </div>
-      </div>
 
-      {/* Replies */}
-      {thread.replies.length > 0 && (
-        <div className="mt-4 space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-white">
-            {thread.replies.length} {thread.replies.length === 1 ? "Reply" : "Replies"}
+        {/* Replies */}
+        <section aria-labelledby={repliesHeadingId} className="border-t border-gray-200">
+          <h2 id={repliesHeadingId} className="px-6 pt-5 text-xs font-semibold uppercase tracking-wide text-muted">
+            {replyCount} {replyCount === 1 ? "Reply" : "Replies"}
+          </h2>
+          {replyCount === 0 ? (
+            <p className="px-6 pb-6 pt-2 text-sm text-muted">
+              No replies yet{isActive ? " — start the conversation below." : "."}
+            </p>
+          ) : (
+            <ol className="divide-y divide-gray-100 pb-2 pt-1">
+              {thread.replies.map((post) => (
+                <ReplyItem
+                  key={post.id}
+                  post={post}
+                  highlighted={post.id === highlightPostId}
+                  onEdit={onEditPost}
+                  onDelete={onDeletePost}
+                />
+              ))}
+            </ol>
+          )}
+        </section>
+
+        {isActive ? (
+          <div className="rounded-b-[10px] border-t border-gray-200 bg-surface-muted">
+            <Composer
+              bare
+              heading={<p className="text-sm font-bold text-ink">Add a reply</p>}
+              label="Write a reply"
+              placeholder="Write your reply…"
+              submitLabel="Reply"
+              onSubmit={onReply}
+              user={user}
+            />
+          </div>
+        ) : (
+          <p className="rounded-b-[10px] border-t border-gray-200 bg-surface-muted px-6 py-4 text-sm text-muted">
+            The forum is read-only — replies can&apos;t be posted right now.
           </p>
-          {thread.replies.map((post) => (
-            <PostCard key={post.id} post={post} onEdit={onEditPost} onDelete={onDeletePost} />
-          ))}
-        </div>
-      )}
-
-      {isActive ? (
-        <Composer
-          heading={<p className="text-sm font-bold text-ink">Reply</p>}
-          placeholder="Write your reply…"
-          submitLabel="Reply"
-          onSubmit={onReply}
-          user={user}
-        />
-      ) : (
-        <ReadOnlyNotice>The forum is read-only — replies can&apos;t be posted right now.</ReadOnlyNotice>
-      )}
+        )}
+      </Card>
     </div>
   );
 }
@@ -521,7 +773,12 @@ function ThreadRow({ thread, isFirst, isLast, isOnly, isAdmin, onSelect, onEdit,
         <div className="flex min-w-0 flex-1 items-start gap-3">
           <Avatar name={thread.author_name} avatarUrl={thread.author_avatar_url} />
           <div className="min-w-0 flex-1">
-            <AuthorLine name={thread.author_name} createdAt={thread.created_at} editedAt={thread.edited_at} />
+            <AuthorLine
+              name={thread.author_name}
+              createdAt={thread.created_at}
+              editedAt={thread.edited_at}
+              tags={thread.is_own && <AuthorTag tone="you">You</AuthorTag>}
+            />
 
             {editing ? (
               <InlineEditor initial={thread.body} onSave={(body) => onEdit(thread.id, body)} onDone={() => setEditing(false)} />
@@ -541,13 +798,15 @@ function ThreadRow({ thread, isFirst, isLast, isOnly, isAdmin, onSelect, onEdit,
         </div>
 
         {isAdmin && !editing && (
-          <div className="flex shrink-0 items-center gap-3" onClick={(e) => e.stopPropagation()}>
-            <TextAction tone="pin" onClick={handlePin} disabled={pinning}>
-              {thread.is_pinned ? "Unpin" : "Pin"}
-            </TextAction>
-            <TextAction tone="edit" onClick={() => setEditing(true)}>Edit</TextAction>
-            <TextAction tone="delete" onClick={() => onDelete(thread.id)}>Delete</TextAction>
-          </div>
+          <PostMenu
+            className="-my-1.5 -mr-2"
+            label={`Actions for thread by ${thread.author_name}`}
+            actions={[
+              { label: thread.is_pinned ? "Unpin thread" : "Pin thread", onSelect: handlePin, disabled: pinning },
+              editAction(() => setEditing(true)),
+              deleteAction("Delete thread", () => onDelete(thread.id)),
+            ]}
+          />
         )}
       </div>
     </div>
@@ -593,6 +852,7 @@ function FeedView({
               <p className="text-sm font-bold text-ink">What&apos;s on your mind?</p>
             </div>
           }
+          label="Start a new thread"
           placeholder="Share your thoughts, ask a question, or start a discussion..."
           submitLabel="Post"
           onSubmit={onCreateThread}
@@ -665,6 +925,10 @@ function ForumSidebar({ query, onQueryChange }: SearchProps) {
 
 // ── Page ───────────────────────────────────────────────────────────────────────
 
+function parseThreadId(value: string | string[] | undefined) {
+  return typeof value === "string" && /^\d+$/.test(value) ? Number(value) : null;
+}
+
 type PendingDelete = { kind: "post" | "thread"; id: number };
 
 const DELETE_PROMPTS = {
@@ -694,23 +958,40 @@ export default function ForumPage() {
   });
   const threads = threadList.items;
   const isActive = programStatus.data.is_active;
-  const [selectedThread, setSelectedThread] = useState<ForumThreadDetail | null>(null);
+  // The open thread lives in the URL (/forum?thread=12), so back, refresh and links work.
+  const threadId = parseThreadId(router.query.thread);
+  const threadDetail = useAsync<ForumThreadDetail | null>(
+    () => getForumThread(threadId!),
+    [user, attempt, needsRules, threadId],
+    null,
+    { enabled: canLoad && threadId !== null, errorFallback: "Failed to load thread" },
+  );
+  // Until the new thread arrives, the last one opened may still be in threadDetail.data.
+  const selectedThread = threadDetail.data && threadDetail.data.id === threadId ? threadDetail.data : null;
+  const [highlightPostId, setHighlightPostId] = useState<number | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
   // A new search keeps the current list on screen until its results arrive.
   const firstLoad = threadList.loading && threads.length === 0 && !search;
   const loading = authLoading || (!!user && !needsRules && (programStatus.loading || firstLoad));
-  const error = actionError ?? threadList.error ?? programStatus.error;
+  const threadError = threadId !== null ? threadDetail.error : null;
+  const error = actionError ?? threadError ?? threadList.error ?? programStatus.error;
 
+  // The tint on a reply you just posted fades after a moment.
   useEffect(() => {
-    const handleForumReset = () => {
-      setSelectedThread(null);
-    };
+    if (highlightPostId === null) return;
+    const id = setTimeout(() => setHighlightPostId(null), 2500);
+    return () => clearTimeout(id);
+  }, [highlightPostId]);
 
-    window.addEventListener("forum:reset", handleForumReset);
-    return () => window.removeEventListener("forum:reset", handleForumReset);
-  }, []);
+  function openThread(id: number) {
+    router.push({ pathname: "/forum", query: { thread: id } }, undefined, { shallow: true });
+  }
+
+  function closeThread() {
+    router.push("/forum", undefined, { shallow: true });
+  }
 
   // Re-fetch rather than patching the list locally: the server sorts threads
   // (pinned ones first) and owns each thread's reply_count.
@@ -723,9 +1004,10 @@ export default function ForumPage() {
     updateUser({ forum_rules_accepted: updated.forum_rules_accepted });
   }
 
-  async function loadThread(id: number) {
+  async function reloadThread() {
+    if (threadId === null) return;
     try {
-      setSelectedThread(await getForumThread(id));
+      threadDetail.setData(await getForumThread(threadId));
     } catch (e) {
       setActionError(errorMessage(e, "Failed to load thread"));
     }
@@ -738,22 +1020,21 @@ export default function ForumPage() {
 
   async function handleReply(body: string) {
     if (!selectedThread) return;
-    await createForumPost({ thread: selectedThread.id, body });
-    await loadThread(selectedThread.id);
+    const post = await createForumPost({ thread: selectedThread.id, body });
+    await reloadThread();
+    setHighlightPostId(post.id);
     await refreshThreads();
   }
 
   async function handleEditPost(id: number, body: string) {
     await updateForumPost(id, { body });
-    if (selectedThread) await loadThread(selectedThread.id);
+    await reloadThread();
   }
 
   async function handlePinThread(id: number, is_pinned: boolean) {
     await pinForumThread(id, is_pinned);
     await refreshThreads();
-    if (selectedThread && selectedThread.id === id) {
-      setSelectedThread(await getForumThread(id));
-    }
+    if (threadId === id) await reloadThread();
   }
 
   // Admin-only edit directly from the feed row, without opening the thread.
@@ -774,13 +1055,13 @@ export default function ForumPage() {
     try {
       if (kind === "post") {
         await deleteForumPost(id);
-        if (selectedThread) await loadThread(selectedThread.id);
+        await reloadThread();
         // Deleting a reply changes the thread's reply_count in the feed.
         await refreshThreads();
       } else {
         await deleteForumThread(id);
         threadList.removeItem(id);
-        if (selectedThread?.id === id) setSelectedThread(null);
+        if (threadId === id) router.replace("/forum", undefined, { shallow: true });
       }
     } catch (e) {
       setActionError(errorMessage(e, "Failed to delete"));
@@ -795,7 +1076,7 @@ export default function ForumPage() {
 
       <AppShell
         rightRail={
-          !selectedThread ? (
+          threadId === null ? (
             <ForumSidebar query={query} onQueryChange={setQuery} />
           ) : undefined
         }
@@ -821,10 +1102,12 @@ export default function ForumPage() {
               <p className="mt-2 text-sm text-red-600">{error}</p>
               <button
                 type="button"
-                onClick={() => (actionError ? setActionError(null) : setAttempt((n) => n + 1))}
+                onClick={() =>
+                  actionError ? setActionError(null) : threadError ? closeThread() : setAttempt((n) => n + 1)
+                }
                 className="mt-4 rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white"
               >
-                {actionError ? "Dismiss" : "Try again"}
+                {actionError ? "Dismiss" : threadError ? "Back to forum" : "Try again"}
               </button>
             </div>
           ) : (
@@ -835,7 +1118,7 @@ export default function ForumPage() {
                     The program has ended — the forum is now read-only.
                   </div>
                 )}
-                {!selectedThread && (
+                {threadId === null && (
                   <div className="mb-4">
                     <PageHeader
                       title="Forum"
@@ -846,12 +1129,15 @@ export default function ForumPage() {
                   </div>
                 )}
 
-                {selectedThread ? (
+                {threadId !== null && !selectedThread ? (
+                  <ThreadSkeleton onBack={closeThread} />
+                ) : selectedThread ? (
                   <ThreadDetailView
                     key={selectedThread.id}
                     thread={selectedThread}
+                    highlightPostId={highlightPostId}
                     onBack={async () => {
-                      setSelectedThread(null);
+                      closeThread();
                       await refreshThreads();
                     }}
                     onReply={handleReply}
@@ -874,7 +1160,7 @@ export default function ForumPage() {
                         onLoadMore={threadList.loadMore}
                       />
                     }
-                    onSelect={loadThread}
+                    onSelect={openThread}
                     onCreateThread={handleCreateThread}
                     onEditThread={handleEditThreadFromFeed}
                     onDeleteThread={(id) => setPendingDelete({ kind: "thread", id })}

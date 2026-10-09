@@ -225,3 +225,13 @@ export function SearchIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function MoreHorizontalIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base} {...props}>
+      <circle cx="4.5" cy="10" r="0.75" />
+      <circle cx="10" cy="10" r="0.75" />
+      <circle cx="15.5" cy="10" r="0.75" />
+    </svg>
+  );
+}

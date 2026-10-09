@@ -44,6 +44,7 @@ class _ForumAuthorFieldsMixin(serializers.Serializer):
     author_name = serializers.SerializerMethodField()
     author_avatar_url = serializers.SerializerMethodField()
     can_edit = serializers.SerializerMethodField()
+    is_own = serializers.SerializerMethodField()
 
     def _author(self, obj):
         return getattr(obj, self.author_attr)
@@ -58,6 +59,12 @@ class _ForumAuthorFieldsMixin(serializers.Serializer):
     def get_can_edit(self, obj):
         request = self.context.get("request")
         return bool(request) and can_edit_forum_item(request.user, obj)
+
+    def get_is_own(self, obj):
+        """Whether the viewer wrote it (can_edit is also true for admins, so it can't stand in)."""
+        request = self.context.get("request")
+        author_id = getattr(obj, f"{self.author_attr}_id")
+        return bool(request) and author_id is not None and author_id == request.user.pk
 
 
 # Longest forum post or reply, in characters (the client's textareas use the same cap).
@@ -83,6 +90,7 @@ class ForumPostCreateSerializer(serializers.ModelSerializer):
 
 
 class ForumPostSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer):
+    is_thread_author = serializers.SerializerMethodField()
 
     class Meta:
         model = ForumPost
@@ -90,6 +98,7 @@ class ForumPostSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer):
             "id", "thread", "parent_post",
             "author_name", "author_avatar_url",
             "body", "created_at", "updated_at", "edited_at", "can_edit",
+            "is_own", "is_thread_author",
         ]
         read_only_fields = ["thread", "parent_post", "created_at", "updated_at", "edited_at"]
         extra_kwargs = {"body": {"max_length": FORUM_POST_MAX_CHARS}}
@@ -99,6 +108,9 @@ class ForumPostSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer):
         instance.edited_at = timezone.now()
         instance.save()
         return instance
+
+    def get_is_thread_author(self, obj):
+        return obj.author_id is not None and obj.author_id == obj.thread.created_by_id
 
 
 def _thread_posts(thread):
@@ -122,7 +134,7 @@ class ForumThreadSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer
             "id", "title", "module", "content_item",
             "author_name", "author_avatar_url",
             "created_at", "updated_at", "edited_at",
-            "body", "reply_count", "can_edit", "is_pinned", "pin_order", "can_pin",
+            "body", "reply_count", "can_edit", "is_own", "is_pinned", "pin_order", "can_pin",
         ]
         read_only_fields = ["module", "content_item", "created_at", "updated_at", "edited_at", "pin_order"]
 

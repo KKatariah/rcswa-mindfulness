@@ -59,7 +59,7 @@ test("the forum shows threads a page at a time and searches on the server", asyn
 	const fakeThread = (id: number, body: string) => ({
 		id, title: body, module: null, content_item: null, author_name: "Someone", author_avatar_url: "",
 		created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z", edited_at: null,
-		body, reply_count: 0, can_edit: false, is_pinned: false, pin_order: null, can_pin: false,
+		body, reply_count: 0, can_edit: false, is_own: false, is_pinned: false, pin_order: null, can_pin: false,
 	});
 	// 30 threads in all; the page asks for 25 at a time.
 	const all = Array.from({ length: 30 }, (_, i) => fakeThread(i + 1, `Fake thread ${i + 1}`));
