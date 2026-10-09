@@ -79,7 +79,7 @@ export default function SurveysHomePage() {
 				<main
 					aria-label="Weekly surveys"
 					tabIndex={0}
-					className="flex min-w-0 flex-col gap-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
+					className="flex min-w-0 flex-col gap-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 				>
 					<SurveyHeader
 						title="Weekly Surveys"
