@@ -11,7 +11,9 @@ directly, the recommended pattern for pluggable user models.
 """
 
 import datetime
+import hashlib
 import re
+import secrets
 from urllib.parse import quote
 
 from django.conf import settings
@@ -20,6 +22,7 @@ from django.contrib.auth.models import AbstractUser
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q
+from django.utils import timezone
 
 # Matches the video ID out of any common YouTube share/watch link shape:
 # watch?v=, youtu.be/, /embed/, /shorts/, with or without extra query params
@@ -120,6 +123,19 @@ class User(AbstractUser):
     created_at = models.DateTimeField(auto_now_add=True)
     # Set once the user ticks "I agree" on the forum rules; null blocks forum access.
     forum_rules_accepted_at = models.DateTimeField(null=True, blank=True)
+    # Wrong passwords in a row, and when a lock from too many of them ends (see app/lockout.py).
+    failed_login_count = models.PositiveSmallIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
+    # Set when an admin bans the user from posting in the forum; they can still read it.
+    # The ban ends at forum_banned_until, or lasts until lifted when that is null.
+    forum_banned_at = models.DateTimeField(null=True, blank=True)
+    forum_banned_until = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def is_forum_banned(self):
+        if self.forum_banned_at is None:
+            return False
+        return self.forum_banned_until is None or self.forum_banned_until > timezone.now()
 
     def save(self, *args, **kwargs):
         # Superusers are always app admins.
@@ -131,6 +147,49 @@ class User(AbstractUser):
 
     def __str__(self):
         return self.full_name or self.email
+
+
+def _hash_token_key(key: str) -> str:
+    return hashlib.sha256(key.encode()).hexdigest()
+
+
+class AuthToken(models.Model):
+    """API login token. One per signed-in device, expiring after a period without use
+    (see app/authentication.py). Only a hash of the key is stored, so a copy of the
+    database can't be used to log in."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="auth_tokens")
+    key_hash = models.CharField(max_length=64, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_used = models.DateTimeField(auto_now_add=True)
+
+    @classmethod
+    def issue(cls, user):
+        """Create a token for a new login and return its key (shown to the client once)."""
+        key = secrets.token_hex(20)
+        cls.objects.create(user=user, key_hash=_hash_token_key(key))
+        return key
+
+    @classmethod
+    def find(cls, key):
+        return cls.objects.select_related("user").filter(key_hash=_hash_token_key(key)).first()
+
+    def __str__(self):
+        return f"Token for {self.user} (last used {self.last_used:%Y-%m-%d})"
+
+
+class UnknownEmailLockout(models.Model):
+    """Wrong-password count and lock for an email with no account (see app/lockout.py).
+
+    Real accounts keep theirs on the user; tracking unknown emails the same way means
+    the lock message can't be used to tell which emails are registered. Only a keyed
+    hash of the email is stored.
+    """
+
+    email_hash = models.CharField(max_length=64, unique=True)
+    failed_login_count = models.PositiveSmallIntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 class Cohort(models.Model):
@@ -244,33 +303,10 @@ class ContentItem(models.Model):
         return self.title
 
 
-class Resource(models.Model):
-    # SET_NULL: supplementary resources are not destroyed when a module is removed.
-    module = models.ForeignKey(
-        Module,
-        on_delete=models.SET_NULL,
-        related_name="resources",
-        null=True,
-        blank=True,
-    )
-    title = models.CharField(max_length=200)
-    url = models.URLField()
-    resource_type = models.CharField(max_length=100)
-    display_order = models.PositiveSmallIntegerField(default=0)
-
-    class Meta:
-        ordering = ["display_order"]
-
-    def __str__(self):
-        return self.title
-
-
 class AdditionalResource(models.Model):
     """Books/documentaries/online programs shown on the Resources page (logged-in users only).
 
-    Distinct from `Resource` above, which is a per-module supplementary link —
-    this model backs a standalone, admin-managed reading-list page
-    and is not tied to a Module.
+    A standalone, admin-managed reading list; not tied to a Module.
     """
 
     class Category(models.TextChoices):
@@ -364,13 +400,12 @@ class NotificationPreference(models.Model):
     )
 
     inapp_enabled = models.BooleanField(default=True)
-    email_enabled = models.BooleanField(default=True)
 
     # Default: 5pm Perth. Command filters by this hour when running on an hourly cron.
     reminder_time = models.TimeField(default=datetime.time(17, 0))
 
     # Set by the frontend when Notification.permission === 'denied'.
-    # When True: no push attempted, no email fallback (user explicitly refused).
+    # When True: no push attempted (user explicitly refused).
     push_denied = models.BooleanField(default=False)
 
     # Profile notification preferences
@@ -391,12 +426,13 @@ class NotificationLog(models.Model):
 
     class Channel(models.TextChoices):
         INAPP = "inapp", "In-App"
-        EMAIL = "email", "Email"
         PUSH = "push", "Web Push"
 
     class Status(models.TextChoices):
         PENDING = "pending", "Pending"
         SENT = "sent", "Sent"
+        # Nothing to send to: notifications refused, or no registered device.
+        SKIPPED = "skipped", "Skipped"
         FAILED = "failed", "Failed"
 
     # CASCADE: log entries belong to the user.
@@ -686,11 +722,77 @@ class ForumPost(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     edited_at = models.DateTimeField(null=True, blank=True)
-    # Soft-delete flag. delete() is NOT overridden per spec.
+    # Soft-delete flag. delete() is NOT overridden per spec. Deleting a thread's opening
+    # post removes the whole thread from the forum; admins can see and restore either.
     is_deleted = models.BooleanField(default=False)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    # The author, or the admin who removed it. SET_NULL: the record outlives the account.
+    deleted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        null=True,
+        blank=True,
+    )
 
     class Meta:
         ordering = ["created_at"]
 
+    def soft_delete(self, by):
+        self.is_deleted = True
+        self.deleted_at = timezone.now()
+        self.deleted_by = by
+        self.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
+
+    def restore(self):
+        self.is_deleted = False
+        self.deleted_at = None
+        self.deleted_by = None
+        self.save(update_fields=["is_deleted", "deleted_at", "deleted_by"])
+
     def __str__(self):
         return f"Post by {self.author} in {self.thread}"
+
+
+class ForumFlag(models.Model):
+    """A report that a post breaks the forum rules, waiting for an admin to act on it."""
+
+    class Resolution(models.TextChoices):
+        DISMISSED = "dismissed", "Dismissed"
+        HIDDEN = "hidden", "Post hidden"
+        BANNED = "banned", "Author banned"
+
+    post = models.ForeignKey(ForumPost, on_delete=models.CASCADE, related_name="flags")
+    # SET_NULL: the report stays in the moderation history if the reporter's account goes.
+    flagged_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="forum_flags",
+        null=True,
+    )
+    reason = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    # Null while the report is open.
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        related_name="+",
+        null=True,
+        blank=True,
+    )
+    resolution = models.CharField(max_length=10, choices=Resolution.choices, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        constraints = [
+            # One open report per person per post; they can report it again once it's been dealt with.
+            models.UniqueConstraint(
+                fields=["post", "flagged_by"],
+                condition=Q(resolved_at__isnull=True),
+                name="forum_flag_one_open_per_reporter",
+            ),
+        ]
+
+    def __str__(self):
+        return f"Flag on post {self.post_id} by {self.flagged_by}"

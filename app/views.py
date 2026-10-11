@@ -1,32 +1,43 @@
+import logging
 import re
 import secrets
 import unicodedata
 
-from django.conf import settings as django_settings
+from django.conf import settings
+from django.contrib.auth import authenticate
+from django.db import DatabaseError, connection, transaction
+from django.db.models import Count, Exists, F, Max, OuterRef, Prefetch, ProtectedError, Q
 from django.http import HttpResponse
-from django.shortcuts import render
 from django.utils import timezone
-from django.db import transaction
-from django.db.models import Count, Prefetch, ProtectedError
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
 from rest_framework import mixins, status, viewsets
-from rest_framework.decorators import action, api_view, permission_classes, throttle_classes
+from rest_framework.decorators import action, api_view, authentication_classes, permission_classes, throttle_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.throttling import ScopedRateThrottle
-from django.contrib.auth import authenticate
-from rest_framework.authtoken.models import Token
-from .serializers import ProfileUpdateSerializer, ChangePasswordSerializer
-from .utils import gravatar_url
 
-from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
-
+from .access import (
+    active_cohort_start_date,
+    is_admin,
+    is_participant,
+    is_program_active,
+    module_is_unlocked,
+    pick_signup_cohort,
+    survey_is_unlocked,
+)
+from .exports import cohort_names, survey_responses_csv
+from .lockout import lock_minutes_left, unknown_email_entry
 from .models import (
     AdditionalResource,
+    AuthToken,
     Cohort,
     ContentCompletion,
     ContentItem,
     ContentView,
     Enrollment,
+    ForumFlag,
     ForumPost,
     ForumThread,
     Module,
@@ -37,83 +48,88 @@ from .models import (
     SurveyResponse,
     User,
 )
-
+from .moderation import (
+    ban_from_forum,
+    lift_forum_ban,
+    moderate_post,
+    parse_ban_days,
+    require_not_forum_banned,
+)
 from .notifications import notify_survey_unlocked
-from .permissions import IsAdminOrStaff, IsAdminOrSelf, IsApproved, user_is_approved
-from .throttles import AuthRateThrottle
-from .exports import cohort_names, survey_responses_csv
-
-
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-from django.conf import settings
-
+from .pagination import ListPagination
+from .permissions import (
+    HasAcceptedForumRules,
+    IsAdminOrSelf,
+    IsAdminOrStaff,
+    IsApproved,
+    IsAuthorOrAdmin,
+    user_is_approved,
+)
 from .serializers import (
     AdditionalResourceSerializer,
+    AdminUserSerializer,
+    AdminUserUpdateSerializer,
+    ChangePasswordSerializer,
     CohortSerializer,
     ContentCompletionSerializer,
     ContentItemSerializer,
     ContentViewSerializer,
     EnrollmentSerializer,
+    ForumFlagCreateSerializer,
     ForumPostCreateSerializer,
     ForumPostSerializer,
     ForumThreadCreateSerializer,
     ForumThreadDetailSerializer,
     ForumThreadSerializer,
+    ModeratedPostSerializer,
     ModuleSerializer,
     ModuleSummarySerializer,
     NotificationLogSerializer,
     NotificationPreferenceSerializer,
     PushSubscriptionSerializer,
     RegisterSerializer,
+    ReportedPostSerializer,
     SurveyAdminSerializer,
     SurveyDetailSerializer,
     SurveyResponseAdminSerializer,
     SurveyResponseSerializer,
     SurveyResponseUpdateSerializer,
     SurveySerializer,
-    AdminUserSerializer,
-    AdminUserUpdateSerializer,
     UserDisplayNameSerializer,
-    _is_program_active,
-    _pick_signup_cohort,
-    module_is_unlocked,
-    _survey_is_unlocked,
-    _cohort_breakdown,
-    _module_completion_stats,
-    _module_student_progress,
-    _user_overview,
-    _survey_response_rates,
-    _forum_activity_stats,
-    _enrollment_status_breakdown,
 )
+from .stats import dashboard_stats, module_student_progress, user_overview
+from .throttles import AuthRateThrottle, ForumFlagRateThrottle
+from .utils import gravatar_url
 
-# Create your views here.
+logger = logging.getLogger(__name__)
 
 
-def index_view(request):
-    return render(request, 'app/index.html')
+def _created_or_ok(data, created):
+    """201 for a newly created row, 200 when an existing one was returned."""
+    return Response(data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
-def profile_view(request):
-    context = {
-        "name": "placeholder"
-    }  # will need to start on class forms next in forms.py
-    return render(request, 'app/profile.html', context)
+def _validate_reorder_ids(ids, existing_ids, what, scope=""):
+    """A reorder payload must list every existing id exactly once."""
+    if not isinstance(ids, list) or not all(type(i) is int for i in ids):
+        raise ValidationError({"ids": f"Expected a list of {what} ids."})
+    if len(ids) != len(existing_ids) or set(ids) != set(existing_ids):
+        raise ValidationError({"ids": f"Must list every {what}{scope} exactly once."})
+
+
+def _save_display_order(model, objects_by_id, ids):
+    """Number the objects 1, 2, 3… in the order of *ids*."""
+    with transaction.atomic():
+        for position, obj_id in enumerate(ids, start=1):
+            objects_by_id[obj_id].display_order = position
+        model.objects.bulk_update(objects_by_id.values(), ["display_order"])
 
 
 # API views
 
 
-def _active_cohort_start_date(user):
-    enrollment = (
-        Enrollment.objects
-        .filter(user=user, status=Enrollment.Status.ACTIVE)
-        .select_related("cohort")
-        .order_by("-enrolled_at")
-        .first()
-    )
-    return enrollment.cohort.start_date.isoformat() if enrollment else None
+def _iso_or_none(value):
+    return value.isoformat() if value else None
 
 
 def _enrollment_status(user):
@@ -131,8 +147,10 @@ def _user_payload(user):
         "display_name": user.display_name,
         "avatar_url": gravatar_url(user.email),
         "auth_provider": user.auth_provider,
-        "cohort_start_date": _active_cohort_start_date(user),
+        "cohort_start_date": _iso_or_none(active_cohort_start_date(user)),
         "forum_rules_accepted": user.forum_rules_accepted_at is not None,
+        "forum_banned": user.is_forum_banned,
+        "forum_banned_until": _iso_or_none(user.forum_banned_until) if user.is_forum_banned else None,
         "is_approved": user_is_approved(user),
         "enrollment_status": _enrollment_status(user),
     }
@@ -141,7 +159,7 @@ def _user_payload(user):
 def _auto_enroll_new_user(user):
     """New signups are enrolled pending approval into the currently active
     cohort, or the soonest upcoming one if none is active yet."""
-    cohort = _pick_signup_cohort()
+    cohort = pick_signup_cohort()
     if cohort:
         Enrollment.objects.create(user=user, cohort=cohort, status=Enrollment.Status.PENDING)
 
@@ -184,21 +202,31 @@ def login_view(request):
         )
 
     # Emails are matched case-insensitively; authenticate() needs the stored spelling.
+    # Unknown emails go through authenticate() too, so they're counted and locked like accounts.
     match = User.objects.filter(email__iexact=email.strip()).first()
-    user = authenticate(request, email=match.email, password=password) if match else None
+    user = authenticate(request, email=match.email if match else email.strip(), password=password)
 
     if user is None:
+        if match:
+            match.refresh_from_db(fields=["locked_until"])
+            minutes = lock_minutes_left(match)
+        else:
+            minutes = lock_minutes_left(unknown_email_entry(email))
+        if minutes:
+            unit = "minute" if minutes == 1 else "minutes"
+            return Response(
+                {"error": f"Too many failed attempts. Try again in {minutes} {unit}."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         return Response(
             {"error": "Invalid credentials."},
             status=status.HTTP_401_UNAUTHORIZED,
         )
 
-    token, _ = Token.objects.get_or_create(user=user)
-
     return Response(
         {
             "message": "Login successful",
-            "token": token.key,
+            "token": AuthToken.issue(user),
             "user": _user_payload(user),
         },
         status=status.HTTP_200_OK,
@@ -208,7 +236,9 @@ def login_view(request):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])  # plain IsAuthenticated: pending users must be able to log out
 def logout_view(request):
-    request.user.auth_token.delete()
+    # Signs out this device only; the user's other devices keep their own tokens.
+    if isinstance(request.auth, AuthToken):
+        request.auth.delete()
     return Response(
         {"message": "Logout successful"},
         status=status.HTTP_200_OK,
@@ -257,13 +287,18 @@ def google_login_view(request):
     if user is None:
         user = User.objects.create_user(email=email, full_name=full_name, auth_provider="google")
         _auto_enroll_new_user(user)
-
-    token_obj, _ = Token.objects.get_or_create(user=user)
+    elif user.has_usable_password():
+        # Sign-up doesn't verify emails, so a password account may have been registered by
+        # someone other than the address's owner. Google must not hand it over.
+        return Response(
+            {"error": "An account with this email already exists. Log in with your email and password."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     return Response(
         {
             "message": "Google login successful",
-            "token": token_obj.key,
+            "token": AuthToken.issue(user),
             "user": _user_payload(user),
         },
         status=status.HTTP_200_OK,
@@ -284,11 +319,10 @@ class ModuleViewSet(viewsets.ModelViewSet):
                     "content_items",
                     queryset=ContentItem.objects.order_by("display_order", "id"),
                 ),
-                "resources",
             )
         )
         u = self.request.user
-        if getattr(u, "role", None) == "admin" or u.is_staff:
+        if is_admin(u):
             return qs  # admins see unpublished modules too
         if not Enrollment.objects.filter(user=u, status=Enrollment.Status.ACTIVE).exists():
             return qs.none()  # not yet approved into an active cohort
@@ -312,11 +346,8 @@ class ModuleViewSet(viewsets.ModelViewSet):
         The modules keep the same set of week numbers, just reassigned, so gaps survive.
         """
         ids = request.data.get("ids")
-        if not isinstance(ids, list) or not all(type(i) is int for i in ids):
-            raise ValidationError({"ids": "Expected a list of module ids."})
         modules = {m.id: m for m in Module.objects.all()}
-        if len(ids) != len(modules) or set(ids) != set(modules):
-            raise ValidationError({"ids": "Must list every module exactly once."})
+        _validate_reorder_ids(ids, modules, "module")
         weeks = sorted(m.week_number for m in modules.values())
         with transaction.atomic():
             # week_number is unique, so park everything on unused numbers before the real swap.
@@ -330,17 +361,15 @@ class ModuleViewSet(viewsets.ModelViewSet):
     def progress(self, request, pk=None):
         """Which active students have (and haven't) worked through this module. ?cohort=<id> narrows it."""
         module = self.get_object()
-        return Response(_module_student_progress(module, cohort_id=_id_param(request, "cohort")))
+        return Response(module_student_progress(module, cohort_id=_id_param(request, "cohort")))
 
     def get_permissions(self):
-        if self.action == "summary":
-            return [AllowAny()]
-        if self.action in ("create", "update", "partial_update", "destroy", "reorder", "progress"):
-            return [IsApproved(), IsAdminOrStaff()]
         # The home page lists the programme for logged-out visitors. This override replaces
         # the action's own permission_classes, so it has to allow it here.
         if self.action == "summary":
             return [AllowAny()]
+        if self.action in ("create", "update", "partial_update", "destroy", "reorder", "progress"):
+            return [IsApproved(), IsAdminOrStaff()]
         return [IsApproved()]
 
 
@@ -361,15 +390,9 @@ class ContentItemViewSet(viewsets.ModelViewSet):
         """Set a module's item order in one go: {"module": id, "ids": [item ids in display order]}."""
         module_id = request.data.get("module")
         ids = request.data.get("ids")
-        if not isinstance(ids, list):
-            raise ValidationError({"ids": "Expected a list of content item ids."})
         items = {item.id: item for item in ContentItem.objects.filter(module_id=module_id)}
-        if sorted(ids) != sorted(items):
-            raise ValidationError({"ids": "Must list every content item in the module exactly once."})
-        with transaction.atomic():
-            for position, item_id in enumerate(ids, start=1):
-                items[item_id].display_order = position
-            ContentItem.objects.bulk_update(items.values(), ["display_order"])
+        _validate_reorder_ids(ids, items, "content item", " in the module")
+        _save_display_order(ContentItem, items, ids)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
@@ -405,25 +428,20 @@ class AdditionalResourceViewSet(viewsets.ModelViewSet):
         ids = request.data.get("ids")
         if category not in AdditionalResource.Category.values:
             raise ValidationError({"category": "Unknown category."})
-        if not isinstance(ids, list) or not all(type(i) is int for i in ids):
-            raise ValidationError({"ids": "Expected a list of resource ids."})
         resources = {r.id: r for r in AdditionalResource.objects.filter(category=category)}
-        if len(ids) != len(resources) or set(ids) != set(resources):
-            raise ValidationError({"ids": "Must list every resource in the category exactly once."})
-        with transaction.atomic():
-            for position, resource_id in enumerate(ids, start=1):
-                resources[resource_id].display_order = position
-            AdditionalResource.objects.bulk_update(resources.values(), ["display_order"])
+        _validate_reorder_ids(ids, resources, "resource", " in the category")
+        _save_display_order(AdditionalResource, resources, ids)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class EnrollmentViewSet(viewsets.ModelViewSet):
     serializer_class = EnrollmentSerializer
     permission_classes = [IsApproved, IsAdminOrStaff]
+    pagination_class = ListPagination
     http_method_names = ["get", "post", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
-        qs = Enrollment.objects.select_related("user", "cohort").order_by("-enrolled_at")
+        qs = Enrollment.objects.select_related("user", "cohort").order_by("-enrolled_at", "-pk")
         cohort_id = _id_param(self.request, "cohort")
         if cohort_id:
             qs = qs.filter(cohort_id=cohort_id)
@@ -464,12 +482,7 @@ class ContentCompletionViewSet(
                 module=content_item.module,
             )
 
-        out = self.get_serializer(obj)
-
-        return Response(
-            out.data,
-            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
-        )
+        return _created_or_ok(self.get_serializer(obj).data, created)
 
 
 class ContentViewViewSet(
@@ -492,11 +505,7 @@ class ContentViewViewSet(
             user=request.user,
             module=serializer.validated_data["module"],
         )
-        out = self.get_serializer(obj)
-        return Response(
-            out.data,
-            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
-        )
+        return _created_or_ok(self.get_serializer(obj).data, created)
 
 
 # ── Forum ──────────────────────────────────────────────────────────────────────
@@ -546,46 +555,79 @@ def _attaches_to_previous(ch: str) -> bool:
     )
 
 
-class IsAuthorOrAdmin(BasePermission):
-    def has_object_permission(self, request, view, obj):
-        u = request.user
-        if getattr(u, "role", None) == "admin" or u.is_staff:
-            return True
-        if isinstance(obj, ForumThread):
-            return obj.created_by_id == u.pk
-        if isinstance(obj, ForumPost):
-            return obj.author_id == u.pk
-        return False
+class _ForumWriteMixin:
+    """Shared by threads and posts: only creating is rate limited, authors and admins
+    edit and delete, nothing new can be posted once the programme has ended, and
+    someone banned from the forum can't post or edit."""
 
-
-class HasAcceptedForumRules(BasePermission):
-    message = "You must agree to the forum rules before using the forum."
-
-    def has_permission(self, request, view):
-        u = request.user
-        # Admins moderate the forum and aren't asked to accept the rules.
-        if getattr(u, "role", None) == "admin" or u.is_staff:
-            return True
-        return u.forum_rules_accepted_at is not None
-
-
-class ForumThreadViewSet(viewsets.ModelViewSet):
-    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     throttle_scope = "forum_post"
+    # Validates the create payload; output_serializer_class renders the result.
+    create_serializer_class = None
+    output_serializer_class = None
 
     def get_throttles(self):
         # Only creating threads/posts is rate limited; reads and edits are not.
         return [ScopedRateThrottle()] if self.action == "create" else []
 
+    def get_permissions(self):
+        if self.action in ["partial_update", "destroy"]:
+            return [IsApproved(), HasAcceptedForumRules(), IsAuthorOrAdmin()]
+        return [IsApproved(), HasAcceptedForumRules()]
+
+    def create(self, request, *args, **kwargs):
+        require_not_forum_banned(request.user)
+        serializer = self.create_serializer_class(data=request.data, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+        self.perform_create(serializer)
+        out = self.output_serializer_class(serializer.instance, context=self.get_serializer_context())
+        return Response(out.data, status=status.HTTP_201_CREATED, headers=self.get_success_headers(out.data))
+
+    def partial_update(self, request, *args, **kwargs):
+        require_not_forum_banned(request.user)
+        return super().partial_update(request, *args, **kwargs)
+
+    @staticmethod
+    def _require_program_active():
+        if not is_program_active():
+            raise PermissionDenied("The program has ended; the forum is read-only.")
+
+
+def _live_posts():
+    """Posts still on the forum: not deleted, and not in a thread whose opening post was deleted."""
+    return ForumPost.objects.filter(is_deleted=False).exclude(thread__opened_by__is_deleted=True)
+
+
+def _opening_post(thread):
+    """The thread's opening post (older threads may predate opened_by)."""
+    if thread.opened_by_id:
+        return thread.opened_by
+    return ForumPost.objects.filter(thread=thread).order_by("created_at", "pk").first()
+
+
+class ForumThreadViewSet(_ForumWriteMixin, viewsets.ModelViewSet):
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+    create_serializer_class = ForumThreadCreateSerializer
+    output_serializer_class = ForumThreadSerializer
+    pagination_class = ListPagination
+
     def get_queryset(self):
-        return (
+        posts = ForumPost.objects.select_related("author")
+        if self.action == "retrieve":
+            posts = posts.annotate(flagged_by_me=Exists(ForumFlag.objects.filter(
+                post=OuterRef("pk"), flagged_by=self.request.user, resolved_at__isnull=True,
+            )))
+        qs = (
             ForumThread.objects
-            .prefetch_related(
-                Prefetch("posts", queryset=ForumPost.objects.select_related("author"))
-            )
+            # A thread whose opening post was deleted is gone from the forum (admins see it under Moderation).
+            .exclude(opened_by__is_deleted=True)
+            .prefetch_related(Prefetch("posts", queryset=posts))
             .select_related("created_by")
-            .order_by("-is_pinned", "pin_order", "-updated_at")
+            .order_by("-is_pinned", "pin_order", "-updated_at", "-pk")
         )
+        search = self.request.query_params.get("search", "").strip()
+        if self.action == "list" and search:
+            qs = qs.filter(_thread_search(search, is_admin(self.request.user)))
+        return qs
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -606,18 +648,8 @@ class ForumThreadViewSet(viewsets.ModelViewSet):
 
             return response
 
-    def create(self, request, *args, **kwargs):
-        serializer = ForumThreadCreateSerializer(
-            data=request.data, context=self.get_serializer_context()
-        )
-        serializer.is_valid(raise_exception=True)
-        self.perform_create(serializer)
-        out = ForumThreadSerializer(serializer.instance, context=self.get_serializer_context())
-        return Response(out.data, status=status.HTTP_201_CREATED, headers=self.get_success_headers(out.data))
-
     def perform_create(self, serializer):
-        if not _is_program_active():
-            raise PermissionDenied("The program has ended; the forum is read-only.")
+        self._require_program_active()
         body = serializer.validated_data.pop("body")
         title = _derive_title(body)
         with transaction.atomic():
@@ -631,46 +663,78 @@ class ForumThreadViewSet(viewsets.ModelViewSet):
             thread.opened_by = head_post
             thread.save(update_fields=["opened_by"])
 
-    def get_permissions(self):
-        if self.action in ["partial_update", "destroy"]:
-            return [IsApproved(), HasAcceptedForumRules(), IsAuthorOrAdmin()]
-        return [IsApproved(), HasAcceptedForumRules()]
+    def perform_destroy(self, instance):
+        # Soft delete: removing the opening post takes the thread off the forum, and an admin can restore it.
+        head = _opening_post(instance)
+        if head is None:
+            instance.delete()
+        else:
+            head.soft_delete(self.request.user)
+
+
+def _thread_search(text, viewer_is_admin):
+    """Threads whose opening post or shown author name contains *text*.
+
+    Matches only the name the viewer would see (serializers.forum._forum_author_name), so a
+    student can't find someone's real name behind their display name by searching for it.
+    """
+    opening_post = ForumPost.objects.filter(is_head_post=True, body__icontains=text)
+    match = Q(pk__in=opening_post.values("thread_id"))
+    if viewer_is_admin:
+        match |= Q(created_by__display_name__icontains=text) | Q(created_by__full_name__icontains=text)
+    else:
+        match |= Q(created_by__display_name__icontains=text)
+        match |= Q(created_by__display_name="", created_by__full_name__icontains=text)
+    if text.lower() in "deleted user":
+        match |= Q(created_by__isnull=True)
+    return match
 
 
 class ForumPostViewSet(
+    _ForumWriteMixin,
     mixins.CreateModelMixin,
     mixins.UpdateModelMixin,
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    http_method_names = ["post", "patch", "delete", "head", "options"]
+    """Replies, plus reporting posts and the admin moderation actions.
+
+    POST /forum/posts/{id}/flag/        report a post (anyone but its author)
+    GET  /forum/posts/reported/         admin: posts with open reports
+    GET  /forum/posts/removed/          admin: deleted posts and threads
+    POST /forum/posts/{id}/moderate/    admin: {"action": "dismiss" | "hide" | "ban", "ban_days"}
+    POST /forum/posts/{id}/restore/     admin: put a deleted post (or thread) back
+    """
+
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     serializer_class = ForumPostSerializer
-    throttle_scope = "forum_post"
+    create_serializer_class = ForumPostCreateSerializer
+    output_serializer_class = ForumPostSerializer
+    pagination_class = ListPagination
+    _ADMIN_ACTIONS = ("reported", "removed", "moderate", "restore")
+
+    def get_permissions(self):
+        if self.action in self._ADMIN_ACTIONS:
+            return [IsApproved(), IsAdminOrStaff()]
+        return super().get_permissions()
 
     def get_throttles(self):
-        # Only creating threads/posts is rate limited; reads and edits are not.
-        return [ScopedRateThrottle()] if self.action == "create" else []
+        if self.action == "flag":
+            return [ForumFlagRateThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):
-        return ForumPost.objects.filter(is_deleted=False).select_related("author")
+        if self.action in self._ADMIN_ACTIONS:
+            return ForumPost.objects.select_related("author", "thread", "deleted_by")
+        return _live_posts().select_related("author")
 
     def get_serializer_class(self):
         if self.action == "create":
             return ForumPostCreateSerializer
         return ForumPostSerializer
 
-    def create(self, request, *args, **kwargs):
-        create_ser = ForumPostCreateSerializer(
-            data=request.data, context=self.get_serializer_context()
-        )
-        create_ser.is_valid(raise_exception=True)
-        self.perform_create(create_ser)
-        out = ForumPostSerializer(create_ser.instance, context=self.get_serializer_context())
-        return Response(out.data, status=status.HTTP_201_CREATED, headers=self.get_success_headers(out.data))
-
     def perform_create(self, serializer):
-        if not _is_program_active():
-            raise PermissionDenied("The program has ended; the forum is read-only.")
+        self._require_program_active()
         serializer.save(author=self.request.user)
 
     def perform_update(self, serializer):
@@ -692,13 +756,72 @@ class ForumPostViewSet(
             raise ValidationError(
                 "Cannot delete the opening post. Delete the thread instead."
             )
-        instance.is_deleted = True
-        instance.save(update_fields=["is_deleted"])
+        instance.soft_delete(self.request.user)
 
-    def get_permissions(self):
-        if self.action in ["partial_update", "destroy"]:
-            return [IsApproved(), HasAcceptedForumRules(), IsAuthorOrAdmin()]
-        return [IsApproved(), HasAcceptedForumRules()]
+    @action(detail=True, methods=["post"])
+    def flag(self, request, pk=None):
+        post = self.get_object()
+        require_not_forum_banned(request.user)
+        if post.author_id == request.user.pk:
+            raise ValidationError({"detail": "You can't report your own post."})
+        serializer = ForumFlagCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        _, created = ForumFlag.objects.get_or_create(
+            post=post, flagged_by=request.user, resolved_at__isnull=True,
+            defaults={"reason": serializer.validated_data["reason"].strip()},
+        )
+        # Reporting twice is harmless: the first report is still waiting for a moderator.
+        return Response(
+            {"detail": "Thanks for letting us know. A moderator will review this post."},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    def _paged(self, queryset, serializer_class):
+        page = self.paginate_queryset(queryset)
+        return self.get_paginated_response(serializer_class(page, many=True, context=self.get_serializer_context()).data)
+
+    @action(detail=False, methods=["get"])
+    def reported(self, request):
+        open_flags = Q(flags__resolved_at__isnull=True)
+        qs = (
+            self.get_queryset()
+            .annotate(
+                open_flag_count=Count("flags", filter=open_flags),
+                last_flagged_at=Max("flags__created_at", filter=open_flags),
+            )
+            .filter(open_flag_count__gt=0)
+            .prefetch_related(Prefetch(
+                "flags",
+                queryset=ForumFlag.objects.filter(resolved_at__isnull=True).select_related("flagged_by"),
+                to_attr="open_flags",
+            ))
+            .order_by("-last_flagged_at", "-pk")
+        )
+        return self._paged(qs, ReportedPostSerializer)
+
+    @action(detail=False, methods=["get"])
+    def removed(self, request):
+        qs = self.get_queryset().filter(is_deleted=True).order_by(F("deleted_at").desc(nulls_last=True), "-pk")
+        return self._paged(qs, ModeratedPostSerializer)
+
+    @action(detail=True, methods=["post"])
+    def moderate(self, request, pk=None):
+        post = self.get_object()
+        action_name = request.data.get("action")
+        ban_days = parse_ban_days({"days": request.data.get("ban_days")}) if action_name == "ban" else None
+        moderate_post(post, action_name, request.user, ban_days)
+        post.refresh_from_db()
+        if post.author_id:
+            post.author.refresh_from_db()
+        return Response(ModeratedPostSerializer(post, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"])
+    def restore(self, request, pk=None):
+        post = self.get_object()
+        if not post.is_deleted:
+            raise ValidationError({"detail": "This post hasn't been removed."})
+        post.restore()
+        return Response(ModeratedPostSerializer(post, context=self.get_serializer_context()).data)
 
 
 # ── User profile ───────────────────────────────────────────────────────────────
@@ -720,27 +843,44 @@ class UserProfileViewSet(
 ):
     permission_classes = [IsApproved]
     serializer_class = UserDisplayNameSerializer
+    pagination_class = ListPagination
     http_method_names = ["get", "patch", "delete", "head", "options", "post"]
 
     def get_queryset(self):
         u = self.request.user
-        if getattr(u, "role", None) == "admin" or u.is_staff:
-            return User.objects.all()
-        return User.objects.filter(pk=u.pk)
+        if not is_admin(u):
+            return User.objects.filter(pk=u.pk)
+        qs = User.objects.prefetch_related(
+            # Newest first, so AdminUserSerializer's enrollment is the most recent one.
+            Prefetch("enrollments", queryset=Enrollment.objects.order_by("-enrolled_at", "-pk"))
+        ).order_by("-created_at", "-pk")
+        if self.action == "list":
+            search = self.request.query_params.get("search", "").strip()
+            if search:
+                qs = qs.filter(
+                    Q(full_name__icontains=search) | Q(display_name__icontains=search) | Q(email__icontains=search)
+                )
+            role = self.request.query_params.get("role")
+            if role:
+                qs = qs.filter(role=role)
+            if self.request.query_params.get("forum_banned") == "true":
+                qs = qs.filter(forum_banned_at__isnull=False).filter(
+                    Q(forum_banned_until__isnull=True) | Q(forum_banned_until__gt=timezone.now())
+                )
+        return qs
 
     def get_serializer_class(self):
-        u = self.request.user
-        is_admin = getattr(u, "role", None) == "admin" or u.is_staff
-        if self.action in ("partial_update", "update") and is_admin:
+        admin = is_admin(self.request.user)
+        if self.action in ("partial_update", "update") and admin:
             return AdminUserUpdateSerializer
-        if is_admin:
+        if admin:
             return AdminUserSerializer
         return UserDisplayNameSerializer
 
     @action(detail=True, methods=["get"])
     def overview(self, request, pk=None):
         """An admin's view of one person: profile, enrollments, module progress, surveys, forum activity."""
-        return Response(_user_overview(self.get_object()))
+        return Response(user_overview(self.get_object()))
 
     @action(detail=True, methods=["post"], url_path="reset-password")
     def reset_password(self, request, pk=None):
@@ -754,13 +894,23 @@ class UserProfileViewSet(
         user.set_password(temp_password)
         user.save(update_fields=["password"])
         # Sign them out everywhere; the old token is no longer valid.
-        Token.objects.filter(user=user).delete()
+        user.auth_tokens.all().delete()
         return Response({"temporary_password": temp_password})
+
+    @action(detail=True, methods=["post", "delete"], url_path="forum-ban")
+    def forum_ban(self, request, pk=None):
+        """POST {"days": 1 | 7 | 30 | null} bans the user from posting in the forum; DELETE lifts it."""
+        user = self.get_object()
+        if request.method == "DELETE":
+            lift_forum_ban(user)
+        else:
+            ban_from_forum(user, parse_ban_days(request.data), request.user)
+        return Response(AdminUserSerializer(user, context=self.get_serializer_context()).data)
 
     def get_permissions(self):
         if self.action in ("partial_update", "update"):
             return [IsApproved(), IsAdminOrSelf()]
-        if self.action in ("destroy", "overview", "reset_password"):
+        if self.action in ("destroy", "overview", "reset_password", "forum_ban"):
             return [IsApproved(), IsAdminOrStaff()]
         return [IsApproved()]
 
@@ -801,8 +951,7 @@ class SurveyViewSet(viewsets.ModelViewSet):
         )
         if self.action in self._ADMIN_ACTIONS:
             qs = qs.annotate(response_count=Count("responses")).order_by("module__week_number", "code")
-        u = self.request.user
-        if not (getattr(u, "role", None) == "admin" or u.is_staff):
+        if not is_admin(self.request.user):
             # Hide weekly surveys with a null module (orphaned) from students.
             qs = qs.exclude(type=Survey.SurveyType.WEEKLY, module__isnull=True)
         return qs
@@ -847,11 +996,17 @@ class SurveyViewSet(viewsets.ModelViewSet):
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
-        # Batch-fetch completions once per request so get_is_unlocked is O(1) per survey.
-        if self.request and self.request.user.is_authenticated:
+        # Batch-fetch completions and responses once per request so get_is_unlocked
+        # and get_has_responded are O(1) per survey. Admin actions use
+        # SurveyAdminSerializer, which needs neither.
+        if self.action not in self._ADMIN_ACTIONS and self.request and self.request.user.is_authenticated:
             ctx["completed_ids"] = set(
                 ContentCompletion.objects.filter(user=self.request.user)
                 .values_list("content_item_id", flat=True)
+            )
+            ctx["responded_ids"] = set(
+                SurveyResponse.objects.filter(user=self.request.user)
+                .values_list("survey_id", flat=True)
             )
         return ctx
 
@@ -882,8 +1037,7 @@ class SurveyViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"], url_path="module-responses")
     def module_responses(self, request):
-        u = request.user
-        if not (getattr(u, "role", None) == "admin" or u.is_staff):
+        if not is_admin(request.user):
             raise PermissionDenied()
         module_id = _id_param(request, "module")
         if not module_id:
@@ -925,7 +1079,13 @@ class SurveyResponseViewSet(
 
         survey = serializer.validated_data["survey"]
 
-        if not _survey_is_unlocked(survey, request.user):
+        if not (is_admin(request.user) or is_participant(request.user)):
+            return Response(
+                {"detail": "Only enrolled participants can submit surveys."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if not survey_is_unlocked(survey, request.user):
             return Response(
                 {"detail": "This survey is locked. Complete all module content first."},
                 status=status.HTTP_403_FORBIDDEN,
@@ -981,11 +1141,7 @@ class PushSubscriptionViewSet(
                 "user_agent": request.META.get("HTTP_USER_AGENT", ""),
             },
         )
-        out = self.get_serializer(obj)
-        return Response(
-            out.data,
-            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
-        )
+        return _created_or_ok(self.get_serializer(obj).data, created)
 
 
 # ── Notification preferences ───────────────────────────────────────────────────
@@ -1077,7 +1233,7 @@ def vapid_public_key_view(request):
     pushManager.subscribe({ applicationServerKey: key }).
     This endpoint is intentionally unauthenticated — the public key is public.
     """
-    return Response({"vapid_public_key": django_settings.VAPID_PUBLIC_KEY})
+    return Response({"vapid_public_key": settings.VAPID_PUBLIC_KEY})
 
 
 @api_view(["GET"])
@@ -1089,7 +1245,7 @@ def current_user(request):
 @api_view(["PATCH"])
 @permission_classes([IsApproved])
 def update_profile_view(request):
-    serializer = ProfileUpdateSerializer(request.user, data=request.data, partial=True)
+    serializer = UserDisplayNameSerializer(request.user, data=request.data, partial=True)
     if serializer.is_valid():
         serializer.save()
         return Response(
@@ -1124,12 +1280,11 @@ def change_password_view(request):
     request.user.set_password(new_password)
     request.user.save()
 
-    # Password change invalidates old sessions/tokens for security — issue a fresh token
-    request.user.auth_token.delete()
-    new_token = Token.objects.create(user=request.user)
+    # A new password signs out every device; this one gets a fresh token.
+    request.user.auth_tokens.all().delete()
 
     return Response(
-        {"message": "Password changed successfully", "token": new_token.key},
+        {"message": "Password changed successfully", "token": AuthToken.issue(request.user)},
         status=status.HTTP_200_OK,
     )
 
@@ -1139,14 +1294,7 @@ def change_password_view(request):
 @api_view(["GET"])
 @permission_classes([IsApproved, IsAdminOrStaff])
 def dashboard_stats_view(request):
-    return Response({
-        "total_enrolled": Enrollment.objects.filter(status=Enrollment.Status.ACTIVE).count(),
-        "by_cohort": _cohort_breakdown(),
-        "modules": _module_completion_stats(),
-        "survey_response_rates": _survey_response_rates(),
-        "forum_activity": _forum_activity_stats(),
-        "enrollment_status_breakdown": _enrollment_status_breakdown(),
-    })
+    return Response(dashboard_stats())
 
 
 @api_view(["POST"])
@@ -1160,6 +1308,19 @@ def accept_forum_rules_view(request):
 
 
 @api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def health_view(request):
+    """For uptime monitors: 200 when the app can reach its database, 503 when it can't."""
+    try:
+        connection.ensure_connection()
+    except DatabaseError:
+        logger.exception("Health check could not reach the database")
+        return Response({"status": "error"}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+    return Response({"status": "ok"})
+
+
+@api_view(["GET"])
 @permission_classes([IsApproved])
 def program_status_view(request):
-    return Response({"is_active": _is_program_active()})
+    return Response({"is_active": is_program_active()})

@@ -11,7 +11,6 @@ Usage:
 """
 
 import csv
-import sys
 from zoneinfo import ZoneInfo
 
 from django.core.management.base import BaseCommand
@@ -74,7 +73,7 @@ class Command(BaseCommand):
 
         if options["csv"]:
             writer = csv.DictWriter(
-                sys.stdout,
+                self.stdout,
                 fieldnames=["cohort", "active_enrollments", "users_with_push", "adoption_pct"],
             )
             writer.writeheader()

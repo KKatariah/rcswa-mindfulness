@@ -11,23 +11,21 @@ current week's meditation: the first audio item (by display order) in the
 published module for that week, where the week is counted from cohort.start_date.
 
 Idempotency key: (user_id, content_item_id, perth_date) scoped to status=SENT.
-A failed log entry is NOT treated as sent — it will be retried on the next run.
-Running the command more than once on the same Perth day is safe for users who
-have already been successfully notified; those with a FAILED log will be retried.
+Skipped (no registered device) and failed log entries are NOT treated as sent,
+so they are retried on the next run. Running the command more than once on the
+same Perth day is safe for users who have already been successfully notified.
 """
 
-import json
+import logging
 import sys
-from datetime import datetime, time as time_obj, timezone as stdlib_tz
+from dataclasses import dataclass, field
+from datetime import date, datetime, time as time_obj, timezone as stdlib_tz
 from zoneinfo import ZoneInfo
 
-from django.conf import settings
-from django.core.mail import send_mail
 from django.core.management.base import BaseCommand
-from django.template.loader import render_to_string
 from django.utils import timezone
 
-from app.serializers import module_is_unlocked
+from app.access import survey_is_unlocked
 from app.models import (
     Cohort,
     ContentItem,
@@ -40,6 +38,9 @@ from app.models import (
     Survey,
     SurveyResponse,
 )
+from app.notifications import deliver_and_log
+
+logger = logging.getLogger(__name__)
 
 PERTH_TZ = ZoneInfo("Australia/Perth")
 UTC = stdlib_tz.utc
@@ -55,6 +56,85 @@ def _perth_today():
 
 def _perth_midnight_utc(date):
     return datetime.combine(date, time_obj.min, tzinfo=PERTH_TZ).astimezone(UTC)
+
+
+def _todays_meditation(cohort, today):
+    """The audio item to remind the cohort about today: the first one in this week's published
+    module. None if the cohort isn't running or the week has no audio."""
+    if today < cohort.start_date or today > cohort.end_date:
+        return None
+    return (
+        ContentItem.objects
+        .filter(
+            type=ContentItem.ContentType.AUDIO,
+            module__week_number=(today - cohort.start_date).days // 7 + 1,
+            module__is_published=True,
+        )
+        .select_related("module")
+        .order_by("display_order", "id")
+        .first()
+    )
+
+
+@dataclass
+class _Run:
+    """One hourly run: its time, the data loaded once for every user, and the tallies it reports."""
+
+    today: date
+    hour: int
+    scheduled_for: datetime
+    dry_run: bool
+    user_ids: list = field(default_factory=list)
+    pref_hours: dict = field(default_factory=dict)
+    completed_by_user: dict = field(default_factory=dict)
+    subs_by_user: dict = field(default_factory=dict)
+    # (user_id, content_item_id) pairs already SENT today; others are retried.
+    already_sent: set = field(default_factory=set)
+    sent: int = 0
+    skipped: int = 0
+    errors: int = 0
+
+    def load(self, user_ids):
+        self.user_ids = user_ids
+        for pref in NotificationPreference.objects.filter(user_id__in=user_ids).values("user_id", "reminder_time"):
+            self.pref_hours[pref["user_id"]] = pref["reminder_time"].hour
+        for c in ContentCompletion.objects.filter(user_id__in=user_ids).values("user_id", "content_item_id"):
+            self.completed_by_user.setdefault(c["user_id"], set()).add(c["content_item_id"])
+        for sub in PushSubscription.objects.filter(user_id__in=user_ids):
+            self.subs_by_user.setdefault(sub.user_id, []).append(sub)
+        self.already_sent = set(
+            NotificationLog.objects
+            .filter(
+                user_id__in=user_ids,
+                type=NotificationLog.NotificationType.CONTENT_REMINDER,
+                scheduled_for=self.scheduled_for,
+                status=NotificationLog.Status.SENT,
+                content_item__isnull=False,
+            )
+            .values_list("user_id", "content_item_id")
+        )
+
+    def preferred_hour(self, user):
+        # Users without a preference row default to 5pm Perth.
+        return self.pref_hours.get(user.id, 17)
+
+    def dry_run_send(self, stdout, user, what):
+        """Report and tally what a real run would do: push to the user's devices, or skip without one."""
+        if self.subs_by_user.get(user.id):
+            verb = "would send"
+            self.sent += 1
+        else:
+            verb = "would skip (no device)"
+            self.skipped += 1
+        stdout.write(f"  [dry-run] {verb} {what}: user={user.email} day={self.today}")
+
+    def record(self, status):
+        if status == NotificationLog.Status.SENT:
+            self.sent += 1
+        elif status == NotificationLog.Status.SKIPPED:
+            self.skipped += 1
+        else:
+            self.errors += 1
 
 
 class Command(BaseCommand):
@@ -85,423 +165,149 @@ class Command(BaseCommand):
             self._verify()
             return
 
-        dry_run = options["dry_run"]
         now_perth = _perth_now()
-        today = now_perth.date()
-        current_hour = now_perth.hour
-        scheduled_for_utc = _perth_midnight_utc(today)
-
-        self.stdout.write(
-            f"[send_due_reminders] date={today} hour={current_hour} (Australia/Perth) "
-            f"scheduled_for={scheduled_for_utc.isoformat()} dry_run={dry_run}"
+        run = _Run(
+            today=now_perth.date(),
+            hour=now_perth.hour,
+            scheduled_for=_perth_midnight_utc(now_perth.date()),
+            dry_run=options["dry_run"],
         )
-
-        sent = skipped = errors = 0
-
-        # ── Active enrollments ─────────────────────────────────────────────────
+        self.stdout.write(
+            f"[send_due_reminders] date={run.today} hour={run.hour} (Australia/Perth) "
+            f"scheduled_for={run.scheduled_for.isoformat()} dry_run={run.dry_run}"
+        )
 
         enrollments = list(
             Enrollment.objects
             .filter(status=Enrollment.Status.ACTIVE)
             .select_related("user", "cohort", "user__notification_preference")
         )
-
         if not enrollments:
             self.stdout.write("[send_due_reminders] no active enrollments — done.")
             return
 
-        user_ids = list({e.user_id for e in enrollments})
+        run.load(list({e.user_id for e in enrollments}))
+        self._send_content_reminders(run, enrollments)
+        self._send_survey_reminders(run, enrollments)
 
-        # ── Per-user preference hour lookup ────────────────────────────────────
-        # Users without a preference row default to 5pm Perth.
-        pref_hours: dict[int, int] = {}
-        for pref in NotificationPreference.objects.filter(user_id__in=user_ids).values(
-            "user_id", "reminder_time"
-        ):
-            pref_hours[pref["user_id"]] = pref["reminder_time"].hour
-
-        # ── Pre-fetch completed item IDs per user ──────────────────────────────
-
-        completed_by_user: dict[int, set[int]] = {}
-        for c in ContentCompletion.objects.filter(user_id__in=user_ids).values(
-            "user_id", "content_item_id"
-        ):
-            completed_by_user.setdefault(c["user_id"], set()).add(c["content_item_id"])
-
-        # ── Pre-fetch push subscriptions per user ──────────────────────────────
-
-        subs_by_user: dict[int, list] = {}
-        for sub in PushSubscription.objects.filter(user_id__in=user_ids):
-            subs_by_user.setdefault(sub.user_id, []).append(sub)
-
-        # ── Idempotency: pairs already SENT today (failed = retryable) ─────────
-
-        already_sent: set[tuple[int, int]] = set(
-            NotificationLog.objects
-            .filter(
-                user_id__in=user_ids,
-                type=NotificationLog.NotificationType.CONTENT_REMINDER,
-                scheduled_for=scheduled_for_utc,
-                status=NotificationLog.Status.SENT,
-                content_item__isnull=False,
-            )
-            .values_list("user_id", "content_item_id")
+        self.stdout.write(
+            f"[send_due_reminders] done: sent={run.sent} skipped={run.skipped} errors={run.errors}"
         )
+        if run.errors:
+            logger.warning("Daily reminders: %d of %d failed to send", run.errors, run.sent + run.errors)
 
-        # ── Group enrollments by cohort ────────────────────────────────────────
+    # ── Daily meditation reminders ─────────────────────────────────────────────
 
-        cohort_groups: dict[int, list] = {}
+    def _send_content_reminders(self, run, enrollments):
+        """One reminder a day per user for their cohort's meditation this week."""
+        by_cohort: dict[int, list] = {}
         for enr in enrollments:
-            cohort_groups.setdefault(enr.cohort_id, []).append(enr)
+            by_cohort.setdefault(enr.cohort_id, []).append(enr)
 
-        for cohort_id, enr_list in cohort_groups.items():
-            cohort = enr_list[0].cohort
-            start = cohort.start_date
-            end = cohort.end_date
-
-            if today < start or today > end:
-                continue
-
-            week_number = (today - start).days // 7 + 1
-
-            # One reminder a day: the week's meditation, whichever day of the week it is.
-            item = (
-                ContentItem.objects
-                .filter(
-                    type=ContentItem.ContentType.AUDIO,
-                    module__week_number=week_number,
-                    module__is_published=True,
-                )
-                .select_related("module")
-                .order_by("display_order", "id")
-                .first()
-            )
-
+        for cohort_enrollments in by_cohort.values():
+            item = _todays_meditation(cohort_enrollments[0].cohort, run.today)
             if item is None:
                 continue
-
-            for enr in enr_list:
+            for enr in cohort_enrollments:
                 user = enr.user
-                user_hour = pref_hours.get(user.id, 17)
-
-                # Hourly cron support: only fire for users whose preferred hour matches.
-                if user_hour != current_hour:
-                    skipped += 1
-                    continue
-
-                pref = getattr(user, "notification_preference", None)
-
-                # Respect the user's daily content reminder preference.
-                if pref and not pref.daily_content_reminder:
-                    skipped += 1
-                    continue
-
-                # push_denied=True means the user explicitly refused — no push, no email.
-                if pref and pref.push_denied:
-                    skipped += 1
-                    continue
-
                 # Meditation is a daily practice, so this is sent every day even after
                 # the student has ticked the audio off once.
-                if (user.id, item.id) in already_sent:
-                    skipped += 1
-                    continue
-
-                user_subs = subs_by_user.get(user.id, [])
-
-                if dry_run:
-                    channel = "push" if user_subs else "email"
-                    self.stdout.write(
-                        f"  [dry-run] would send ({channel}): "
-                        f"user={user.email} item='{item.title}' day={today}"
-                    )
-                    sent += 1
-                    continue
-
-                channel = self._send(user, item, user_subs, pref)
-                log_status = (
-                    NotificationLog.Status.SENT if channel else NotificationLog.Status.FAILED
-                )
-                log_channel = channel or NotificationLog.Channel.PUSH
-
-                NotificationLog.objects.create(
-                    user=user,
-                    type=NotificationLog.NotificationType.CONTENT_REMINDER,
-                    content_item=item,
-                    module=item.module,
-                    channel=log_channel,
-                    scheduled_for=scheduled_for_utc,
-                    sent_at=timezone.now() if channel else None,
-                    status=log_status,
-                )
-
-                if channel:
-                    sent += 1
+                if not self._wants_content_reminder(run, user) or (user.id, item.id) in run.already_sent:
+                    run.skipped += 1
                 else:
-                    errors += 1
+                    self._remind_content(run, user, item)
 
-                # ── Daily survey completion reminders ────────────────────────────────
+    @staticmethod
+    def _wants_content_reminder(run, user):
+        """At this user's chosen hour, with daily reminders on and notifications not refused."""
+        pref = getattr(user, "notification_preference", None)
+        if run.preferred_hour(user) != run.hour:  # hourly cron: each user at their own hour
+            return False
+        # push_denied=True means the user explicitly refused notifications.
+        return not (pref and (not pref.daily_content_reminder or pref.push_denied))
+
+    def _remind_content(self, run, user, item):
+        if run.dry_run:
+            run.dry_run_send(self.stdout, user, f"reminder for '{item.title}'")
+            return
+        run.record(deliver_and_log(
+            user=user,
+            notification_type=NotificationLog.NotificationType.CONTENT_REMINDER,
+            payload_dict={
+                "title": "Time for your daily meditation",
+                "body": item.title,
+                "url": f"/modules/{item.module_id}",
+            },
+            module=item.module,
+            content_item=item,
+            scheduled_for=run.scheduled_for,
+            push_subs=run.subs_by_user.get(user.id, []),
+        ))
+
+    # ── Daily survey completion reminders ──────────────────────────────────────
+
+    def _send_survey_reminders(self, run, enrollments):
+        """At most one reminder per user per day, for their earliest unlocked, unanswered survey."""
+        # Loaded once for every user, so checking a survey needs no queries of its own.
+        module_surveys = list(
+            Survey.objects
+            .filter(module__isnull=False)
+            .select_related("module")
+            .prefetch_related("module__content_items")
+        )
+        responded_by_user: dict[int, set[int]] = {}
+        for user_id, survey_id in SurveyResponse.objects.filter(user_id__in=run.user_ids).values_list(
+            "user_id", "survey_id"
+        ):
+            responded_by_user.setdefault(user_id, set()).add(survey_id)
 
         for enr in enrollments:
             user = enr.user
             pref = getattr(user, "notification_preference", None)
-
-            # User must explicitly enable this reminder.
-            if pref is None or not pref.daily_survey_reminder:
+            # Opt-in only; at the user's hour; never if they refused notifications.
+            if pref is None or not pref.daily_survey_reminder or run.preferred_hour(user) != run.hour or pref.push_denied:
                 continue
 
-            # Respect the user's preferred reminder hour.
-            user_hour = pref_hours.get(user.id, 17)
-            if user_hour != current_hour:
-                continue
-
-            # User explicitly denied notifications.
-            if pref.push_denied:
-                continue
-
-            # Only consider surveys that have not already been submitted.
-            responded_survey_ids = set(
-                SurveyResponse.objects.filter(
-                    user=user
-                ).values_list("survey_id", flat=True)
-            )
-
-            surveys = (
-                Survey.objects
-                .filter(module__isnull=False)
-                .exclude(id__in=responded_survey_ids)
-                .select_related("module")
-            )
-
-            unlocked_surveys = []
-
-            completed = completed_by_user.get(user.id, set())
-
-            for survey in surveys:
-                module = survey.module
-
-                # Module must already be available to this user.
-                if not module_is_unlocked(module, user):
-                    continue
-
-                required_ids = set(
-                    ContentItem.objects.filter(
-                        module=module
-                    ).values_list("id", flat=True)
-                )
-
-                # Match the existing survey unlock rule.
-                if required_ids and not required_ids.issubset(completed):
-                    continue
-
-                unlocked_surveys.append(survey)
-
-            if not unlocked_surveys:
-                continue
-
-            # Only one daily survey reminder per user per day.
-            already_reminded = NotificationLog.objects.filter(
-                user=user,
-                type=NotificationLog.NotificationType.SURVEY_PROMPT,
-                scheduled_for=scheduled_for_utc,
-                status=NotificationLog.Status.SENT,
-            ).exists()
-
-            if already_reminded:
-                skipped += 1
-                continue
-
-            survey = unlocked_surveys[0]
-
-            if dry_run:
-                channel = "push" if subs_by_user.get(user.id) else "email"
-                self.stdout.write(
-                    f"  [dry-run] would send survey reminder ({channel}): "
-                    f"user={user.email} survey='{survey.title}' day={today}"
-                )
-                sent += 1
-                continue
-
-            channel = self._send_survey_reminder(
-                user,
-                survey,
-                subs_by_user.get(user.id, []),
-                pref,
-            )
-
-            NotificationLog.objects.create(
-                user=user,
-                type=NotificationLog.NotificationType.SURVEY_PROMPT,
-                module=survey.module,
-                channel=channel or NotificationLog.Channel.PUSH,
-                scheduled_for=scheduled_for_utc,
-                sent_at=timezone.now() if channel else None,
-                status=(
-                    NotificationLog.Status.SENT
-                    if channel
-                    else NotificationLog.Status.FAILED
+            responded = responded_by_user.get(user.id, set())
+            completed = run.completed_by_user.get(user.id, set())
+            survey = next(
+                (
+                    s for s in module_surveys
+                    if s.pk not in responded
+                    and survey_is_unlocked(s, user, completed_ids=completed, responded_ids=responded)
                 ),
+                None,
             )
+            if survey is None:
+                continue
 
-            if channel:
-                sent += 1
-            else:
-                errors += 1
+            if NotificationLog.objects.filter(
+                user=user,
+                type=NotificationLog.NotificationType.SURVEY_PROMPT,
+                scheduled_for=run.scheduled_for,
+                status=NotificationLog.Status.SENT,
+            ).exists():
+                run.skipped += 1
+                continue
 
-        self.stdout.write(
-            f"[send_due_reminders] done: sent={sent} skipped={skipped} errors={errors}"
-        )
+            self._remind_survey(run, user, survey)
 
-    # ── Delivery helpers ───────────────────────────────────────────────────────
-    def _send_survey_reminder(self, user, survey, push_subs, pref):
-        """Send a reminder for an unlocked but incomplete survey."""
-
-        if push_subs:
-            try:
-                from pywebpush import webpush, WebPushException
-            except ImportError:
-                WebPushException = Exception
-                webpush = None
-
-            if webpush and settings.VAPID_PRIVATE_KEY:
-                payload = json.dumps({
-                    "title": "Don't forget your survey",
-                    "body": survey.title,
-                    "url": "/surveys",
-                })
-
-                sent_any = False
-
-                for sub in list(push_subs):
-                    try:
-                        webpush(
-                            subscription_info={
-                                "endpoint": sub.endpoint,
-                                "keys": {
-                                    "p256dh": sub.p256dh,
-                                    "auth": sub.auth,
-                                },
-                            },
-                            data=payload,
-                            vapid_private_key=settings.VAPID_PRIVATE_KEY,
-                            vapid_claims={
-                                "sub": f"mailto:{settings.VAPID_ADMIN_EMAIL}"
-                            },
-                            content_encoding="aes128gcm",
-                        )
-                        sent_any = True
-
-                    except WebPushException as exc:
-                        resp = getattr(exc, "response", None)
-
-                        if resp is not None and resp.status_code in (404, 410):
-                            sub.delete()
-                        else:
-                            self.stderr.write(
-                                f"    survey push failed for {user.email}: {exc}"
-                            )
-
-                if sent_any:
-                    return NotificationLog.Channel.PUSH
-
-        # Fall back to email.
-        if pref is None or pref.email_enabled:
-            try:
-                send_mail(
-                    subject=f"Survey reminder: {survey.title}",
-                    message=(
-                        f"Hi {user.full_name},\n\n"
-                        f"Your survey '{survey.title}' is ready to complete.\n\n"
-                        "Please log in to the mindfulness program to complete it."
-                    ),
-                    from_email=settings.DEFAULT_FROM_EMAIL,
-                    recipient_list=[user.email],
-                    fail_silently=False,
-                )
-
-                return NotificationLog.Channel.EMAIL
-
-            except Exception as exc:
-                self.stderr.write(
-                    f"    survey email failed for {user.email}: {exc}"
-                )
-
-        return None
-
-    def _send(self, user, item, push_subs, pref):
-        """Attempt push, fall back to email if push_denied is False. Returns channel or None."""
-        if push_subs:
-            channel = self._send_push(user, item, push_subs)
-            if channel:
-                return channel
-
-        if pref is None or pref.email_enabled:
-            return self._send_email(user, item)
-
-        return None
-
-    def _send_push(self, user, item, push_subs):
-        try:
-            from pywebpush import webpush, WebPushException
-        except ImportError:
-            self.stderr.write("pywebpush is not installed — push skipped.")
-            return None
-
-        if not settings.VAPID_PRIVATE_KEY:
-            self.stderr.write("VAPID_PRIVATE_KEY not configured — push skipped.")
-            return None
-
-        payload = json.dumps({
-            "title": "Time for your daily meditation",
-            "body": item.title,
-            "url": f"/modules/{item.module.week_number}/",
-        })
-
-        sent_any = False
-        for sub in list(push_subs):
-            try:
-                webpush(
-                    subscription_info={
-                        "endpoint": sub.endpoint,
-                        "keys": {"p256dh": sub.p256dh, "auth": sub.auth},
-                    },
-                    data=payload,
-                    vapid_private_key=settings.VAPID_PRIVATE_KEY,
-                    vapid_claims={"sub": f"mailto:{settings.VAPID_ADMIN_EMAIL}"},
-                    content_encoding="aes128gcm",
-                )
-                sent_any = True
-            except WebPushException as exc:
-                resp = getattr(exc, "response", None)
-                if resp is not None and resp.status_code in (404, 410):
-                    sub.delete()
-                    self.stderr.write(
-                        f"    pruned dead endpoint for {user.email}: {sub.endpoint[:70]}…"
-                    )
-                else:
-                    self.stderr.write(f"    push failed for {user.email}: {exc}")
-            except Exception as exc:
-                self.stderr.write(f"    push error for {user.email}: {exc}")
-
-        return NotificationLog.Channel.PUSH if sent_any else None
-
-    def _send_email(self, user, item):
-        try:
-            body = render_to_string(
-                "app/reminder_email.txt",
-                {"user": user, "item": item, "module": item.module},
-            )
-            send_mail(
-                subject=f"Your daily meditation: {item.title}",
-                message=body,
-                from_email=settings.DEFAULT_FROM_EMAIL,
-                recipient_list=[user.email],
-                fail_silently=False,
-            )
-            return NotificationLog.Channel.EMAIL
-        except Exception as exc:
-            self.stderr.write(f"    email failed for {user.email}: {exc}")
-            return None
+    def _remind_survey(self, run, user, survey):
+        if run.dry_run:
+            run.dry_run_send(self.stdout, user, f"survey reminder for '{survey.title}'")
+            return
+        run.record(deliver_and_log(
+            user=user,
+            notification_type=NotificationLog.NotificationType.SURVEY_PROMPT,
+            payload_dict={
+                "title": "Don't forget your survey",
+                "body": survey.title,
+                "url": "/surveys",
+            },
+            module=survey.module,
+            scheduled_for=run.scheduled_for,
+            push_subs=run.subs_by_user.get(user.id, []),
+        ))
 
     # ── --verify ───────────────────────────────────────────────────────────────
 
@@ -534,6 +340,8 @@ class Command(BaseCommand):
             for module in published_modules:
                 if module.week_number > weeks_in_program:
                     continue  # module is beyond this cohort's duration
+                if module.week_number < 1:
+                    continue  # the week 0 introduction gets no daily reminders
 
                 has_audio = any(
                     ci.type == ContentItem.ContentType.AUDIO for ci in module.content_items.all()

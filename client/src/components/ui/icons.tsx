@@ -10,14 +10,6 @@ const base = {
   strokeLinejoin: "round" as const,
 };
 
-export function HomeIcon(props: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" {...base} {...props}>
-      <path d="M12.5 17.5V10.83a.83.83 0 0 0-.83-.83H8.33a.83.83 0 0 0-.83.83V17.5M2.5 8.33c0-.47.21-.92.59-1.27l5.83-5c.6-.51 1.48-.51 2.08 0l5.83 5c.38.35.6.8.59 1.27v7.5c0 .88-.71 1.6-1.6 1.6H4.17c-.88 0-1.6-.72-1.6-1.6z" />
-    </svg>
-  );
-}
-
 export function BookOpenIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 20 20" {...base} {...props}>
@@ -123,14 +115,6 @@ export function ChevronRightIcon(props: IconProps) {
   );
 }
 
-export function ChevronUpIcon(props: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" {...base} {...props}>
-      <path d="M5 12.5 10 7.5 15 12.5" />
-    </svg>
-  );
-}
-
 export function ChevronDownIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 20 20" {...base} {...props}>
@@ -157,16 +141,6 @@ export function UsersIcon(props: IconProps) {
   );
 }
 
-export function InstagramIcon(props: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" {...base} {...props}>
-      <rect x="2.5" y="2.5" width="15" height="15" rx="4" />
-      <circle cx="10" cy="10" r="3.75" />
-      <path d="M14.38 5.63h.01" strokeLinecap="round" />
-    </svg>
-  );
-}
-
 export function PlusIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 18 18" {...base} {...props}>
@@ -183,6 +157,14 @@ export function GripIcon(props: IconProps) {
   );
 }
 
+export function PinIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...base} {...props}>
+      <path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
+    </svg>
+  );
+}
+
 export function PencilIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 18 18" {...base} {...props}>
@@ -195,23 +177,6 @@ export function TrashIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 18 18" {...base} {...props}>
       <path d="M2.25 4.5h13.5M6 4.5V3a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 12 3v1.5m2.25 0-.6 9.6a1.5 1.5 0 0 1-1.5 1.4H5.85a1.5 1.5 0 0 1-1.5-1.4l-.6-9.6" />
-    </svg>
-  );
-}
-
-export function PinIcon(props: IconProps) {
-  return (
-    <svg viewBox="0 0 24 24" {...base} strokeWidth={2.5} {...props}>
-      <path d="M12 17v5M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />
-    </svg>
-  );
-}
-
-export function SettingsIcon(props: IconProps) {
-  return (
-    <svg viewBox="0 0 20 20" {...base} {...props}>
-      <circle cx="10" cy="10" r="2.5" />
-      <path d="M16.17 12.5a1.38 1.38 0 0 0 .28 1.52l.05.05a1.67 1.67 0 1 1-2.36 2.36l-.05-.05a1.38 1.38 0 0 0-1.52-.28 1.38 1.38 0 0 0-.84 1.26v.14a1.67 1.67 0 1 1-3.33 0v-.08a1.38 1.38 0 0 0-.9-1.26 1.38 1.38 0 0 0-1.52.28l-.05.05a1.67 1.67 0 1 1-2.36-2.36l.05-.05a1.38 1.38 0 0 0 .28-1.52 1.38 1.38 0 0 0-1.26-.84h-.14a1.67 1.67 0 1 1 0-3.33h.08a1.38 1.38 0 0 0 1.26-.9 1.38 1.38 0 0 0-.28-1.52l-.05-.05a1.67 1.67 0 1 1 2.36-2.36l.05.05a1.38 1.38 0 0 0 1.52.28h.06a1.38 1.38 0 0 0 .84-1.26v-.14a1.67 1.67 0 1 1 3.33 0v.08a1.38 1.38 0 0 0 .84 1.26 1.38 1.38 0 0 0 1.52-.28l.05-.05a1.67 1.67 0 1 1 2.36 2.36l-.05.05a1.38 1.38 0 0 0-.28 1.52v.06a1.38 1.38 0 0 0 1.26.84h.14a1.67 1.67 0 1 1 0 3.33h-.08a1.38 1.38 0 0 0-1.26.84z" />
     </svg>
   );
 }
@@ -260,11 +225,38 @@ export function ClipboardIcon(props: IconProps) {
   );
 }
 
+export function SearchIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...base} {...props}>
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.3-4.3" />
+    </svg>
+  );
+}
+
+export function MoreHorizontalIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 20 20" {...base} {...props}>
+      <circle cx="4.5" cy="10" r="0.75" />
+      <circle cx="10" cy="10" r="0.75" />
+      <circle cx="15.5" cy="10" r="0.75" />
+    </svg>
+  );
+}
+
 export function BellIcon(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" {...base} {...props}>
       <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
       <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
+    </svg>
+  );
+}
+
+export function FlagIcon(props: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" {...base} {...props}>
+      <path d="M4 22V4M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1" />
     </svg>
   );
 }

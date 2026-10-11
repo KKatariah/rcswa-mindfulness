@@ -45,8 +45,28 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Check for missing migrations
+        run: python manage.py makemigrations --check --dry-run
+
       - name: Run migrations
         run: python manage.py migrate
 
       - name: Run tests
         run: python manage.py test
+
+  audit:
+    name: Audit dependencies
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pip-audit
+        run: pip install pip-audit
+
+      - name: Check requirements for known vulnerabilities
+        run: pip-audit -r requirements.txt

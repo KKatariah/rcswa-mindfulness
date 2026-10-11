@@ -67,6 +67,8 @@ local_settings.py
 *.sqlite3
 *.sqlite3-journal
 media/
+# collectstatic output (served by WhiteNoise)
+staticfiles/
 
 # Flask stuff:
 instance/

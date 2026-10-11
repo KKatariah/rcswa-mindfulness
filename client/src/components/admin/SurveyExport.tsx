@@ -1,6 +1,8 @@
 import { useState } from "react";
 import Select from "@/components/ui/Select";
 import { downloadSurveyResponsesCsv } from "@/lib/api";
+import { errorMessage } from "@/lib/errors";
+import Button from "@/components/ui/Button";
 
 type Props =
 	// Lets the admin pick one survey or all of them.
@@ -18,12 +20,12 @@ export default function SurveyExport(props: Props) {
 		setDownloading(true);
 		setError(null);
 		try {
-			await downloadSurveyResponsesCsv(localStorage.getItem("token") ?? "", {
+			await downloadSurveyResponsesCsv({
 				surveyId: props.surveyId ?? (selectedId ? Number(selectedId) : undefined),
 				includeIdentity,
 			});
 		} catch (e) {
-			setError(e instanceof Error ? e.message : "Export failed");
+			setError(errorMessage(e, "Export failed"));
 		} finally {
 			setDownloading(false);
 		}
@@ -31,7 +33,7 @@ export default function SurveyExport(props: Props) {
 
 	return (
 		<div>
-			<h3 className="text-sm font-bold text-ink">Export responses</h3>
+			<h2 className="text-sm font-bold text-ink">Export responses</h2>
 			<div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
 				{props.surveys && (
 					<Select
@@ -54,14 +56,14 @@ export default function SurveyExport(props: Props) {
 					/>
 					Include names and emails
 				</label>
-				<button
+				<Button
 					type="button"
 					onClick={handleDownload}
 					disabled={downloading}
-					className="h-11 rounded-xl bg-brand-blue px-4 text-[14px] font-bold text-white disabled:opacity-50 sm:ml-auto"
+					variant="primary" size="md" className="px-4 sm:ml-auto"
 				>
 					{downloading ? "Preparing…" : "Download CSV"}
-				</button>
+				</Button>
 			</div>
 			<p className="mt-2 text-xs text-muted">
 				Participants are identified by ID unless names and emails are included. Treat the file as confidential research data.

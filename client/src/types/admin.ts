@@ -14,6 +14,7 @@ export type AdminContentItem = {
 	provider: "youtube" | "soundcloud" | "";
 	embed_url: string;
 	display_order: number;
+	day_offset: number | null;
 };
 
 export type AdminModule = {
@@ -24,8 +25,8 @@ export type AdminModule = {
 	summary: string;
 	is_published: boolean;
 	is_unlocked: boolean;
+	unlock_at: string | null;
 	content_items: AdminContentItem[];
-	resources: unknown[];
 };
 
 export type ModuleProgressStatus = "completed" | "in_progress" | "not_started" | "locked";
@@ -91,7 +92,6 @@ export type UserOverview = {
 	};
 	notifications: {
 		push_devices: number;
-		email_enabled: boolean;
 		push_denied: boolean;
 		reminder_time: string;
 		daily_content_reminder: boolean;
@@ -108,7 +108,46 @@ export type AdminUser = {
 	auth_provider: string;
 	is_staff: boolean;
 	created_at: string;
+	/** Their most recent enrollment, or null if they have never been enrolled. */
+	enrollment: { id: number; cohort: number; status: Enrollment["status"]; enrolled_at: string } | null;
+	/** Banned from posting in the forum. */
+	forum_banned: boolean;
+	/** When the ban ends; null for a ban that lasts until lifted (or no ban). */
+	forum_banned_until: string | null;
 };
+
+/** A forum post as the moderation pages show it. */
+export type ModeratedPost = {
+	id: number;
+	thread: number;
+	thread_title: string;
+	/** The thread's opening post: removing it removes the whole thread. */
+	is_head_post: boolean;
+	body: string;
+	created_at: string;
+	edited_at: string | null;
+	/** null when the author has deleted their account. */
+	author: {
+		id: number;
+		full_name: string;
+		display_name: string;
+		email: string;
+		forum_banned: boolean;
+		forum_banned_until: string | null;
+	} | null;
+	is_deleted: boolean;
+	deleted_at: string | null;
+	deleted_by_name: string | null;
+	/** true if the author deleted it, false if an admin removed it; null if not deleted. */
+	removed_by_author: boolean | null;
+};
+
+export type ReportedPost = ModeratedPost & {
+	/** Open reports, newest first. */
+	flags: { id: number; reason: string; created_at: string; flagged_by_name: string }[];
+};
+
+export type ModerationAction = "dismiss" | "hide" | "ban";
 
 export type Enrollment = {
 	id: number;
@@ -165,6 +204,8 @@ export type DashboardStats = {
 		thread_count: number;
 		post_count: number;
 		active_participants: number;
+		/** Posts with reports waiting for a moderator. */
+		reported_post_count: number;
 	};
 	enrollment_status_breakdown: Record<string, number>;
 };

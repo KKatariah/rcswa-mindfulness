@@ -1,6 +1,6 @@
 import Head from "next/head";
 import Image from "next/image";
-import Navbar from "@/components/main/Navbar";
+import Hero from "@/components/main/Hero";
 import Footer from "@/components/main/Footer";
 import { LinkedinIcon, GlobeIcon } from "@/components/ui/icons";
 import { pageTitle } from "@/lib/pageTitle";
@@ -40,27 +40,11 @@ export default function AboutPage() {
 				/>
 			</Head>
 
-			{/* Hero */}
-			<div className="relative min-h-[360px] overflow-hidden sm:min-h-[440px]">
-				<Image
-					src="/pexels-michael-metschl-718198730-18284929.jpg"
-					alt=""
-					fill
-					priority
-					sizes="100vw"
-					className="object-cover"
-				/>
-				<div className="absolute inset-0 bg-gradient-to-b from-black/50 via-black/30 to-black/50" />
-				<Navbar />
-				<div className="relative z-10 flex min-h-[360px] flex-col items-center justify-center px-6 text-center sm:min-h-[440px]">
-					<h1 className="text-5xl font-extrabold text-white sm:text-6xl">
-						About Us
-					</h1>
-					<p className="mt-4 max-w-xl text-lg text-white/90">
-						The mindfulness programme for medical students and junior doctors, created by Dr Sarah Moore at the Rural Clinical School of Western Australia.
-					</p>
-				</div>
-			</div>
+			<Hero
+				title="About Us"
+				subtitle="The mindfulness programme for medical students and junior doctors, created by Dr Sarah Moore at the Rural Clinical School of Western Australia."
+				heightClass="min-h-[360px] sm:min-h-[440px]"
+			/>
 
 			{/* Dr Sarah Moore */}
 			<section
@@ -104,13 +88,13 @@ export default function AboutPage() {
 							>
 								{PAGE_CONTENT.sarah.name}
 							</h2>
-							<p className="mt-2 text-[15px] font-semibold text-brand-blue">
+							<p className="mt-2 text-md font-semibold text-brand-blue">
 								{PAGE_CONTENT.sarah.role}
 							</p>
-							<p className="mt-6 text-[15px] leading-relaxed text-muted">
+							<p className="mt-6 text-md leading-relaxed text-muted">
 								{PAGE_CONTENT.sarah.bio}
 							</p>
-							<p className="mt-4 text-[15px] leading-relaxed text-muted">
+							<p className="mt-4 text-md leading-relaxed text-muted">
 								{PAGE_CONTENT.sarah.phdIntro}{" "}
 								<a
 									href={PAGE_CONTENT.sarah.research}
@@ -174,7 +158,7 @@ export default function AboutPage() {
 							>
 								{PAGE_CONTENT.rcswa.name}
 							</h2>
-							<p className="mt-6 text-[15px] leading-relaxed text-muted">
+							<p className="mt-6 text-md leading-relaxed text-muted">
 								{PAGE_CONTENT.rcswa.description}
 							</p>
 							<div className="mt-8">
@@ -182,7 +166,7 @@ export default function AboutPage() {
 									href={PAGE_CONTENT.rcswa.href}
 									target="_blank"
 									rel="noopener noreferrer"
-									className="inline-flex h-12 items-center justify-center rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]"
+									className="inline-flex h-12 items-center justify-center rounded-xl bg-brand-blue px-6 text-md font-bold text-white shadow-button"
 								>
 									About the RCSWA
 								</a>

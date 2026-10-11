@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import Card from "@/components/ui/Card";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import type { SurveyQuestion } from "@/types/admin";
 
@@ -11,11 +12,9 @@ type SurveyQuestionsProps = {
 	isSubmitting?: boolean;
 };
 
-// Matches LONGTEXT_MAX_CHARS in app/serializers.py.
+// Matches LONGTEXT_MAX_CHARS in app/serializers/surveys.py.
 const JOURNAL_MAX_CHARS = 5000;
 
-const cardClass =
-	"rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10";
 const fieldClass =
 	"rounded-xl border border-[#5b5a5a] bg-white text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30";
 
@@ -142,7 +141,7 @@ export default function SurveyQuestions({ questions, onSubmit, isSubmitting = fa
 				</legend>
 				<div aria-label={`Question ${q.number} scale`} className="w-full">
 					<div
-						className="grid gap-1 text-center text-[10px] font-bold text-ink md:gap-2 md:text-xs"
+						className="grid gap-1 text-center text-2xs font-bold text-ink md:gap-2 md:text-xs"
 						style={columns}
 						aria-hidden="true"
 					>
@@ -160,7 +159,7 @@ export default function SurveyQuestions({ questions, onSubmit, isSubmitting = fa
 									value={value}
 									checked={answers[q.id] === value}
 									onChange={() => updateAnswer(q.id, value)}
-									className="size-4 accent-[#5096CF] border-[#5096CF] bg-white checked:bg-[#5096CF] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#5096CF] md:size-4"
+									className="size-4 border-brand-blue bg-white accent-brand-blue checked:bg-brand-blue focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 								/>
 							</label>
 						))}
@@ -211,7 +210,7 @@ export default function SurveyQuestions({ questions, onSubmit, isSubmitting = fa
 	return (
 		<form onSubmit={submit} className="grid gap-4 pb-[calc(var(--mobile-bottom-nav-height)+var(--mobile-bottom-nav-safe)-1rem)] md:gap-5 md:pb-0">
 			{cards.map((card) => (
-				<section key={card.questions[0].id} className={cardClass}>
+				<Card as="section" key={card.questions[0].id} className="p-4 md:p-10">
 					{card.heading && (
 						<h2 className="text-sm font-bold leading-5 text-ink md:text-base">{card.heading}</h2>
 					)}
@@ -236,7 +235,7 @@ export default function SurveyQuestions({ questions, onSubmit, isSubmitting = fa
 							})}
 						</div>
 					)}
-				</section>
+				</Card>
 			))}
 
 			<div className="flex flex-nowrap items-center justify-center gap-3">
@@ -245,7 +244,7 @@ export default function SurveyQuestions({ questions, onSubmit, isSubmitting = fa
 						type="button"
 						disabled={isSubmitting || !hasScaleAnswers}
 						onClick={() => setConfirmingClear(true)}
-						className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl border border-gray-300 bg-white px-5 text-[15px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-[11px]"
+						className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl border border-gray-300 bg-white px-5 text-md font-semibold text-ink-soft transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-2xs"
 					>
 						Clear selections
 					</button>
@@ -253,7 +252,7 @@ export default function SurveyQuestions({ questions, onSubmit, isSubmitting = fa
 				<button
 					type="submit"
 					disabled={isSubmitting}
-					className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-[11px]"
+					className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-brand-blue px-6 text-md font-bold text-white shadow-button transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-2xs"
 				>
 					{isSubmitting ? "Submitting..." : "Submit survey"}
 				</button>

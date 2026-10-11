@@ -8,8 +8,19 @@
   --color-brand-blue-dark: #2f4f78;
   --color-ink: #111827;
   --color-ink-soft: #30302f;
-  --color-muted: #6b7280;
+  /* Darkened from #6b7280 to pass WCAG AA contrast on the light grey panels. */
+  --color-muted: #636b78;
   --color-surface-muted: #f5f5f7;
+
+  /* Extra steps in the type scale, so components don't reach for one-off pixel sizes. */
+  --text-2xs: 11px;
+  --text-2xs--line-height: 1.4;
+  --text-md: 15px;
+  --text-md--line-height: 1.5;
+
+  --shadow-card: 0 6px 9px rgba(0, 0, 0, 0.05);
+  --shadow-button: 0 6px 8px rgba(0, 0, 0, 0.1);
+  --shadow-pop: 0 10px 20px rgba(0, 0, 0, 0.15);
 }
 
 :root {
@@ -24,6 +35,10 @@ body {
 
 .modal-scroll-content {
   overflow-y: auto;
+  /* overflow clips sideways too; this gutter keeps full-width inputs' focus rings visible
+     without shifting the layout. */
+  margin-inline: -4px;
+  padding-inline: 4px;
   /* Thin grey native scrollbar. */
   scrollbar-width: thin;
   scrollbar-color: #9ca3af transparent;

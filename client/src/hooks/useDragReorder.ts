@@ -53,6 +53,15 @@ export function useDragReorder<K extends string | number>() {
 			window.removeEventListener("pointercancel", onEnd);
 			active.current = false;
 			setDraggingId(null);
+			// Releasing over a row fires a click on it, and some rows are links (e.g. the modules
+			// list opens the module), so dropping would navigate away. Swallow that one click; it is
+			// dispatched in this same task, so the timeout removes the listener if none comes.
+			const swallowClick = (click: MouseEvent) => {
+				click.stopPropagation();
+				click.preventDefault();
+			};
+			window.addEventListener("click", swallowClick, { capture: true, once: true });
+			setTimeout(() => window.removeEventListener("click", swallowClick, { capture: true }), 0);
 			if (ev.type === "pointercancel") handlers.onCancel(before);
 			else if (current.join() !== before.join()) handlers.onDrop(current, before);
 		}

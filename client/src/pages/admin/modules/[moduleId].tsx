@@ -1,15 +1,20 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import AdminLayout from "@/components/admin/AdminLayout";
-import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import ContentEmbed from "@/components/modules/ContentEmbed";
+import DangerZone from "@/components/admin/DangerZone";
 import ModuleProgress from "@/components/admin/ModuleProgress";
+import ContentEmbed from "@/components/modules/ContentEmbed";
+import Card from "@/components/ui/Card";
+import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import DragHandle, { ReorderHelp } from "@/components/ui/DragHandle";
+import { ErrorBanner, LoadingState } from "@/components/ui/feedback";
+import { FormActions, FormError, TextAreaField, TextField } from "@/components/ui/form";
 import { PencilIcon, TrashIcon } from "@/components/ui/icons";
+import Markdown from "@/components/ui/Markdown";
+import { useAsync } from "@/hooks/useAsync";
 import { useDragReorder, type ReorderHandlers } from "@/hooks/useDragReorder";
+import { useFormSubmit } from "@/hooks/useFormSubmit";
 import {
 	getModuleAdmin,
 	updateModule,
@@ -19,8 +24,13 @@ import {
 	deleteContentItem,
 	reorderContentItems,
 } from "@/lib/api";
+import { errorMessage } from "@/lib/errors";
+import { deleteModuleMessage } from "@/lib/modules";
 import type { AdminModule, AdminContentItem } from "@/types/admin";
 import { adminPageTitle } from "@/lib/pageTitle";
+import Button from "@/components/ui/Button";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { weekLabel } from "@/lib/weeks";
 
 type ContentItemFormState = {
 	title: string;
@@ -69,57 +79,43 @@ function ContentItemForm({
 	onCancel: () => void;
 }) {
 	const [form, setForm] = useState(initial);
-	const [error, setError] = useState<string | null>(null);
-	const [submitting, setSubmitting] = useState(false);
+	const { submitting, error, setError, run } = useFormSubmit("Failed to save content item");
 
 	const previewProvider = detectProvider(form.embed_url);
 	const previewUrl = previewProvider ? toEmbedUrl(form.embed_url, previewProvider) : null;
 
-	async function handleSubmit(e: FormEvent) {
+	function handleSubmit(e: FormEvent) {
 		e.preventDefault();
-		setError(null);
-
 		const provider = detectProvider(form.embed_url);
 		if (!provider) {
 			setError("Enter a valid YouTube or SoundCloud link.");
 			return;
 		}
-		const toSubmit: ContentItemFormState = { ...form, type: provider === "soundcloud" ? "audio" : "video", provider };
-
-		setSubmitting(true);
-		try {
-			await onSubmit(toSubmit);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to save content item");
-		} finally {
-			setSubmitting(false);
-		}
+		void run(() => onSubmit({ ...form, type: provider === "soundcloud" ? "audio" : "video", provider }));
 	}
 
 	return (
-		<form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-2xl border border-gray-200 bg-white p-5">
-			{error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+		<Card as="form" onSubmit={handleSubmit} className="flex flex-col gap-4 p-5">
+			<FormError message={error} />
+
+			<TextField
+				id="item-title"
+				label="Title"
+				size="md"
+				required
+				value={form.title}
+				onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
+			/>
 
 			<div className="flex flex-col gap-2">
-				<label htmlFor="item-title" className="text-sm font-semibold text-ink">Title</label>
-				<input
-					id="item-title"
-					required
-					value={form.title}
-					onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))}
-					className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-				/>
-			</div>
-
-			<div className="flex flex-col gap-2">
-				<label htmlFor="item-embed-url" className="text-sm font-semibold text-ink">Link</label>
-				<input
+				<TextField
 					id="item-embed-url"
+					label="Link"
+					size="md"
 					type="url"
 					value={form.embed_url}
 					onChange={(e) => setForm((f) => ({ ...f, embed_url: e.target.value }))}
 					placeholder="Paste a YouTube or SoundCloud link…"
-					className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
 				/>
 				{previewProvider && previewUrl && (
 					<div className="rounded-xl border border-gray-100 bg-surface-muted p-3">
@@ -133,47 +129,41 @@ function ContentItemForm({
 				)}
 			</div>
 
-			<div className="flex gap-3">
-				<button
-					type="submit"
-					disabled={submitting}
-					className="h-11 flex-1 rounded-xl bg-brand-blue-dark text-sm font-bold text-white disabled:opacity-50"
-				>
-					{submitting ? "Saving…" : "Save"}
-				</button>
-				<button
-					type="button"
-					onClick={onCancel}
-					className="h-11 flex-1 rounded-xl border border-gray-200 text-sm font-semibold text-ink"
-				>
-					Cancel
-				</button>
-			</div>
-		</form>
+			<FormActions submitting={submitting} onCancel={onCancel} size="md" className="" />
+		</Card>
 	);
 }
 
 export default function AdminModuleEditorPage() {
 	const router = useRouter();
 	const moduleId = router.query.moduleId;
+	const validId = typeof moduleId === "string";
 
-	const [module, setModule] = useState<AdminModule | null>(null);
 	// Publish state as last saved, so a save that flips it can ask first.
 	const [savedPublished, setSavedPublished] = useState(false);
-	const [confirmingPublish, setConfirmingPublish] = useState(false);
-	const [deletingItem, setDeletingItem] = useState<AdminContentItem | null>(null);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
+	const { data: module, setData: setModule, loading, error } = useAsync(
+		async () => {
+			const loaded = await getModuleAdmin(Number(moduleId));
+			setSavedPublished(loaded.is_published);
+			return loaded;
+		},
+		[moduleId],
+		null as AdminModule | null,
+		{ enabled: validId, errorFallback: "Failed to load module" },
+	);
 	const [addingItem, setAddingItem] = useState(false);
 	const [editingItem, setEditingItem] = useState<AdminContentItem | null>(null);
-	const [metaSaving, setMetaSaving] = useState(false);
-	const [metaError, setMetaError] = useState<string | null>(null);
+	const meta = useFormSubmit("Failed to save module");
 	const [deleteError, setDeleteError] = useState<string | null>(null);
 	// A dragged content-item order waiting to be saved, like every other edit on this page.
 	const [pendingItemOrder, setPendingItemOrder] = useState<number[] | null>(null);
 	const [savingItemOrder, setSavingItemOrder] = useState(false);
 	const { draggingId, startDrag, handleKey } = useDragReorder<number>();
 	const [confirmingModuleDelete, setConfirmingModuleDelete] = useState(false);
+	const [moduleDeleting, setModuleDeleting] = useState(false);
+	const [deletingItem, setDeletingItem] = useState<AdminContentItem | null>(null);
+	const [confirmingPublish, setConfirmingPublish] = useState(false);
+	const [moduleDeleteError, setModuleDeleteError] = useState<string | null>(null);
 	const descriptionRef = useRef<HTMLTextAreaElement>(null);
 
 	// Grow the description box to fit its text so long descriptions aren't hidden behind a scrollbar.
@@ -190,34 +180,13 @@ export default function AdminModuleEditorPage() {
 		window.addEventListener("resize", fit);
 		return () => window.removeEventListener("resize", fit);
 	}, [description]);
-	const [moduleDeleting, setModuleDeleting] = useState(false);
-	const [moduleDeleteError, setModuleDeleteError] = useState<string | null>(null);
 
-	useEffect(() => {
-		if (!moduleId || Array.isArray(moduleId)) return;
-		let cancelled = false;
-		const token = localStorage.getItem("token") ?? "";
-		(async () => {
-			try {
-				const data = await getModuleAdmin(Number(moduleId), token);
-				if (!cancelled) {
-					setModule(data);
-					setSavedPublished(data.is_published);
-				}
-			} catch (e) {
-				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load module");
-			} finally {
-				if (!cancelled) setLoading(false);
-			}
-		})();
-		return () => { cancelled = true; };
-	}, [moduleId]);
+	// Edits the loaded module in place (the meta form is bound straight to it).
+	const patch = (changes: Partial<AdminModule>) => setModule((m) => m && { ...m, ...changes });
 
 	async function refresh() {
 		if (!module) return;
-		const token = localStorage.getItem("token") ?? "";
-		const data = await getModuleAdmin(module.id, token);
-		setModule(data);
+		setModule(await getModuleAdmin(module.id));
 	}
 
 	function handleMetaSubmit(e: FormEvent) {
@@ -230,39 +199,32 @@ export default function AdminModuleEditorPage() {
 		saveMeta();
 	}
 
-	async function saveMeta() {
+	function saveMeta() {
 		if (!module) return;
 		setConfirmingPublish(false);
-		setMetaSaving(true);
-		setMetaError(null);
-		try {
-			const token = localStorage.getItem("token") ?? "";
-			const updated = await updateModule(
-				module.id,
-				{ title: module.title, description: module.description, summary: module.summary, week_number: module.week_number, is_published: module.is_published },
-				token,
-			);
-			setModule((prev) => (prev ? { ...prev, ...updated } : prev));
+		void meta.run(async () => {
+			const updated = await updateModule(module.id, {
+				title: module.title,
+				description: module.description,
+				summary: module.summary,
+				week_number: module.week_number,
+				is_published: module.is_published,
+			});
+			patch(updated);
 			setSavedPublished(updated.is_published);
-		} catch (err) {
-			setMetaError(err instanceof Error ? err.message : "Failed to save module");
-		} finally {
-			setMetaSaving(false);
-		}
+		});
 	}
 
 	async function handleAddItem(form: ContentItemFormState) {
 		if (!module) return;
-		const token = localStorage.getItem("token") ?? "";
-		await createContentItem({ module: module.id, ...form }, token);
+		await createContentItem({ module: module.id, ...form });
 		setAddingItem(false);
 		await refresh();
 	}
 
 	async function handleEditItem(form: ContentItemFormState) {
 		if (!editingItem) return;
-		const token = localStorage.getItem("token") ?? "";
-		await updateContentItem(editingItem.id, form, token);
+		await updateContentItem(editingItem.id, form);
 		setEditingItem(null);
 		await refresh();
 	}
@@ -287,11 +249,11 @@ export default function AdminModuleEditorPage() {
 		setSavingItemOrder(true);
 		setDeleteError(null);
 		try {
-			await reorderContentItems(module.id, shownItems.map((i) => i.id), localStorage.getItem("token") ?? "");
-			setModule((m) => m && { ...m, content_items: shownItems });
+			await reorderContentItems(module.id, shownItems.map((i) => i.id));
+			patch({ content_items: shownItems });
 			setPendingItemOrder(null);
 		} catch (err) {
-			setDeleteError(err instanceof Error ? err.message : "Failed to reorder content items");
+			setDeleteError(errorMessage(err, "Failed to reorder content items"));
 		} finally {
 			setSavingItemOrder(false);
 		}
@@ -302,12 +264,11 @@ export default function AdminModuleEditorPage() {
 		const item = deletingItem;
 		setDeletingItem(null);
 		setDeleteError(null);
-		const token = localStorage.getItem("token") ?? "";
 		try {
-			await deleteContentItem(item.id, token);
+			await deleteContentItem(item.id);
 			await refresh();
 		} catch (err) {
-			setDeleteError(err instanceof Error ? err.message : "Failed to delete content item");
+			setDeleteError(errorMessage(err, "Failed to delete content item"));
 		}
 	}
 
@@ -317,11 +278,10 @@ export default function AdminModuleEditorPage() {
 		setModuleDeleteError(null);
 		setModuleDeleting(true);
 		try {
-			const token = localStorage.getItem("token") ?? "";
-			await deleteModule(module.id, token);
+			await deleteModule(module.id);
 			router.push("/admin/modules");
 		} catch (err) {
-			setModuleDeleteError(err instanceof Error ? err.message : "Failed to delete module");
+			setModuleDeleteError(errorMessage(err, "Failed to delete module"));
 			setModuleDeleting(false);
 		}
 	}
@@ -332,9 +292,7 @@ export default function AdminModuleEditorPage() {
 	if (loading) {
 		return (
 			<AdminLayout>
-				<div className="flex justify-center py-16">
-					<span className="text-sm text-muted">Loading…</span>
-				</div>
+				<LoadingState />
 			</AdminLayout>
 		);
 	}
@@ -352,65 +310,62 @@ export default function AdminModuleEditorPage() {
 			<Head>
 				<title>{adminPageTitle(module.title)}</title>
 			</Head>
+			{/* The stored title exactly as in the Title field below, with the week as a label above it. */}
+			<AdminPageHeader
+				title={module.title}
+				eyebrow={weekLabel(module.week_number)}
+				back={{ href: "/admin/modules", label: "All modules" }}
+			/>
 
-			<form onSubmit={handleMetaSubmit} className="rounded-2xl border border-gray-200 bg-white p-5">
-				{metaError && (
-					<p className="mb-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
-						{metaError}
-					</p>
-				)}
+			<Card as="form" onSubmit={handleMetaSubmit} className="mt-4 p-5">
+				{meta.error && <ErrorBanner className="mb-4">{meta.error}</ErrorBanner>}
 				<div className="grid gap-4 sm:grid-cols-2">
-					<div className="flex flex-col gap-2">
-						<label htmlFor="meta-week" className="text-sm font-semibold text-ink">Week number</label>
-						<input
-							id="meta-week"
-							type="number"
-							value={module.week_number}
-							onChange={(e) => setModule((m) => m && { ...m, week_number: Number(e.target.value) })}
-							className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-						/>
-					</div>
-					<div className="flex flex-col gap-2">
-						<label htmlFor="meta-title" className="text-sm font-semibold text-ink">Title</label>
-						<input
-							id="meta-title"
-							value={module.title}
-							onChange={(e) => setModule((m) => m && { ...m, title: e.target.value })}
-							className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-						/>
-					</div>
+					<TextField
+						id="meta-week"
+						label="Week number"
+						size="md"
+						type="number"
+						value={module.week_number}
+						onChange={(e) => patch({ week_number: Number(e.target.value) })}
+					/>
+					<TextField
+						id="meta-title"
+						label="Title"
+						size="md"
+						value={module.title}
+						onChange={(e) => patch({ title: e.target.value })}
+					/>
 				</div>
 				<div className="mt-4 flex flex-col gap-2">
-					<label htmlFor="meta-summary" className="text-sm font-semibold text-ink">
-						Summary <span className="font-normal text-muted">(shown on the homepage)</span>
-					</label>
-					<input
+					<TextField
 						id="meta-summary"
+						label={
+							<>
+								Summary <span className="font-normal text-muted">(shown on the homepage)</span>
+							</>
+						}
+						size="md"
 						maxLength={300}
 						value={module.summary}
-						onChange={(e) => setModule((m) => m && { ...m, summary: e.target.value })}
-						className="h-11 rounded-xl border border-gray-200 px-4 text-sm text-ink outline-none focus:ring-2 focus:ring-brand-blue"
+						onChange={(e) => patch({ summary: e.target.value })}
 					/>
 					<p className="text-right text-xs text-muted">{module.summary.length}/300</p>
 				</div>
 				<div className="mt-4 flex flex-col gap-2">
-					<label htmlFor="meta-description" className="text-sm font-semibold text-ink">
-						Description (Markdown)
-					</label>
-					<textarea
+					<TextAreaField
 						id="meta-description"
+						label="Description (Markdown)"
+						size="md"
 						ref={descriptionRef}
 						rows={14}
 						value={module.description}
-						onChange={(e) => setModule((m) => m && { ...m, description: e.target.value })}
-						className="resize-y overflow-y-auto rounded-xl border border-gray-200 p-3 font-mono text-sm leading-relaxed text-ink outline-none focus:ring-2 focus:ring-brand-blue"
+						onChange={(e) => patch({ description: e.target.value })}
+						className="resize-y overflow-y-auto font-mono leading-relaxed"
 					/>
 					{module.description.trim() && (
 						<div className="rounded-xl border border-gray-100 bg-surface-muted p-3">
 							<p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Preview</p>
-							<div className="prose prose-neutral prose-sm max-w-none break-words">
-								<ReactMarkdown remarkPlugins={[remarkGfm]}>{module.description}</ReactMarkdown>
-							</div>
+							<Markdown className="prose-sm">{module.description}</Markdown>
 						</div>
 					)}
 				</div>
@@ -418,51 +373,43 @@ export default function AdminModuleEditorPage() {
 					<input
 						type="checkbox"
 						checked={module.is_published}
-						onChange={(e) => setModule((m) => m && { ...m, is_published: e.target.checked })}
+						onChange={(e) => patch({ is_published: e.target.checked })}
 					/>
 					Published
 				</label>
-				<button
+				<Button
 					type="submit"
-					disabled={metaSaving}
-					className="mt-4 h-11 rounded-xl bg-brand-blue-dark px-6 text-sm font-bold text-white disabled:opacity-50"
+					disabled={meta.submitting}
+					variant="dark" size="md" className="mt-4 px-6"
 				>
-					{metaSaving ? "Saving…" : "Save module"}
-				</button>
-			</form>
+					{meta.submitting ? "Saving…" : "Save module"}
+				</Button>
+			</Card>
 
-			{deleteError && (
-				<p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
-					{deleteError}
-				</p>
-			)}
+			{deleteError && <ErrorBanner className="mt-4">{deleteError}</ErrorBanner>}
 
 			<div className="mt-6 flex items-center justify-between">
 				<h2 className="text-lg font-extrabold text-ink">Content items</h2>
 				{!addingItem && (
-					<button
+					<Button
 						type="button"
 						onClick={() => setAddingItem(true)}
-						className="rounded-xl bg-brand-blue px-4 py-2 text-sm font-bold text-white"
+						variant="primary" size={null} className="rounded-xl px-4 py-2 text-sm font-bold"
 					>
 						Add content item
-					</button>
+					</Button>
 				)}
 			</div>
 
 			<div className="mt-4 space-y-3">
 				{addingItem && (
-					<ContentItemForm
-						initial={EMPTY_ITEM_FORM}
-						onSubmit={handleAddItem}
-						onCancel={() => setAddingItem(false)}
-					/>
+					<ContentItemForm initial={EMPTY_ITEM_FORM} onSubmit={handleAddItem} onCancel={() => setAddingItem(false)} />
 				)}
 
 				{module.content_items.length === 0 && !addingItem && (
-					<p className="rounded-2xl border border-gray-200 bg-white p-6 text-sm text-muted">
+					<Card as="p" className="p-6 text-sm text-muted">
 						No content items yet.
-					</p>
+					</Card>
 				)}
 
 				{shownItems.map((item) =>
@@ -474,12 +421,10 @@ export default function AdminModuleEditorPage() {
 							onCancel={() => setEditingItem(null)}
 						/>
 					) : (
-						<div
+						<Card
 							key={item.id}
 							data-reorder-id={item.id}
-							className={`flex items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-white p-4 ${
-								draggingId === item.id ? "opacity-50" : ""
-							}`}
+							className={`flex items-center justify-between gap-3 p-4 ${draggingId === item.id ? "opacity-50" : ""}`}
 						>
 							<div className="flex min-w-0 items-center gap-3">
 								<DragHandle
@@ -509,12 +454,13 @@ export default function AdminModuleEditorPage() {
 									<TrashIcon className="size-4 text-muted hover:text-red-500" />
 								</button>
 							</div>
-						</div>
-					)
+						</Card>
+					),
 				)}
 			</div>
 
-			{pendingItemOrder && (
+			{/* Only once the drag ends: toggling mid-drag (each time the row passes its old spot) resized the page and made the sticky sidebar jump. */}
+			{pendingItemOrder && draggingId === null && (
 				<div
 					role="status"
 					className="mt-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between"
@@ -529,14 +475,14 @@ export default function AdminModuleEditorPage() {
 						>
 							Discard
 						</button>
-						<button
+						<Button
 							type="button"
 							onClick={saveItemOrder}
 							disabled={savingItemOrder}
-							className="h-10 rounded-xl bg-brand-blue px-4 font-bold text-white disabled:opacity-50"
+							variant="primary" size={null} className="h-10 rounded-xl px-4 font-bold disabled:opacity-50"
 						>
 							{savingItemOrder ? "Saving…" : "Save order"}
-						</button>
+						</Button>
 					</div>
 				</div>
 			)}
@@ -545,27 +491,14 @@ export default function AdminModuleEditorPage() {
 
 			<ModuleProgress moduleId={module.id} items={module.content_items} />
 
-			<div className="mt-8 flex items-center justify-between rounded-2xl border border-red-200 bg-red-50 p-4">
-				<div>
-					<p className="text-sm font-semibold text-red-700">Danger zone</p>
-					<p className="text-xs text-red-600">
-						Permanently delete this module, its content items, and all student completion history for them.
-					</p>
-				</div>
-				<button
-					type="button"
-					onClick={() => setConfirmingModuleDelete(true)}
-					disabled={moduleDeleting}
-					className="h-10 shrink-0 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-600 hover:bg-red-100 disabled:opacity-50"
-				>
-					{moduleDeleting ? "Deleting…" : "Delete module"}
-				</button>
-			</div>
-			{moduleDeleteError && (
-				<p className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
-					{moduleDeleteError}
-				</p>
-			)}
+			<DangerZone
+				description="Permanently delete this module, its content items, and all student completion history for them."
+				actionLabel={moduleDeleting ? "Deleting…" : "Delete module"}
+				onAction={() => setConfirmingModuleDelete(true)}
+				disabled={moduleDeleting}
+				className="mt-8"
+			/>
+			{moduleDeleteError && <ErrorBanner className="mt-3">{moduleDeleteError}</ErrorBanner>}
 
 			{confirmingPublish && (
 				<ConfirmDialog
@@ -596,11 +529,7 @@ export default function AdminModuleEditorPage() {
 			{confirmingModuleDelete && (
 				<ConfirmDialog
 					title={`Delete "${module.title}"?`}
-					message={
-						module.content_items.length === 0
-							? "This module has no content items yet. This can't be undone."
-							: `This will permanently delete ${module.content_items.length} content item${module.content_items.length === 1 ? "" : "s"} and all student completion history for ${module.content_items.length === 1 ? "it" : "them"}. This can't be undone.`
-					}
+					message={deleteModuleMessage(module.content_items.length)}
 					confirmLabel="Delete module"
 					danger
 					onConfirm={handleDeleteModule}

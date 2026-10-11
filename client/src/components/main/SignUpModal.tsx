@@ -1,9 +1,12 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/router";
 import Modal from "@/components/main/Modal";
+import GoogleSignIn from "@/components/main/GoogleSignIn";
+import { FormActions, FormError, TextField } from "@/components/ui/form";
 import { useAuth } from "@/context/AuthContext";
+import type { AuthUser } from "@/types/user";
 import { landingPathFor } from "@/components/main/ApprovalGate";
-import { GoogleLogin, type CredentialResponse } from "@react-oauth/google";
+import { useFormSubmit } from "@/hooks/useFormSubmit";
 
 type SignUpModalProps = {
 	isOpen: boolean;
@@ -24,19 +27,19 @@ function formatFullName(value: string) {
 
 export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 	const router = useRouter();
-	const { register, loginWithGoogle } = useAuth();
+	const { register } = useAuth();
 	const [email, setEmail] = useState("");
 	const [fullName, setFullName] = useState("");
 	const [password, setPassword] = useState("");
 	const [confirmPassword, setConfirmPassword] = useState("");
-	const [error, setError] = useState<string | null>(null);
-	const [isSubmitting, setIsSubmitting] = useState(false);
+	const { submitting, error, setError, run } = useFormSubmit("Registration failed");
 
-	function handleFullNameBlur() {
-		setFullName((prev) => formatFullName(prev));
+	async function finish(signedIn: AuthUser) {
+		onClose();
+		await router.push(landingPathFor(signedIn));
 	}
 
-	async function handleSubmit(event: FormEvent) {
+	function handleSubmit(event: FormEvent) {
 		event.preventDefault();
 		setError(null);
 
@@ -48,120 +51,61 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 		const cleanedFullName = formatFullName(fullName);
 		setFullName(cleanedFullName);
 
-		setIsSubmitting(true);
-		try {
-			const signedIn = await register(email, cleanedFullName, password);
-			onClose();
-			await router.push(landingPathFor(signedIn));
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Registration failed");
-		} finally {
-			setIsSubmitting(false);
-		}
-	}
-
-	async function handleGoogleSuccess(credentialResponse: CredentialResponse) {
-		if (!credentialResponse.credential) return;
-		setError(null);
-		try {
-			const signedIn = await loginWithGoogle(credentialResponse.credential);
-			onClose();
-			await router.push(landingPathFor(signedIn));
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Google sign up failed");
-		}
+		void run(async () => {
+			await finish(await register(email, cleanedFullName, password));
+		});
 	}
 
 	return (
 		<Modal isOpen={isOpen} onClose={onClose} title="Sign up">
 			<form onSubmit={handleSubmit} className="flex flex-col gap-6">
-				{error && (
-					<p className="text-sm text-red-600" role="alert">
-						{error}
-					</p>
-				)}
-
-				<div className="flex flex-col gap-2">
-					<label htmlFor="signup-email" className="text-sm font-semibold text-ink">
-						Email
-					</label>
-					<input
-						id="signup-email"
-						type="email"
-						required
-						value={email}
-						onChange={(event) => setEmail(event.target.value)}
-						placeholder="email@example.com"
-						className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
-					/>
-				</div>
-
-				<div className="flex flex-col gap-2">
-					<label htmlFor="signup-fullname" className="text-sm font-semibold text-ink">
-						Full name
-					</label>
-					<input
-						id="signup-fullname"
-						type="text"
-						required
-						value={fullName}
-						onChange={(event) => setFullName(event.target.value)}
-						onBlur={handleFullNameBlur}
-						placeholder="Enter your full name"
-						className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
-					/>
-				</div>
-
-				<div className="flex flex-col gap-2">
-					<label htmlFor="signup-password" className="text-sm font-semibold text-ink">
-						Password
-					</label>
-					<input
-						id="signup-password"
-						type="password"
-						required
-						value={password}
-						onChange={(event) => setPassword(event.target.value)}
-						placeholder="Enter password"
-						className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
-					/>
-				</div>
-
-				<div className="flex flex-col gap-2">
-					<label htmlFor="signup-confirm-password" className="text-sm font-semibold text-ink">
-						Confirm Password
-					</label>
-					<input
-						id="signup-confirm-password"
-						type="password"
-						required
-						value={confirmPassword}
-						onChange={(event) => setConfirmPassword(event.target.value)}
-						placeholder="Confirm password"
-						className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
-					/>
-				</div>
-
-				<button
-					type="submit"
-					disabled={isSubmitting}
-					className="h-12 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white disabled:opacity-50"
-				>
-					{isSubmitting ? "Signing up..." : "Sign up"}
-				</button>
+				<FormError message={error} />
+				<TextField
+					id="signup-email"
+					label="Email"
+					type="email"
+					required
+					value={email}
+					onChange={(event) => setEmail(event.target.value)}
+					placeholder="email@example.com"
+				/>
+				<TextField
+					id="signup-fullname"
+					label="Full name"
+					type="text"
+					required
+					value={fullName}
+					onChange={(event) => setFullName(event.target.value)}
+					onBlur={() => setFullName((prev) => formatFullName(prev))}
+					placeholder="Enter your full name"
+				/>
+				<TextField
+					id="signup-password"
+					label="Password"
+					type="password"
+					required
+					value={password}
+					onChange={(event) => setPassword(event.target.value)}
+					placeholder="Enter password"
+				/>
+				<TextField
+					id="signup-confirm-password"
+					label="Confirm Password"
+					type="password"
+					required
+					value={confirmPassword}
+					onChange={(event) => setConfirmPassword(event.target.value)}
+					placeholder="Confirm password"
+				/>
+				<FormActions submitting={submitting} submitLabel="Sign up" busyLabel="Signing up..." className="" />
 			</form>
 
-			<div className="mt-6 flex flex-col items-center gap-4">
-				<div className="flex w-full items-center gap-3">
-					<div className="h-px flex-1 bg-gray-200" />
-					<span className="text-sm text-muted">or</span>
-					<div className="h-px flex-1 bg-gray-200" />
-				</div>
-				{process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID && <GoogleLogin
-					onSuccess={handleGoogleSuccess}
-					onError={() => setError("Google sign up failed")}
-				/>}
-			</div>
+			<GoogleSignIn
+				onStart={() => setError(null)}
+				onSignedIn={finish}
+				onError={setError}
+				failureMessage="Google sign up failed"
+			/>
 		</Modal>
 	);
 }

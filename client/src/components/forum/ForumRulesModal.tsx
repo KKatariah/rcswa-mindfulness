@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { createPortal } from "react-dom";
 import Modal from "@/components/main/Modal";
+import { errorMessage } from "@/lib/errors";
+import Button from "@/components/ui/Button";
 
 export const FORUM_RULES: { title: string; body: string }[] = [
 	{
@@ -33,7 +35,7 @@ export const FORUM_RULES: { title: string; body: string }[] = [
 	},
 	{
 		title: "Report, don't retaliate",
-		body: "If a post feels harmful, flag it to the moderator rather than responding in kind.",
+		body: "If a post feels harmful, report it to the moderators (use Report in the post's ⋯ menu) rather than responding in kind.",
 	},
 ];
 
@@ -51,7 +53,11 @@ function RuleNumber({ n, small = false }: { n: number; small?: boolean }) {
  *  the agree checkbox and buttons below it stay in view on short screens. */
 export function ForumRulesList() {
 	return (
-		<ol className="max-h-[45vh] divide-y divide-gray-200 overflow-y-auto overscroll-contain rounded-2xl bg-surface-muted px-4 text-left">
+		<ol
+			aria-label="Forum rules"
+			tabIndex={0}
+			className="max-h-[45vh] divide-y divide-gray-200 overflow-y-auto overscroll-contain rounded-2xl bg-surface-muted px-4 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
+		>
 			{FORUM_RULES.map((rule, i) => (
 				<li key={rule.title} className="flex gap-3 py-3">
 					<RuleNumber n={i + 1} />
@@ -110,7 +116,7 @@ export default function ForumRulesModal({ isOpen, onClose, onAccept }: ForumRule
 		try {
 			await onAccept();
 		} catch (e) {
-			setError(e instanceof Error ? e.message : "Something went wrong");
+			setError(errorMessage(e, "Something went wrong"));
 		} finally {
 			setSubmitting(false);
 		}
@@ -148,29 +154,29 @@ export default function ForumRulesModal({ isOpen, onClose, onAccept }: ForumRule
 							<button
 								type="button"
 								onClick={onClose}
-								className="h-12 rounded-xl border border-gray-200 px-5 text-[15px] font-bold text-ink hover:bg-surface-muted"
+								className="h-12 rounded-xl border border-gray-200 px-5 text-md font-bold text-ink hover:bg-surface-muted"
 							>
 								Not now
 							</button>
-							<button
+							<Button
 								type="button"
 								onClick={handleSubmit}
 								disabled={!agreed || submitting}
-								className="h-12 rounded-xl bg-brand-blue-dark px-5 text-[15px] font-bold text-white disabled:opacity-50"
+								variant="dark" size="lg" className="px-5"
 							>
 								{submitting ? "Saving…" : "Continue to forum"}
-							</button>
+							</Button>
 						</div>
 					</>
 				) : (
 					<div className="mt-6 flex justify-end">
-						<button
+						<Button
 							type="button"
 							onClick={onClose}
-							className="h-12 rounded-xl bg-brand-blue-dark px-5 text-[15px] font-bold text-white"
+							variant="dark" size="lg" className="px-5"
 						>
 							Got it
-						</button>
+						</Button>
 					</div>
 				)}
 			</div>

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import NextSession from "@/components/modules/NextSession";
-import { listModules, listProgress } from "@/lib/api";
+import { getToken, listModules, listProgress } from "@/lib/api";
 import { weekLabel } from "@/lib/weeks";
 
 type SessionModule = {
@@ -16,7 +16,7 @@ type SessionModule = {
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Earliest module the server still reports as locked. */
-export function findUpcomingModule<T extends SessionModule>(modules: T[]): T | undefined {
+function findUpcomingModule<T extends SessionModule>(modules: T[]): T | undefined {
 	return modules
 		.filter((module) => !module.is_unlocked && module.unlock_at)
 		.sort((a, b) => Date.parse(a.unlock_at!) - Date.parse(b.unlock_at!))[0];
@@ -82,11 +82,10 @@ export default function UpcomingSession({
 
 	useEffect(() => {
 		if (modules) return;
-		const token = localStorage.getItem("token");
-		if (!token) return;
+		if (!getToken()) return;
 
 		let cancelled = false;
-		listModules(token)
+		listModules()
 			.then((data) => { if (!cancelled) setFetched(data); })
 			.catch((error) => console.error("Failed to load next session:", error));
 		return () => { cancelled = true; };
@@ -94,11 +93,10 @@ export default function UpcomingSession({
 
 	useEffect(() => {
 		if (completedItemIds) return;
-		const token = localStorage.getItem("token");
-		if (!token) return;
+		if (!getToken()) return;
 
 		let cancelled = false;
-		listProgress(token)
+		listProgress()
 			.then((data) => { if (!cancelled) setFetchedCompleted(new Set(data.map((c) => c.content_item))); })
 			.catch((error) => console.error("Failed to load progress for next session:", error));
 		return () => { cancelled = true; };
@@ -113,11 +111,11 @@ export default function UpcomingSession({
 		const unfinished = findUnfinishedModule(list, completed);
 		if (!unfinished) {
 			return list.some((module) => module.is_unlocked) ? (
-				<div className="rounded-[10px] bg-white p-5 text-sm text-muted">You’ve completed all available modules.</div>
+				<div className="rounded-xl bg-white p-5 text-sm text-muted">You’ve completed all available modules.</div>
 			) : null;
 		}
 		return (
-			<Link href={`/modules/${unfinished.id}`} className="block rounded-[10px] focus-visible:outline-2 focus-visible:outline-brand-blue-dark">
+			<Link href={`/modules/${unfinished.id}`} className="block rounded-xl focus-visible:outline-2 focus-visible:outline-brand-blue-dark">
 				<NextSession
 					moduleTitle={unfinished.title ? `${weekLabel(unfinished.week_number)}: ${unfinished.title}` : weekLabel(unfinished.week_number)}
 				/>
