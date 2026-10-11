@@ -1,6 +1,8 @@
 import Head from "next/head";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
+import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import { FullPageMessage } from "@/components/ui/feedback";
 import PageHeader from "@/components/ui/PageHeader";
 import SurveyLinks, { type SurveyLinkItem } from "@/components/surveys/SurveyLinks";
@@ -37,7 +39,14 @@ export default function SurveysHomePage() {
 			<Head>
 				<title>Weekly Surveys</title>
 			</Head>
-			<AppShell>
+			<AppShell
+				rightRail={
+					<div className="space-y-4">
+						<UpcomingSession />
+						<NotificationsPanel />
+					</div>
+				}
+			>
 				<div className="flex min-w-0 flex-col gap-4">
 					<PageHeader
 						title="Weekly Surveys"

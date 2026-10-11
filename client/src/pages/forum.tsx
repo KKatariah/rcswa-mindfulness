@@ -13,6 +13,8 @@ import { useRouter } from "next/router";
 import ForumRulesModal, { ForumRulesSummary } from "@/components/forum/ForumRulesModal";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
+import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import Card from "@/components/ui/Card";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import {
@@ -911,6 +913,7 @@ function ForumSearchField({ query, onQueryChange, className = "" }: SearchProps 
 function ForumSidebar({ query, onQueryChange }: SearchProps) {
   return (
     <div className="hidden min-w-0 space-y-4 xl:block">
+      <UpcomingSession />
       <Card className="p-5">
         <p className="text-sm font-bold text-ink">Search</p>
         <ForumSearchField query={query} onQueryChange={onQueryChange} className="mt-3" />
@@ -919,6 +922,7 @@ function ForumSidebar({ query, onQueryChange }: SearchProps) {
         <p className="mb-3 text-sm font-bold text-ink">Forum rules</p>
         <ForumRulesSummary />
       </Card>
+      <NotificationsPanel />
     </div>
   );
 }
@@ -1076,9 +1080,14 @@ export default function ForumPage() {
 
       <AppShell
         rightRail={
-          threadId === null ? (
-            <ForumSidebar query={query} onQueryChange={setQuery} />
-          ) : undefined
+          <ForumSidebar
+            query={query}
+            onQueryChange={(value) => {
+              setQuery(value);
+              // Search filters the thread list, so leave an open thread to show results.
+              if (threadId !== null) closeThread();
+            }}
+          />
         }
       >
         <section aria-label="Forum" className="flex min-w-0 flex-col gap-4">

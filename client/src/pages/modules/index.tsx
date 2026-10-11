@@ -3,6 +3,7 @@ import Link from "next/link";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
 import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import Card from "@/components/ui/Card";
 import { FullPageMessage } from "@/components/ui/feedback";
 import PageHeader from "@/components/ui/PageHeader";
@@ -105,7 +106,14 @@ export default function ModulesIndexPage() {
 				<title>Progress</title>
 			</Head>
 			{/* The rail column is always reserved so the layout doesn't jump once data arrives. */}
-			<AppShell rightRail={<>{ready && <UpcomingSession modules={data.modules} />}</>}>
+			<AppShell
+				rightRail={
+					<div className="space-y-4">
+						{ready && <UpcomingSession modules={data.modules} completedItemIds={data.completedItemIds} />}
+						<NotificationsPanel />
+					</div>
+				}
+			>
 				<div className="flex min-w-0 flex-col gap-4">
 					<PageHeader title="Your Progress" description="Track your 8-week meditation journey" />
 
@@ -137,7 +145,7 @@ export default function ModulesIndexPage() {
 									const content = (
 										<div className={`flex items-center gap-4 px-6 py-4 ${idx !== 0 ? "border-t border-gray-100" : ""}`}>
 											<StatusIcon status={status} />
-											<span className={`flex-1 font-semibold ${isLocked ? "text-gray-400" : "text-ink"}`}>
+											<span className={`flex-1 text-sm font-semibold sm:text-base ${isLocked ? "text-gray-400" : "text-ink"}`}>
 												{weekLabel(m.week_number)}
 											</span>
 											{!isLocked && (

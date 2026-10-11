@@ -5,6 +5,7 @@ import Head from "next/head";
 import AppShell from "@/components/main/AppShell";
 import Footer from "@/components/main/Footer";
 import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import ModuleHeader from "@/components/modules/ModuleHeader";
 import ModuleContent from "@/components/modules/ModuleContent";
 import Card from "@/components/ui/Card";
@@ -138,7 +139,14 @@ export default function ModulePage() {
 			<Head>
 				<title>{module.title}</title>
 			</Head>
-			<AppShell rightRail={<UpcomingSession />}>
+			<AppShell
+				rightRail={
+					<div className="space-y-4">
+						<UpcomingSession />
+						<NotificationsPanel />
+					</div>
+				}
+			>
 				<Card className="flex min-w-0 flex-col">
 					<ModuleHeader
 						embedded

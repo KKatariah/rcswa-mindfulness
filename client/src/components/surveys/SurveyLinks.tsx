@@ -15,18 +15,18 @@ export default function SurveyLinks({ items }: { items: SurveyLinkItem[] }) {
 			<ul>
 				{items.map((item) => {
 					const isLocked = item.status === "locked";
-					const rowClassName = `flex min-h-[45px] items-center gap-3 border-b border-gray-200 px-3.5 text-sm font-semibold last:border-b-0 ${
+					const rowClassName = `flex items-center gap-4 px-6 py-4 text-sm font-semibold sm:text-base ${
 						isLocked ? "text-muted" : "text-ink"
 					}`;
 					const content = (
 						<>
-							<StatusIcon status={item.status} className="size-6" />
+							<StatusIcon status={item.status} />
 							<span>{item.label}</span>
 						</>
 					);
 
 					return (
-						<li key={item.id}>
+						<li key={item.id} className="border-b border-gray-100 last:border-b-0">
 							{isLocked ? (
 								<div className={rowClassName} aria-disabled="true">
 									{content}

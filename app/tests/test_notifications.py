@@ -634,3 +634,131 @@ class SendPushTests(TestCase):
         result, push = self._deliver()
         self.assertEqual(result, NotificationLog.Status.SKIPPED)
         push.assert_not_called()
+
+
+class NotificationHistoryTests(APITestCase):
+    """GET /api/notifications/history/ lists the user's own delivered notifications."""
+
+    URL = "/api/notifications/history/"
+
+    def setUp(self):
+        self.user = _make_user("inbox@test.local")
+        self.other = _make_user("other@test.local")
+        _enroll(self.user, self.other)
+        self.module = _make_module(week=3)
+        self.item = _make_audio_item(self.module, title="Body scan")
+        # Module creation can fire S21 notifications; start from an empty log.
+        NotificationLog.objects.all().delete()
+
+    def _log(self, user=None, type=NotificationLog.NotificationType.MODULE_ADDED,
+             status_=NotificationLog.Status.SENT, minutes_ago=0, **kwargs):
+        when = timezone.now() - timedelta(minutes=minutes_ago)
+        return NotificationLog.objects.create(
+            user=user or self.user, type=type, module=kwargs.pop("module", self.module),
+            channel=NotificationLog.Channel.PUSH, scheduled_for=when,
+            sent_at=when if status_ == NotificationLog.Status.SENT else None,
+            status=status_, **kwargs,
+        )
+
+    def test_lists_only_own_sent_notifications_newest_first(self):
+        older = self._log(minutes_ago=60)
+        newer = self._log(type=NotificationLog.NotificationType.SURVEY_PROMPT, minutes_ago=5)
+        self._log(status_=NotificationLog.Status.FAILED)
+        self._log(user=self.other)
+
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.get(self.URL)
+
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual([n["id"] for n in resp.data], [newer.id, older.id])
+
+    def test_builds_display_text_from_type_and_module(self):
+        self._log(minutes_ago=3)
+        self._log(type=NotificationLog.NotificationType.CONTENT_REMINDER,
+                  content_item=self.item, minutes_ago=2)
+        self._log(type=NotificationLog.NotificationType.SURVEY_PROMPT, minutes_ago=1)
+
+        self.client.force_authenticate(user=self.user)
+        survey, reminder, added = self.client.get(self.URL).data
+
+        self.assertEqual(added["title"], "Week 3 is now available")
+        self.assertEqual(added["body"], "Week 3")
+        self.assertEqual(added["url"], f"/modules/{self.module.id}/")
+        self.assertEqual(reminder["title"], "Time for your daily meditation")
+        self.assertEqual(reminder["body"], "Body scan")
+        self.assertEqual(survey["url"], "/surveys")
+
+    def test_survives_deleted_module(self):
+        self._log()
+        self.module.delete()
+
+        self.client.force_authenticate(user=self.user)
+        (entry,) = self.client.get(self.URL).data
+
+        self.assertEqual(entry["title"], "A new week is now available")
+        self.assertIsNone(entry["url"])
+
+    def test_requires_authentication(self):
+        resp = self.client.get(self.URL)
+        self.assertIn(resp.status_code, (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN))
+
+    def test_is_read_only(self):
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.post(self.URL, {})
+        self.assertEqual(resp.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
+
+    def test_new_notifications_are_unread(self):
+        self._log()
+        self.client.force_authenticate(user=self.user)
+        (entry,) = self.client.get(self.URL).data
+        self.assertIsNone(entry["read_at"])
+
+    def test_mark_one_as_read(self):
+        target = self._log(minutes_ago=1)
+        other = self._log()
+
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.post(f"{self.URL}{target.id}/read/")
+
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertIsNotNone(resp.data["read_at"])
+        target.refresh_from_db()
+        other.refresh_from_db()
+        self.assertIsNotNone(target.read_at)
+        self.assertIsNone(other.read_at)
+
+    def test_marking_read_again_keeps_first_timestamp(self):
+        target = self._log()
+        self.client.force_authenticate(user=self.user)
+        first = self.client.post(f"{self.URL}{target.id}/read/").data["read_at"]
+        second = self.client.post(f"{self.URL}{target.id}/read/").data["read_at"]
+        self.assertEqual(first, second)
+
+    def test_cannot_mark_another_users_notification(self):
+        theirs = self._log(user=self.other)
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.post(f"{self.URL}{theirs.id}/read/")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+        theirs.refresh_from_db()
+        self.assertIsNone(theirs.read_at)
+
+    def test_cannot_mark_failed_notification(self):
+        failed = self._log(status_=NotificationLog.Status.FAILED)
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.post(f"{self.URL}{failed.id}/read/")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_mark_all_as_read_only_touches_own(self):
+        mine = [self._log(minutes_ago=i) for i in range(3)]
+        theirs = self._log(user=self.other)
+
+        self.client.force_authenticate(user=self.user)
+        resp = self.client.post(f"{self.URL}read-all/")
+
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp.data["marked"], 3)
+        for n in mine:
+            n.refresh_from_db()
+            self.assertIsNotNone(n.read_at)
+        theirs.refresh_from_db()
+        self.assertIsNone(theirs.read_at)
