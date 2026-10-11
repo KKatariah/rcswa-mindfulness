@@ -86,7 +86,11 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 					<ul className="hidden items-center justify-self-center gap-7 text-md font-semibold text-white lg:flex">
 						{visibleLinks.map((link) => (
 							<li key={link.href}>
-								<Link href={link.href} onClick={(event) => handleLinkClick(event, link.href)}>
+								<Link
+									href={link.href}
+									onClick={(event) => handleLinkClick(event, link.href)}
+									className="hover:underline"
+								>
 									{link.label}
 								</Link>
 							</li>
