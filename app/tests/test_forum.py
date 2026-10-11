@@ -68,6 +68,16 @@ class ForumTests(APITestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_200_OK)
 
+    def test_admin_posting_not_rate_limited(self):
+        # The client shows admins no posting cooldown, so the server mustn't throttle them either.
+        self.client.force_login(self.admin)
+        for i in range(10):
+            resp = self.client.post(
+                "/api/forum/posts/", {"thread": self.thread.pk, "body": f"reply {i}"},
+                content_type="application/json",
+            )
+            self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+
     # ── S24/anonymous rejection ────────────────────────────────────────────────
 
     def test_anonymous_list_rejected(self):
