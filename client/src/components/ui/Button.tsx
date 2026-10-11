@@ -3,9 +3,9 @@ import type { ButtonHTMLAttributes } from "react";
 /** Colour only, so each page keeps the button colour it already uses. */
 const VARIANTS = {
 	/** Light brand blue: page actions (Sign up, New…, Download CSV, Approve). */
-	primary: "bg-brand-blue text-white",
+	primary: "bg-brand-blue text-white hover:bg-brand-blue-dark",
 	/** Navy: modal and form submit buttons (Log in, Save, Agree). */
-	dark: "bg-brand-blue-dark text-white",
+	dark: "bg-brand-blue-dark text-white hover:bg-brand-blue-dark/90",
 	danger: "bg-red-500 text-white",
 	secondary: "border border-gray-200 text-ink",
 	/** White outline for the dark photo header, where a filled button would read as the main action. */

@@ -178,7 +178,7 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 								<Button
 									type="button"
 									onClick={handleLogout}
-									variant="secondary" size={null} className="h-11 rounded-xl text-md font-semibold"
+									variant="secondary" size={null} className="h-11 rounded-xl text-md font-semibold hover:bg-surface-muted"
 								>
 									Log Out
 								</Button>

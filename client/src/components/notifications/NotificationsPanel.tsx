@@ -295,7 +295,7 @@ export default function NotificationsPanel() {
           onClick={() => setIsOpen((open) => !open)}
           aria-expanded={isOpen}
           aria-controls={listId}
-          className="flex w-full items-center gap-2.5 rounded-xl p-5 text-left cursor-pointer focus-visible:outline-2 focus-visible:outline-brand-blue-dark"
+          className="flex w-full items-center gap-2.5 rounded-xl p-5 text-left cursor-pointer hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-brand-blue-dark"
         >
           <span className="flex size-9 shrink-0 items-center justify-center rounded-xl bg-brand-blue text-white">
             <BellIcon className="size-5" aria-hidden="true" />

@@ -41,7 +41,7 @@ const HOW_IT_WORKS = [
 
 const CARD_SCROLL_DISTANCE = 320;
 const CTA_CLASS =
-	"items-center justify-center rounded-xl bg-brand-blue px-8 text-md font-bold text-white shadow-button cursor-pointer";
+	"items-center justify-center rounded-xl bg-brand-blue px-8 text-md font-bold text-white shadow-button cursor-pointer hover:bg-brand-blue-dark";
 
 function ScrollButtons({ onScroll, className }: { onScroll: (direction: number) => void; className: string }) {
 	const buttonClass =
