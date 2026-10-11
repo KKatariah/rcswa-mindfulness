@@ -6,7 +6,9 @@ from django.test import override_settings
 from django.utils import timezone
 from rest_framework import status
 
-from ..models import Cohort, ContentItem, Enrollment, ForumFlag, ForumPost, ForumThread, Module
+from ..models import (
+    Cohort, ContentItem, Enrollment, ForumFlag, ForumPost, ForumRulesRevision, ForumThread, Module,
+)
 from ..serializers import ForumPostSerializer
 from .base import User, APITestCase, _enroll
 
@@ -842,6 +844,108 @@ class ForumRulesTests(APITestCase):
             self.client.post("/api/forum/accept-rules/").status_code,
             (status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN),
         )
+
+
+class ForumRulesEditingTests(APITestCase):
+    """Admins change the rules; students who agreed to an older version are asked again."""
+
+    NEW_RULES = [{"title": "Be kind", "body": "Always."}, {"title": "No spam", "body": ""}]
+
+    def setUp(self):
+        self.student = User.objects.create_user(email="student@test.local", password="testpass")
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="testpass", role=User.Role.ADMIN
+        )
+        _enroll(self.student)
+        # Agreed a while ago, so any change saved during the test is clearly newer.
+        self.student.forum_rules_accepted_at = timezone.now() - timedelta(minutes=5)
+        self.student.save(update_fields=["forum_rules_accepted_at"])
+
+    def _save_rules(self, rules=None, **extra):
+        self.client.force_login(self.admin)
+        return self.client.post(
+            "/api/forum/rules/", {"rules": rules or self.NEW_RULES, **extra}, format="json"
+        )
+
+    def test_initial_rules_are_seeded_and_already_agreed_to(self):
+        self.client.force_login(self.student)
+        resp = self.client.get("/api/forum/rules/")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp.data["rules"]), 8)
+        self.assertEqual(resp.data["rules"][0]["title"], "Lead with kindness")
+        self.assertIsNone(resp.data["updated_by_name"])
+        self.assertTrue(self.client.get("/api/user/").data["user"]["forum_rules_accepted"])
+
+    def test_rules_readable_before_agreeing(self):
+        newcomer = User.objects.create_user(email="new@test.local", password="testpass")
+        _enroll(newcomer)
+        self.client.force_login(newcomer)
+        self.assertEqual(self.client.get("/api/forum/rules/").status_code, status.HTTP_200_OK)
+
+    def test_students_cannot_change_rules(self):
+        self.client.force_login(self.student)
+        resp = self.client.post("/api/forum/rules/", {"rules": self.NEW_RULES}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(ForumRulesRevision.objects.count(), 1)
+
+    def test_change_requires_students_to_agree_again(self):
+        resp = self._save_rules()
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        self.assertEqual(resp.data["rules"], self.NEW_RULES)
+        self.assertEqual(resp.data["updated_by_name"], str(self.admin))
+
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get("/api/forum/rules/").data["rules"], self.NEW_RULES)
+        user = self.client.get("/api/user/").data["user"]
+        self.assertFalse(user["forum_rules_accepted"])
+        self.assertTrue(user["forum_rules_outdated"])
+        blocked = self.client.get("/api/forum/threads/")
+        self.assertEqual(blocked.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("forum rules have changed", str(blocked.data["detail"]))
+
+        accepted = self.client.post(
+            "/api/forum/accept-rules/", {"revision": ForumRulesRevision.current().pk}, format="json"
+        )
+        self.assertEqual(accepted.status_code, status.HTTP_200_OK)
+        self.assertTrue(accepted.data["user"]["forum_rules_accepted"])
+        self.assertFalse(accepted.data["user"]["forum_rules_outdated"])
+        self.assertEqual(self.client.get("/api/forum/threads/").status_code, status.HTTP_200_OK)
+
+    def test_minor_change_keeps_existing_agreement(self):
+        self.assertEqual(self._save_rules(requires_reaccept=False).status_code, status.HTTP_200_OK)
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get("/api/forum/threads/").status_code, status.HTTP_200_OK)
+
+    def test_minor_change_after_major_one_still_needs_agreement(self):
+        self._save_rules()
+        self._save_rules(rules=[{"title": "Be kind!", "body": "Always."}], requires_reaccept=False)
+        self.client.force_login(self.student)
+        self.assertEqual(self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_agreeing_to_a_stale_version_is_refused(self):
+        shown = ForumRulesRevision.current().pk
+        self._save_rules()
+        self.client.force_login(self.student)
+        resp = self.client.post("/api/forum/accept-rules/", {"revision": shown}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(self.client.get("/api/forum/threads/").status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_invalid_rules_rejected(self):
+        for rules in ([], [{"title": "", "body": "x"}], [{"title": "x" * 121}], [{"title": "r"}] * 21):
+            with self.subTest(count=len(rules)):
+                self.client.force_login(self.admin)
+                resp = self.client.post("/api/forum/rules/", {"rules": rules}, format="json")
+                self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(ForumRulesRevision.objects.count(), 1)
+
+    def test_whitespace_trimmed_and_body_optional(self):
+        resp = self._save_rules(rules=[{"title": "  Be kind  "}])
+        self.assertEqual(resp.data["rules"], [{"title": "Be kind", "body": ""}])
+
+    def test_admin_overview_shows_outdated_agreement(self):
+        self._save_rules()
+        overview = self.client.get(f"/api/users/{self.student.pk}/overview/").data["user"]
+        self.assertTrue(overview["forum_rules_outdated"])
 
 
 class ForumRulesBypassTests(APITestCase):

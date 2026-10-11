@@ -41,6 +41,7 @@ import {
   deleteForumPost,
   deleteForumThread,
   flagForumPost,
+  getForumRules,
   getForumThread,
   getProgramStatus,
   listForumThreads,
@@ -49,7 +50,7 @@ import {
 } from "@/lib/api";
 import { pageTitle } from "@/lib/pageTitle";
 import { errorMessage } from "@/lib/errors";
-import type { ForumPost, ForumThread, ForumThreadDetail } from "@/types/forum";
+import type { ForumPost, ForumRule, ForumThread, ForumThreadDetail } from "@/types/forum";
 import type { AuthUser } from "@/types/user";
 import { formatDateTime } from "@/lib/dates";
 
@@ -961,14 +962,14 @@ function ForumSearchField({ query, onQueryChange, className = "" }: SearchProps 
 }
 
 /** Same order as every other page's rail (Next Session, Notifications), then the forum's own extras. */
-function ForumSidebar() {
+function ForumSidebar({ rules }: { rules: ForumRule[] | null }) {
   return (
     <div className="hidden min-w-0 space-y-4 xl:block">
       <UpcomingSession />
       <NotificationsPanel />
       <Card className="p-5">
         <p className="mb-3 text-sm font-bold text-ink">Forum rules</p>
-        <ForumRulesSummary />
+        {rules ? <ForumRulesSummary rules={rules} /> : <p className="text-sm text-muted">Loading…</p>}
       </Card>
     </div>
   );
@@ -992,9 +993,15 @@ const DELETE_PROMPTS = {
 export default function ForumPage() {
   const router = useRouter();
   const { user, isLoading: authLoading, updateUser } = useRequireAuth();
-  // Students must agree to the rules once (saved server-side) before the
-  // forum loads; the API rejects forum requests until they have.
+  // Students must agree to the rules (saved server-side) before the forum loads, and again
+  // whenever an admin changes them; the API rejects forum requests until they have.
   const needsRules = !!user && !isAdminUser(user) && !user.forum_rules_accepted;
+  // Bumped when accepting fails, e.g. because the rules changed while the dialog was open.
+  const [rulesAttempt, setRulesAttempt] = useState(0);
+  const forumRules = useAsync(getForumRules, [user?.id, rulesAttempt], null, {
+    enabled: !!user,
+    errorFallback: "Failed to load the forum rules",
+  });
   // Bumped by "Try again" to re-run the initial load.
   const [attempt, setAttempt] = useState(0);
   const [query, setQuery] = useState("");
@@ -1054,8 +1061,17 @@ export default function ForumPage() {
   }
 
   async function handleAcceptRules() {
-    const { user: updated } = await acceptForumRules();
-    updateUser({ forum_rules_accepted: updated.forum_rules_accepted });
+    try {
+      const { user: updated } = await acceptForumRules(forumRules.data!.id);
+      updateUser({
+        forum_rules_accepted: updated.forum_rules_accepted,
+        forum_rules_outdated: updated.forum_rules_outdated,
+      });
+    } catch (e) {
+      // Show whatever the rules are now, so the student agrees to those.
+      setRulesAttempt((n) => n + 1);
+      throw e;
+    }
   }
 
   async function reloadThread() {
@@ -1136,7 +1152,7 @@ export default function ForumPage() {
       </Head>
 
       <AppShell
-        rightRail={<ForumSidebar />}
+        rightRail={<ForumSidebar rules={forumRules.data?.rules ?? null} />}
       >
         <section aria-label="Forum" className="flex min-w-0 flex-col gap-4">
           {loading ? (
@@ -1151,7 +1167,19 @@ export default function ForumPage() {
           ) : needsRules ? (
             <Card className="mx-auto max-w-md p-8 text-center">
               <p className="font-semibold text-ink">Please agree to the forum rules to continue.</p>
-              <ForumRulesModal isOpen onAccept={handleAcceptRules} onClose={() => router.push("/modules")} />
+              {forumRules.error ? (
+                <p className="mt-2 text-sm text-red-600">{forumRules.error}</p>
+              ) : forumRules.data ? (
+                // Keyed by version: new rules start with the box unticked again.
+                <ForumRulesModal
+                  key={forumRules.data.id}
+                  rules={forumRules.data.rules}
+                  updated={!!user.forum_rules_outdated}
+                  isOpen
+                  onAccept={handleAcceptRules}
+                  onClose={() => router.push("/modules")}
+                />
+              ) : null}
             </Card>
           ) : error ? (
             <div className="mx-auto max-w-md rounded-xl border border-red-200 bg-red-50 p-8 text-center">

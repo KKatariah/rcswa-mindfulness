@@ -13,6 +13,7 @@ from ..access import (
 from ..models import (
     ForumFlag,
     ForumPost,
+    ForumRulesRevision,
     ForumThread,
 )
 from ..utils import gravatar_url
@@ -273,3 +274,39 @@ class ReportedPostSerializer(ModeratedPostSerializer):
 
     class Meta(ModeratedPostSerializer.Meta):
         fields = ModeratedPostSerializer.Meta.fields + ["flags"]
+
+
+FORUM_RULES_MAX = 20
+FORUM_RULE_TITLE_MAX_CHARS = 120
+FORUM_RULE_BODY_MAX_CHARS = 500
+
+
+class ForumRuleSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=FORUM_RULE_TITLE_MAX_CHARS)
+    body = serializers.CharField(max_length=FORUM_RULE_BODY_MAX_CHARS, allow_blank=True, required=False, default="")
+
+
+class ForumRulesSerializer(serializers.ModelSerializer):
+    """The current rules for everyone; admins save a new version through it."""
+
+    rules = ForumRuleSerializer(many=True)
+    updated_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ForumRulesRevision
+        fields = ["id", "rules", "created_at", "updated_by_name", "requires_reaccept"]
+        read_only_fields = ["id", "created_at"]
+        extra_kwargs = {"requires_reaccept": {"write_only": True}}
+
+    def get_updated_by_name(self, obj):
+        # Only admins see who last changed the rules.
+        if not is_admin(self.context["request"].user):
+            return None
+        return str(obj.created_by) if obj.created_by else None
+
+    def validate_rules(self, rules):
+        if not rules:
+            raise serializers.ValidationError("Add at least one rule.")
+        if len(rules) > FORUM_RULES_MAX:
+            raise serializers.ValidationError(f"There can be at most {FORUM_RULES_MAX} rules.")
+        return [{"title": r["title"].strip(), "body": r.get("body", "").strip()} for r in rules]

@@ -105,6 +105,15 @@ class ApiContractTests(APITestCase):
             "ForumPost",
         )
 
+    def test_forum_rules(self, _fire):
+        self.client.force_authenticate(self.student)
+        self.assertMatches(self.client.get("/api/forum/rules/"), "ForumRules")
+        self.client.force_authenticate(self.admin)
+        self.assertMatches(
+            self.client.post("/api/forum/rules/", {"rules": [{"title": "Be kind", "body": ""}]}, format="json"),
+            "ForumRules",
+        )
+
     def test_notification_preferences(self, _fire):
         self.client.force_authenticate(self.student)
         self.assertMatches(self.client.get("/api/notifications/preferences/me/"), "NotificationPreferences")

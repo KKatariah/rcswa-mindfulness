@@ -41,3 +41,14 @@ export type ForumThreadDetail = ForumThread & {
   opening_post: ForumPost | null;
   replies: ForumPost[];
 };
+
+export type ForumRule = { title: string; body: string };
+
+/** The current version of the forum rules. Each save by an admin makes a new version (new id). */
+export type ForumRules = {
+  id: number;
+  rules: ForumRule[];
+  created_at: string;
+  // Who saved this version; only sent to admins.
+  updated_by_name: string | null;
+};

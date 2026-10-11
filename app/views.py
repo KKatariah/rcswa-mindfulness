@@ -39,6 +39,7 @@ from .models import (
     Enrollment,
     ForumFlag,
     ForumPost,
+    ForumRulesRevision,
     ForumThread,
     Module,
     NotificationLog,
@@ -77,6 +78,7 @@ from .serializers import (
     EnrollmentSerializer,
     ForumFlagCreateSerializer,
     ForumPostCreateSerializer,
+    ForumRulesSerializer,
     ForumPostSerializer,
     ForumThreadCreateSerializer,
     ForumThreadDetailSerializer,
@@ -148,7 +150,9 @@ def _user_payload(user):
         "avatar_url": gravatar_url(user.email),
         "auth_provider": user.auth_provider,
         "cohort_start_date": _iso_or_none(active_cohort_start_date(user)),
-        "forum_rules_accepted": user.forum_rules_accepted_at is not None,
+        "forum_rules_accepted": user.has_accepted_forum_rules,
+        # Agreed to an earlier version: the forum asks again, saying the rules have changed.
+        "forum_rules_outdated": user.forum_rules_outdated,
         "forum_banned": user.is_forum_banned,
         "forum_banned_until": _iso_or_none(user.forum_banned_until) if user.is_forum_banned else None,
         "is_approved": user_is_approved(user),
@@ -1297,11 +1301,39 @@ def dashboard_stats_view(request):
     return Response(dashboard_stats())
 
 
+@api_view(["GET", "POST"])
+@permission_classes([IsApproved])
+def forum_rules_view(request):
+    """GET: the current rules (readable before agreeing to them). POST (admins): saves a
+    new version; with requires_reaccept (the default) every student must agree again."""
+    if request.method == "GET":
+        current = ForumRulesRevision.current()
+        if current is None:
+            return Response({"detail": "No forum rules have been set."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(ForumRulesSerializer(current, context={"request": request}).data)
+
+    if not is_admin(request.user):
+        raise PermissionDenied("Only admins can change the forum rules.")
+    serializer = ForumRulesSerializer(data=request.data, context={"request": request})
+    serializer.is_valid(raise_exception=True)
+    revision = serializer.save(created_by=request.user)
+    return Response(ForumRulesSerializer(revision, context={"request": request}).data)
+
+
 @api_view(["POST"])
 @permission_classes([IsApproved])
 def accept_forum_rules_view(request):
     user = request.user
-    if user.forum_rules_accepted_at is None:
+    # The client sends the version it showed, so rules changed while the
+    # dialog was open aren't recorded as agreed to.
+    shown = request.data.get("revision")
+    current = ForumRulesRevision.current()
+    if shown is not None and current is not None and str(shown) != str(current.pk):
+        return Response(
+            {"detail": "The forum rules have just been updated. Please read the new rules and agree again."},
+            status=status.HTTP_409_CONFLICT,
+        )
+    if not user.has_accepted_forum_rules:
         user.forum_rules_accepted_at = timezone.now()
         user.save(update_fields=["forum_rules_accepted_at"])
     return Response({"user": _user_payload(user)})

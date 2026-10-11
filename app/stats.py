@@ -284,6 +284,7 @@ def user_overview(user):
             "forum_rules_accepted_at": (
                 user.forum_rules_accepted_at.isoformat() if user.forum_rules_accepted_at else None
             ),
+            "forum_rules_outdated": user.forum_rules_outdated,
         },
         "enrollments": [
             {

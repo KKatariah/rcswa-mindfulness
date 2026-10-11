@@ -30,6 +30,7 @@ from .forum import (  # noqa: F401
     ForumThreadDetailSerializer,
     ForumThreadCreateSerializer,
     ForumFlagCreateSerializer,
+    ForumRulesSerializer,
     ModeratedPostSerializer,
     ReportedPostSerializer,
     FORUM_POST_MAX_CHARS,

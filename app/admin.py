@@ -21,6 +21,7 @@ from .models import (
     SurveyResponse,
     ForumThread,
     ForumPost,
+    ForumRulesRevision,
 )
 from .serializers import validate_survey_questions
 
@@ -214,6 +215,7 @@ admin.site.register(ContentCompletion)
 admin.site.register(ContentView)
 admin.site.register(NotificationLog)
 admin.site.register(SurveyResponse)
+admin.site.register(ForumRulesRevision)
 
 
 # ── Survey admin ──────────────────────────────────────────────────────────────

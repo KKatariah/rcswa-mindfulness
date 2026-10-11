@@ -1,5 +1,5 @@
 import type { AuthUser } from "@/types/user";
-import type { ForumPost, ForumThread, ForumThreadDetail } from "@/types/forum";
+import type { ForumPost, ForumRule, ForumRules, ForumThread, ForumThreadDetail } from "@/types/forum";
 import type {
 	Cohort,
 	AdminModule,
@@ -151,9 +151,20 @@ export function updateProfile(payload: { display_name: string }): Promise<{ mess
 	return request("/profile/", { method: "PATCH", body: payload });
 }
 
-/** Records that the user has agreed to the forum rules. */
-export function acceptForumRules(): Promise<{ user: AuthUser }> {
-	return request("/forum/accept-rules/", { method: "POST" });
+/** Records that the user has agreed to the forum rules. `revision` is the version they were
+ *  shown; if the rules changed since, the server refuses (409) and they're asked again. */
+export function acceptForumRules(revision: number): Promise<{ user: AuthUser }> {
+	return request("/forum/accept-rules/", { method: "POST", body: { revision } });
+}
+
+export function getForumRules(): Promise<ForumRules> {
+	return request("/forum/rules/");
+}
+
+/** Admins: saves a new version of the rules. With `requireReaccept`, every student
+ *  has to agree to them again before they can use the forum. */
+export function updateForumRules(rules: ForumRule[], requireReaccept: boolean): Promise<ForumRules> {
+	return request("/forum/rules/", { method: "POST", body: { rules, requires_reaccept: requireReaccept } });
 }
 
 /** Changing the password replaces the API token; the new one is stored here. */
