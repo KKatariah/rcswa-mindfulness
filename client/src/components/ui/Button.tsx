@@ -6,7 +6,7 @@ const VARIANTS = {
 	primary: "bg-brand-blue text-white hover:bg-brand-blue-dark",
 	/** Navy: modal and form submit buttons (Log in, Save, Agree). */
 	dark: "bg-brand-blue-dark text-white hover:bg-brand-blue-dark/90",
-	danger: "bg-red-500 text-white",
+	danger: "bg-red-500 text-white hover:bg-red-600",
 	secondary: "border border-gray-200 text-ink",
 	/** White outline for the dark photo header, where a filled button would read as the main action. */
 	onDark: "border border-white/60 text-white hover:bg-white/10",
@@ -30,7 +30,7 @@ export type ButtonSize = keyof typeof SIZES;
  * Pass `null` as the size when the button sets its own height, corners and type in `className`.
  */
 export function buttonClass(variant: ButtonVariant, size: ButtonSize | null, className = "") {
-	return ["inline-flex items-center justify-center gap-2 transition-colors cursor-pointer", VARIANTS[variant], size ? SIZES[size] : "", className]
+	return ["inline-flex items-center justify-center gap-2 transition-colors enabled:cursor-pointer", VARIANTS[variant], size ? SIZES[size] : "", className]
 		.filter(Boolean)
 		.join(" ");
 }

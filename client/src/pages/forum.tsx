@@ -247,7 +247,7 @@ function PostMenu({ label, actions, className = "" }: { label: string; actions: 
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => setOpen((o) => !o)}
-        className="grid size-8 place-items-center rounded-lg text-muted transition-colors hover:bg-surface-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue"
+        className="grid size-8 place-items-center rounded-lg text-muted transition-colors hover:bg-surface-muted hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-blue cursor-pointer"
       >
         <MoreHorizontalIcon className="size-5" />
       </button>
@@ -268,7 +268,7 @@ function PostMenu({ label, actions, className = "" }: { label: string; actions: 
                 setOpen(false);
                 action.onSelect();
               }}
-              className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium hover:bg-surface-muted focus:bg-surface-muted focus:outline-none disabled:opacity-50 ${action.danger ? "text-red-600" : "text-ink"}`}
+              className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm font-medium cursor-pointer hover:bg-surface-muted focus-visible:bg-surface-muted focus:outline-none disabled:opacity-50 ${action.danger ? "text-red-600" : "text-ink"}`}
             >
               {action.icon}
               {action.label}
@@ -379,14 +379,14 @@ function InlineEditor({
           type="button"
           onClick={handleSave}
           disabled={saving}
-          className="rounded-lg bg-slate-900 px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
+          className="rounded-lg bg-slate-900 enabled:cursor-pointer enabled:hover:bg-slate-800 px-4 py-1.5 text-xs font-bold text-white disabled:opacity-50"
         >
           {saving ? "Saving…" : "Save"}
         </button>
         <button
           type="button"
           onClick={onDone}
-          className="rounded-lg border border-gray-200 bg-white px-4 py-1.5 text-xs font-semibold text-ink"
+          className="rounded-lg border border-gray-200 bg-white cursor-pointer hover:bg-surface-muted px-4 py-1.5 text-xs font-semibold text-ink"
         >
           Cancel
         </button>
@@ -473,7 +473,7 @@ function Composer({
         <button
           type="submit"
           disabled={submitting || !body.trim() || remaining > 0}
-          className="shrink-0 rounded-xl bg-slate-900 px-5 py-2 text-sm font-bold text-white disabled:opacity-50"
+          className="shrink-0 rounded-xl bg-slate-900 px-5 py-2 text-sm font-bold text-white disabled:opacity-50 enabled:cursor-pointer enabled:hover:bg-slate-800"
         >
           {submitting ? "Posting…" : remaining > 0 ? `Wait ${remaining}s` : submitLabel}
         </button>
@@ -575,7 +575,7 @@ function BackButton({ onClick }: { onClick: () => void }) {
     <button
       type="button"
       onClick={onClick}
-      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-card transition-colors hover:bg-surface-muted"
+      className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-card transition-colors cursor-pointer hover:bg-surface-muted"
     >
       <ChevronLeftIcon className="size-4" />
       Back to forum
