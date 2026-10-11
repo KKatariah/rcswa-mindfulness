@@ -1,247 +1,258 @@
-import { useState, type ReactNode } from "react";
+import { useMemo, useState } from "react";
 import Card from "@/components/ui/Card";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import type { SurveyQuestion } from "@/types/admin";
 
-type ScaleQuestion = {
-	id: number;
-	text: string;
-};
+export type SurveyAnswers = Record<string, number | string>;
 
 type SurveyQuestionsProps = {
-	formalQuestions?: ScaleQuestion[];
-	informalQuestions?: ScaleQuestion[];
-	// Admin-editable wording from the survey definition, keyed by question number.
-	// Falls back to the built-in copy below when missing.
-	questionText?: Partial<Record<number, string>>;
-	sectionText?: Partial<Record<number, string>>;
-	onSubmit?: (answers: Record<number, number | string>) => void;
+	questions: SurveyQuestion[];
+	// Answers to questions skipped by a skip_if rule are left out.
+	onSubmit?: (answers: SurveyAnswers) => void;
 	isSubmitting?: boolean;
 };
-
-const DEFAULT_FORMAL_QUESTIONS: ScaleQuestion[] = [
-	{
-		id: 3,
-		text: "When meditating, how much of the time was your attention focused on what you intended to focus on (body, breath, sounds, etc.)?",
-	},
-	{
-		id: 4,
-		text: "When meditating, how much of the time were you noticing when you were getting distracted?",
-	},
-	{
-		id: 5,
-		text: "When meditating, how much of the time were you practicing an accepting attitude towards what you were experiencing?",
-	},
-	{
-		id: 6,
-		text: "When meditating, how much of the time were you practicing being gentle and compassionate towards yourself?",
-	},
-];
-
-const DEFAULT_INFORMAL_QUESTIONS: ScaleQuestion[] = [
-	{
-		id: 7,
-		text: "In your daily life, how much of the time were you practicing paying attention to everyday activities (e.g. eating, walking, chores, communicating etc.)?",
-	},
-	{
-		id: 8,
-		text: "In your daily life, how much of the time were you practicing paying attention while working or studying?",
-	},
-	{
-		id: 9,
-		text: "In your daily life, how much of the time were you practicing bringing your attention back to what you were doing when it wandered off?",
-	},
-	{
-		id: 10,
-		text: "In your daily life, how much of the time were you practicing being aware of your thoughts, emotions and reactions?",
-	},
-	{
-		id: 11,
-		text: "In your daily life, how much of the time were you practicing bringing an accepting attitude toward what you were experiencing?",
-	},
-	{
-		id: 12,
-		text: "In your daily life, how much of the time were you practicing being gentle and compassionate toward yourself?",
-	},
-];
-
-const SCALE_VALUES = [0, 1, 2, 3, 4, 5, 6];
-
-function ScaleQuestionGroup({
-	questions,
-	answers,
-	onAnswer,
-}: {
-	questions: ScaleQuestion[];
-	answers: Record<number, number | string>;
-	onAnswer: (questionId: number, value: number) => void;
-}) {
-	return (
-		<div className="mt-4 grid gap-3 md:mt-5 md:gap-4">
-			{questions.map((question) => (
-				<fieldset key={question.id} className="grid gap-2 md:gap-3">
-					<legend className="text-sm leading-5 text-ink md:max-w-[620px] md:text-base">
-						<span className="mr-2 font-semibold">{question.id}.</span>
-						{question.text}
-					</legend>
-					<div aria-label={`Question ${question.id} scale`} className="w-full">
-						<div
-							className="grid grid-cols-7 gap-1 text-center text-[10px] font-bold text-ink md:gap-2 md:text-xs"
-							aria-hidden="true"
-						>
-							{SCALE_VALUES.map((value) => (
-								<span key={value} className="font-semibold">
-									{value}
-								</span>
-							))}
-						</div>
-						<div className="mt-1 grid grid-cols-7 gap-1 md:mt-2 md:gap-2">
-							{SCALE_VALUES.map((value) => (
-								<label key={value} className="flex justify-center">
-									<span className="sr-only">{value}</span>
-									<input
-										type="radio"
-										name={`question-${question.id}`}
-										value={value}
-										checked={answers[question.id] === value}
-										onChange={() => onAnswer(question.id, value)}
-										className="size-4 border-brand-blue bg-white accent-brand-blue checked:bg-brand-blue focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
-									/>
-								</label>
-							))}
-						</div>
-					</div>
-				</fieldset>
-			))}
-		</div>
-	);
-}
-
-function NumberQuestion({ label, onChange }: { label: ReactNode; onChange: (value: number) => void }) {
-	return (
-		<label className="grid gap-2 text-sm leading-5 text-ink md:grid-cols-[minmax(0,1fr)_170px] md:items-center md:text-base">
-			<span>{label}</span>
-			<input
-				type="number"
-				min="0"
-				placeholder="Enter number..."
-				className="h-9 rounded-xl border border-[#5b5a5a] bg-white px-3 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30 md:h-8 md:px-4"
-				onChange={(event) => onChange(Number(event.target.value || 0))}
-			/>
-		</label>
-	);
-}
 
 // Matches LONGTEXT_MAX_CHARS in app/serializers/surveys.py.
 const JOURNAL_MAX_CHARS = 5000;
 
-export default function SurveyQuestions({
-	formalQuestions = DEFAULT_FORMAL_QUESTIONS,
-	informalQuestions = DEFAULT_INFORMAL_QUESTIONS,
-	questionText = {},
-	sectionText = {},
-	onSubmit,
-	isSubmitting = false,
-}: SurveyQuestionsProps) {
-	const [answers, setAnswers] = useState<Record<number, number | string>>({});
-	// Each question in the journal prompt becomes its own list item.
-	const journalPrompts = questionText[13]
-		? (questionText[13].match(/[^?]+\?|[^?]+$/g) ?? []).map((part) => part.trim()).filter(Boolean)
-		: ["How are you feeling this week?", "What has been your experience with the mindfulness intervention this week?"];
-	const journalWords = String(answers[13] ?? "").trim().split(/\s+/).filter(Boolean).length;
+const fieldClass =
+	"rounded-xl border border-[#5b5a5a] bg-white text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30";
 
-	const updateAnswer = (questionId: number, value: number | string) => {
-		setAnswers((currentAnswers) => ({ ...currentAnswers, [questionId]: value }));
+type Numbered = SurveyQuestion & { number: number };
+
+/**
+ * Split the survey into cards: a new card starts at every section heading, and each
+ * free-text question gets a card of its own (an untitled one is the reflective journal).
+ */
+function groupIntoCards(questions: Numbered[]) {
+	const cards: { heading?: string; journal: boolean; questions: Numbered[] }[] = [];
+	for (const q of questions) {
+		const last = cards[cards.length - 1];
+		if (q.type === "longtext") {
+			cards.push({ heading: q.section || "Reflective Journal", journal: !q.section, questions: [q] });
+		} else if (!last || q.section || last.questions[0].type === "longtext") {
+			cards.push({ heading: q.section || undefined, journal: false, questions: [q] });
+		} else {
+			last.questions.push(q);
+		}
+	}
+	return cards;
+}
+
+function scaleValues(q: SurveyQuestion) {
+	const lo = q.min ?? 0;
+	const hi = q.max ?? 6;
+	return Array.from({ length: Math.max(hi - lo + 1, 0) }, (_, i) => lo + i);
+}
+
+function scaleHint(q: SurveyQuestion, again: boolean) {
+	const lo = q.scale_labels?.[String(q.min)];
+	const hi = q.scale_labels?.[String(q.max)];
+	const range = lo && hi ? ` (${q.min} - ${lo.toLowerCase()}, ${q.max} - ${hi.toLowerCase()})` : "";
+	return `${again ? "Again, please" : "Please"} select the appropriate number${range} to indicate how much each of the following were true for you.`;
+}
+
+/** "skip to question 7", or "skip questions 2 to 6" when nothing follows them. */
+function skipNote(controller: Numbered, dependents: Numbered[], total: number) {
+	const value = dependents[0].skip_if!.value;
+	const last = dependents[dependents.length - 1].number;
+	const target = last < total ? `skip to question ${last + 1}` : `skip questions ${dependents[0].number} to ${last}`;
+	return `If you answer ${value} to question ${controller.number}, ${target}.`;
+}
+
+/** Each question in a free-text prompt becomes its own list item. */
+function splitPrompts(text: string) {
+	return (text.match(/[^?]+\?|[^?]+$/g) ?? []).map((part) => part.trim()).filter(Boolean);
+}
+
+export default function SurveyQuestions({ questions, onSubmit, isSubmitting = false }: SurveyQuestionsProps) {
+	const [answers, setAnswers] = useState<SurveyAnswers>({});
+	const [confirmingClear, setConfirmingClear] = useState(false);
+
+	const numbered = useMemo(() => questions.map((q, i) => ({ ...q, number: i + 1 })), [questions]);
+	const cards = useMemo(() => groupIntoCards(numbered), [numbered]);
+
+	const skipped = new Set(
+		numbered.filter((q) => q.skip_if && answers[q.skip_if.question_id] === q.skip_if.value).map((q) => q.id),
+	);
+	const scaleIds = new Set(numbered.filter((q) => q.type === "likert").map((q) => q.id));
+	const hasScaleAnswers = Object.keys(answers).some((id) => scaleIds.has(id));
+
+	const updateAnswer = (id: string, value: number | string | undefined) => {
+		setAnswers((current) => {
+			const next = { ...current };
+			if (value === undefined) delete next[id];
+			else next[id] = value;
+			return next;
+		});
 	};
 
-	const [confirmingClear, setConfirmingClear] = useState(false);
-	const scaleQuestionIds = new Set([...formalQuestions, ...informalQuestions].map((question) => question.id));
-	const hasScaleAnswers = Object.keys(answers).some((questionId) => scaleQuestionIds.has(Number(questionId)));
-
 	const clearScaleSelections = () => {
-		setAnswers((currentAnswers) =>
-			Object.fromEntries(
-				Object.entries(currentAnswers).filter(([questionId]) => !scaleQuestionIds.has(Number(questionId))),
-			),
-		);
+		setAnswers((current) => Object.fromEntries(Object.entries(current).filter(([id]) => !scaleIds.has(id))));
 		setConfirmingClear(false);
 	};
 
 	const submit = (event: React.FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		if (isSubmitting) return;
-		onSubmit?.(answers);
+		onSubmit?.(Object.fromEntries(Object.entries(answers).filter(([id]) => !skipped.has(id))));
 	};
+
+	function renderNumber(q: Numbered) {
+		const dependents = numbered.filter((d) => d.skip_if?.question_id === q.id);
+		return (
+			<div key={q.id}>
+				<label className="grid gap-2 text-sm leading-5 text-ink md:grid-cols-[minmax(0,1fr)_170px] md:items-center md:text-base">
+					<span>
+						{q.number}. {q.text}
+						{q.unit && <span className="text-muted"> ({q.unit})</span>}
+					</span>
+					<input
+						type="number"
+						min="0"
+						step="1"
+						inputMode="numeric"
+						placeholder="Enter number..."
+						disabled={skipped.has(q.id)}
+						value={answers[q.id] ?? ""}
+						className={`h-9 px-3 md:h-8 md:px-4 disabled:opacity-50 ${fieldClass}`}
+						onChange={(event) =>
+							updateAnswer(q.id, event.target.value === "" ? undefined : Number(event.target.value))
+						}
+					/>
+				</label>
+				{dependents.length > 0 && (
+					<p className="mt-3 text-sm leading-4 text-ink md:mt-4 md:text-base">
+						<span className="font-bold">(Note:</span> {skipNote(q, dependents, numbered.length)})
+					</p>
+				)}
+			</div>
+		);
+	}
+
+	function renderScale(q: Numbered) {
+		const values = scaleValues(q);
+		const columns = { gridTemplateColumns: `repeat(${values.length}, minmax(0, 1fr))` };
+		return (
+			<fieldset key={q.id} disabled={skipped.has(q.id)} className="grid gap-2 disabled:opacity-50 md:gap-3">
+				<legend className="text-sm leading-5 text-ink md:max-w-[620px] md:text-base">
+					<span className="mr-2 font-semibold">{q.number}.</span>
+					{q.text}
+				</legend>
+				<div aria-label={`Question ${q.number} scale`} className="w-full">
+					<div
+						className="grid gap-1 text-center text-2xs font-bold text-ink md:gap-2 md:text-xs"
+						style={columns}
+						aria-hidden="true"
+					>
+						{values.map((value) => (
+							<span key={value} className="font-semibold">{value}</span>
+						))}
+					</div>
+					<div className="mt-1 grid gap-1 md:mt-2 md:gap-2" style={columns}>
+						{values.map((value) => (
+							<label key={value} className="flex justify-center">
+								<span className="sr-only">{q.scale_labels?.[String(value)] ?? value}</span>
+								<input
+									type="radio"
+									name={`question-${q.number}`}
+									value={value}
+									checked={answers[q.id] === value}
+									onChange={() => updateAnswer(q.id, value)}
+									className="size-4 border-brand-blue bg-white accent-brand-blue checked:bg-brand-blue focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
+								/>
+							</label>
+						))}
+					</div>
+				</div>
+			</fieldset>
+		);
+	}
+
+	function renderLongtext(q: Numbered, journal: boolean) {
+		const prompts = splitPrompts(q.text);
+		const words = String(answers[q.id] ?? "").trim().split(/\s+/).filter(Boolean).length;
+		const countId = `words-${q.id}`;
+		return (
+			<div key={q.id}>
+				{journal && (
+					<p className="mt-3 text-sm leading-5 text-ink md:mt-4 md:text-base">
+						Please write 100-250 words (4-5 sentences) reflecting on the following questions:
+					</p>
+				)}
+				{prompts.length > 1 ? (
+					<ol className="mt-2 list-decimal pl-5 text-sm leading-5 text-ink md:pl-6 md:text-base">
+						{prompts.map((prompt) => <li key={prompt}>{prompt}</li>)}
+					</ol>
+				) : (
+					<p className="mt-2 text-sm leading-5 text-ink md:text-base">{q.text}</p>
+				)}
+				<textarea
+					rows={4}
+					placeholder={journal ? "Enter reflection..." : "Enter your answer..."}
+					maxLength={JOURNAL_MAX_CHARS}
+					aria-label={q.text}
+					aria-describedby={countId}
+					disabled={skipped.has(q.id)}
+					value={answers[q.id] ?? ""}
+					className={`mt-5 w-full resize-y px-3 py-3 disabled:opacity-50 md:mt-6 ${fieldClass}`}
+					onChange={(event) => updateAnswer(q.id, event.target.value || undefined)}
+				/>
+				<p id={countId} className="mt-2 text-xs text-muted">
+					{words} {words === 1 ? "word" : "words"}{journal && " (aim for 100-250)"}
+				</p>
+			</div>
+		);
+	}
+
+	let scaleRunsSeen = 0;
 
 	return (
 		<form onSubmit={submit} className="grid gap-4 pb-[calc(var(--mobile-bottom-nav-height)+var(--mobile-bottom-nav-safe)-1rem)] md:gap-5 md:pb-0">
-			<Card as="section" className="p-4 md:p-10">
-				<h2 className="text-[13px] font-bold leading-5 text-ink md:text-base">
-					{sectionText[1] ?? <>Questions 1 to 6 ask about your <u>formal meditation practice</u> (e.g. sitting meditation).</>}
-				</h2>
-				<div className="mt-4 grid gap-3 md:mt-5 md:max-w-[900px] md:gap-4">
-					<NumberQuestion
-						label={<>1. {questionText[1] ?? <>How many times did you do formal meditation practice in the <u>past week</u>?</>}</>}
-						onChange={(value) => updateAnswer(1, value)}
-					/>
-					<NumberQuestion
-						label={<>2. {questionText[2] ?? "What was the average duration of each meditation session (estimate in minutes)?"}</>}
-						onChange={(value) => updateAnswer(2, value)}
-					/>
-				</div>
-				<p className="mt-3 text-sm leading-4 text-ink md:mt-4 md:text-base">
-					<span className="font-bold">(Note:</span> If you did not do <u>any</u> meditation practice in the past week, skip to question 7.)
-				</p>
-				<p className="mt-4 text-sm font-bold leading-5 text-ink md:mt-5 md:text-base">
-					Please select the appropriate number (0 - not at all, 6 - all the time) to indicate how much each of the following were true for you over the <u>past week</u>.
-				</p>
-				<ScaleQuestionGroup questions={formalQuestions} answers={answers} onAnswer={updateAnswer} />
-			</Card>
-
-			<Card as="section" className="p-4 md:p-10">
-				<h2 className="text-sm font-bold leading-5 text-ink md:text-base">
-					{sectionText[7] ?? "Questions 7 to 12 ask about your informal practice (being mindful in everyday life, outside of meditation sessions)."}
-				</h2>
-				<p className="mt-3 text-sm font-bold leading-5 text-ink md:mt-4 md:text-base">
-					Again, please select the appropriate number to indicate how much each of the following were true for you over the <u>past week</u>.
-				</p>
-				<ScaleQuestionGroup questions={informalQuestions} answers={answers} onAnswer={updateAnswer} />
-			</Card>
-
-			<Card as="section" className="p-4 md:p-10">
-				<h2 id="journal-heading" className="text-sm font-bold text-ink md:text-base">Reflective Journal</h2>
-				<p className="mt-3 text-sm leading-5 text-ink md:mt-4 md:text-base">
-					Please write 100-250 words (4-5 sentences) reflecting on the following questions:
-				</p>
-				<ol className="mt-2 list-decimal pl-5 text-sm leading-5 text-ink md:pl-6 md:text-base">
-					{journalPrompts.map((prompt) => <li key={prompt}>{prompt}</li>)}
-				</ol>
-				<textarea
-					rows={4}
-					placeholder="Enter reflection..."
-					maxLength={JOURNAL_MAX_CHARS}
-					aria-labelledby="journal-heading"
-					aria-describedby="journal-word-count"
-					className="mt-5 w-full resize-y rounded-xl border border-[#5b5a5a] bg-white px-3 py-3 text-sm outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/30 md:mt-6"
-					onChange={(event) => updateAnswer(13, event.target.value)}
-				/>
-				<p id="journal-word-count" className="mt-2 text-xs text-muted">
-					{journalWords} {journalWords === 1 ? "word" : "words"} (aim for 100-250)
-				</p>
-			</Card>
+			{cards.map((card) => (
+				<Card as="section" key={card.questions[0].id} className="p-4 md:p-10">
+					{card.heading && (
+						<h2 className="text-sm font-bold leading-5 text-ink md:text-base">{card.heading}</h2>
+					)}
+					{card.questions[0].type === "longtext" ? (
+						renderLongtext(card.questions[0], card.journal)
+					) : (
+						<div className={`grid gap-3 md:max-w-[900px] md:gap-4 ${card.heading ? "mt-4 md:mt-5" : ""}`}>
+							{card.questions.map((q, i) => {
+								if (q.type !== "likert") return renderNumber(q);
+								// Explain the scale at the start of each run of rating questions.
+								const startsRun = i === 0 || card.questions[i - 1].type !== "likert";
+								return startsRun ? (
+									<div key={q.id} className="grid gap-3 md:gap-4">
+										<p className="mt-1 text-sm font-bold leading-5 text-ink md:text-base">
+											{scaleHint(q, scaleRunsSeen++ > 0)}
+										</p>
+										{renderScale(q)}
+									</div>
+								) : (
+									renderScale(q)
+								);
+							})}
+						</div>
+					)}
+				</Card>
+			))}
 
 			<div className="flex flex-nowrap items-center justify-center gap-3">
-				<button
-					type="button"
-					disabled={isSubmitting || !hasScaleAnswers}
-					onClick={() => setConfirmingClear(true)}
-					className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl border border-gray-300 bg-white px-5 text-[15px] font-semibold text-ink-soft transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-[11px]"
-				>
-					Clear selections
-				</button>
+				{scaleIds.size > 0 && (
+					<button
+						type="button"
+						disabled={isSubmitting || !hasScaleAnswers}
+						onClick={() => setConfirmingClear(true)}
+						className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl border border-gray-300 bg-white px-5 text-md font-semibold text-ink-soft transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-2xs"
+					>
+						Clear selections
+					</button>
+				)}
 				<button
 					type="submit"
 					disabled={isSubmitting}
-					className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-[11px]"
+					className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl bg-brand-blue px-6 text-md font-bold text-white shadow-button transition-colors hover:bg-brand-blue-dark hover:cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-2xs"
 				>
 					{isSubmitting ? "Submitting..." : "Submit survey"}
 				</button>

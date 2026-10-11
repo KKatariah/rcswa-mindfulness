@@ -36,11 +36,11 @@ needs to exist on the server at runtime. This survives ephemeral filesystem rede
 
 ### 2. Set environment variables
 
-| Variable              | Value                                                                          |
-| --------------------- | ------------------------------------------------------------------------------ |
-| `VAPID_PRIVATE_KEY`   | Raw base64url private key — the string printed by the extraction command above |
-| `VAPID_PUBLIC_KEY`    | The `Application Server Key` printed by `vapid --gen`                          |
-| `VAPID_ADMIN_EMAIL`   | Your admin email (included in the VAPID `sub` claim)                           |
+| Variable            | Value                                                                          |
+| ------------------- | ------------------------------------------------------------------------------ |
+| `VAPID_PRIVATE_KEY` | Raw base64url private key — the string printed by the extraction command above |
+| `VAPID_PUBLIC_KEY`  | The `Application Server Key` printed by `vapid --gen`                          |
+| `VAPID_ADMIN_EMAIL` | Your admin email (included in the VAPID `sub` claim)                           |
 
 In development `VAPID_*` default to empty strings (push is skipped with a warning).
 Notifications are push only: a student with no registered device gets a
@@ -73,7 +73,11 @@ On an empty database with no modules yet, load the placeholder modules with them
 `python manage.py loaddata dev_seed weekly_survey`. Don't load `dev_seed` into a
 database that already has data: it uses fixed IDs and overwrites user 1, modules 1–2
 and content items 1–4. After that, admins create surveys for later weeks from
-**Admin → Surveys → New Survey**, which copies an existing survey's questions.
+**Admin -> Surveys -> New Survey**, which copies an existing survey's questions.
+
+To try out **Admin -> Moderation** in development, `python manage.py seed_moderation`
+adds demo students (`@moderation-demo.test`) with reported posts, removed posts and
+forum bans. Re-running it resets that data; `--clear` deletes it. Don't run it in production.
 
 ### 4. Add the cron jobs
 
@@ -86,7 +90,7 @@ next run.
   reminder at the cron run that corresponds to 8 am Perth time.
 - `send_module_unlock_notifications` tells each participant "Week N is now
   available" on the day that week unlocks for their cohort (cohort start date +
-  (N − 1) weeks, Perth time). It only looks at weeks unlocking *today*, so it runs
+  (N − 1) weeks, Perth time). It only looks at weeks unlocking _today_, so it runs
   hourly during the day: the 7 am run sends the notices, later runs retry failures.
 
 ```cron

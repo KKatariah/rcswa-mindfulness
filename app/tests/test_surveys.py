@@ -843,21 +843,73 @@ class SurveyAdminTests(APITestCase):
         self.assertEqual(self.survey.title, "Week one")
         self.assertEqual(self.survey.questions[0]["text"], "How often?")
 
-    def test_structure_is_frozen_after_responses(self):
+    def _patch_questions(self, questions):
+        return self.client.patch(f"/api/surveys/{self.survey.pk}/", {"questions": questions}, format="json")
+
+    def _changes(self):
+        resp = self.client.get(f"/api/surveys/{self.survey.pk}/responses/")
+        return resp.data[0]["question_changes"]
+
+    def test_response_keeps_the_questions_it_answered(self):
+        self.assertEqual(self._respond().questions, self.QUESTIONS)
+
+    def test_questions_can_change_after_responses_and_old_answers_are_flagged(self):
         self._respond()
-        changes = [
-            self.QUESTIONS[:2],
-            self.QUESTIONS + [{"id": "q4", "type": "longtext", "text": "More?"}],
-            list(reversed(self.QUESTIONS)),
-            self._questions(q1={"max": 10}),
-            self._questions(q0={"type": "longtext"}),
-        ]
-        for questions in changes:
-            with self.subTest(questions=questions):
-                resp = self.client.patch(f"/api/surveys/{self.survey.pk}/", {"questions": questions}, format="json")
-                self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(self._changes(), {})
+        q1, q2, q3 = self._questions(q1={"text": "How focused were you?"})
+        new = {"id": "q4", "type": "longtext", "text": "More?"}
+        # Move a new q4 to the front, edit q2's wording and remove q3.
+        resp = self._patch_questions([new, q1, q2])
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        changes = self._changes()
+        self.assertEqual(changes.keys(), {"q2", "q3", "q4"})
+        self.assertEqual(changes["q2"]["status"], "edited")
+        self.assertEqual(changes["q2"]["previous"]["text"], "How focused?")
+        self.assertEqual(changes["q3"]["status"], "removed")
+        self.assertEqual(changes["q4"], {"status": "added", "previous": None})
+
+    def test_new_section_heading_alone_is_not_flagged(self):
+        self._respond()
+        self.assertEqual(self._patch_questions(self._questions(q1={"section": "New part"})).status_code, 200)
+        self.assertEqual(self._changes(), {})
+
+    def test_resubmitting_answers_records_the_current_questions(self):
+        response = self._respond()
+        questions = self._questions(q2={"text": "Write."})
+        self._patch_questions(questions)
+        self.client.force_login(self.student)
+        resp = self.client.patch(
+            f"/api/survey-responses/{response.pk}/",
+            {"answers": {"q1": 2, "q2": 4, "q3": "Calmer"}}, format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        response.refresh_from_db()
+        self.assertEqual(response.questions, questions)
+        self.assertEqual(response.question_changes(), {})
+
+    def test_answered_ids_keep_their_meaning(self):
+        self._respond()
+        # A removed, answered id can't come back as a different question...
+        self.assertEqual(self._patch_questions(self.QUESTIONS[:2]).status_code, status.HTTP_200_OK)
+        reused = self.QUESTIONS[:2] + [{"id": "q3", "type": "integer", "text": "Count?"}]
+        self.assertEqual(self._patch_questions(reused).status_code, status.HTTP_400_BAD_REQUEST)
+        # ...and an answered question can't switch answer type.
+        retyped = [{"id": "q1", "type": "longtext", "text": "How many times?"}, self.QUESTIONS[1]]
+        retyped[1] = {k: v for k, v in retyped[1].items() if k != "skip_if"}
+        resp = self._patch_questions(retyped)
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("needs a new id to change answer type", str(resp.data))
         resp = self.client.patch(f"/api/surveys/{self.survey.pk}/", {"module": self.w2.pk}, format="json")
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_export_keeps_removed_questions_and_flags_changed_answers(self):
+        import csv
+        self._respond()
+        self._patch_questions(self._questions(q0={"text": "How often?"})[:2])
+        text = self.client.get(f"/api/surveys/export/?survey={self.survey.pk}").content.decode("utf-8").lstrip("\ufeff")
+        row = next(csv.DictReader(text.splitlines()))
+        self.assertEqual(row["q3"], "Calm")
+        self.assertEqual(row["changed_questions"], "q1 q3")
 
     def test_structure_is_editable_before_responses(self):
         questions = self.QUESTIONS + [{"id": "q4", "type": "longtext", "text": "More?"}]
@@ -941,3 +993,238 @@ class SurveyAdminTests(APITestCase):
             Survey.objects.create(module=module, code=f"wk{week}", title="x", type="weekly", questions=self.QUESTIONS)
         with self.assertNumQueries(4):
             self.client.get("/api/surveys/manage/")
+
+
+class SurveyQuestionChangeEdgeCaseTests(APITestCase):
+    """Edge cases for editing, reordering, retyping and removing questions after responses."""
+
+    QUESTIONS = [
+        {"id": "q1", "type": "integer", "text": "How many times?", "unit": "times"},
+        {"id": "q2", "type": "likert", "text": "How focused?", "min": 0, "max": 6,
+         "skip_if": {"question_id": "q1", "value": 0}},
+        {"id": "q3", "type": "longtext", "text": "Reflect."},
+    ]
+
+    def setUp(self):
+        self.admin = User.objects.create_user(email="admin@test.local", password="testpass", role=User.Role.ADMIN)
+        self.student = User.objects.create_user(email="s@test.local", password="testpass")
+        self.other = User.objects.create_user(email="o@test.local", password="testpass")
+        cohort = _cohort(10)
+        for user in (self.student, self.other):
+            Enrollment.objects.create(user=user, cohort=cohort, status=Enrollment.Status.ACTIVE)
+        # A follow-up survey with no module is always unlocked, so participants can submit.
+        self.survey = Survey.objects.create(code="fu", title="Follow-up", type="followup", questions=self.QUESTIONS)
+        self.client.force_login(self.admin)
+
+    def _patch(self, questions):
+        return self.client.patch(f"/api/surveys/{self.survey.pk}/", {"questions": questions}, format="json")
+
+    def _respond(self, user=None, answers=None):
+        return SurveyResponse.objects.create(
+            user=user or self.student, survey=self.survey,
+            answers=answers if answers is not None else {"q1": 2, "q2": 4, "q3": "Calm"},
+        )
+
+    def _changes(self, response):
+        # Reload so the response sees the survey's saved questions, not a cached copy.
+        return SurveyResponse.objects.get(pk=response.pk).question_changes()
+
+    def _without(self, question, *keys):
+        return {k: v for k, v in question.items() if k not in keys}
+
+    # ── question_changes ──
+
+    def test_response_without_a_snapshot_reports_no_changes(self):
+        response = self._respond()
+        SurveyResponse.objects.filter(pk=response.pk).update(questions=[])
+        response.refresh_from_db()
+        self.survey.questions = self.QUESTIONS[:1]
+        self.assertEqual(response.question_changes(self.survey.questions), {})
+
+    def test_explicit_snapshot_is_not_overwritten_on_save(self):
+        old = [{"id": "q1", "type": "integer", "text": "Old wording"}]
+        response = SurveyResponse.objects.create(
+            user=self.student, survey=self.survey, answers={"q1": 1}, questions=old,
+        )
+        self.assertEqual(response.questions, old)
+        self.assertEqual(self._changes(response)["q1"]["status"], "edited")
+
+    def test_changes_to_skipped_or_unanswered_questions_are_not_flagged(self):
+        # q1 = 0 skips q2, so this participant never answered it.
+        response = self._respond(answers={"q1": 0, "q3": "Busy week"})
+        q1, q2, q3 = self.QUESTIONS
+        self.assertEqual(self._patch([q1, {**q2, "text": "Reworded"}, q3]).status_code, 200)
+        self.assertEqual(self._changes(response), {})
+        self.assertEqual(self._patch([q1, q3]).status_code, 200)
+        self.assertEqual(self._changes(response), {})
+
+    def test_label_and_range_changes_are_flagged(self):
+        response = self._respond()
+        q1, q2, q3 = self.QUESTIONS
+        self._patch([q1, {**q2, "scale_labels": {"0": "Never", "6": "Always"}}, q3])
+        self.assertEqual(self._changes(response)["q2"]["status"], "edited")
+        self._patch([q1, {**q2, "min": 1, "max": 10}, q3])
+        self.assertEqual(self._changes(response)["q2"]["previous"]["max"], 6)
+
+    def test_pure_reorder_is_not_flagged(self):
+        response = self._respond()
+        q1, q2, q3 = self.QUESTIONS
+        self.assertEqual(self._patch([q3, q1, q2]).status_code, 200)
+        self.assertEqual(self._changes(response), {})
+
+    def test_malformed_snapshot_entries_are_ignored(self):
+        response = self._respond()
+        SurveyResponse.objects.filter(pk=response.pk).update(questions=["junk", None, *self.QUESTIONS])
+        response.refresh_from_db()
+        self.assertEqual(self._changes(response), {})
+
+    # ── saving question sets after responses ──
+
+    def test_reorder_that_puts_a_skip_target_after_its_dependent_is_rejected(self):
+        self._respond()
+        q1, q2, q3 = self.QUESTIONS
+        resp = self._patch([q2, q1, q3])
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("skip_if", str(resp.data))
+
+    def test_retype_under_a_new_id_is_accepted_and_old_answers_flagged(self):
+        response = self._respond()
+        q1, q2, q3 = self.QUESTIONS
+        retyped = {"id": "q4", "type": "longtext", "text": "How focused?",
+                   "skip_if": {"question_id": "q1", "value": 0}}
+        self.assertEqual(self._patch([q1, retyped, q3]).status_code, 200)
+        changes = self._changes(response)
+        self.assertEqual(changes["q2"]["status"], "removed")
+        self.assertEqual(changes["q4"]["status"], "added")
+
+    def test_retyping_a_question_nobody_answered_keeps_its_id(self):
+        # Everyone skipped q2, so no stored answer depends on its type.
+        self._respond(answers={"q1": 0, "q3": "Busy week"})
+        q1, q2, q3 = self.QUESTIONS
+        retyped = {**self._without(q2, "min", "max"), "type": "longtext"}
+        self.assertEqual(self._patch([q1, retyped, q3]).status_code, 200, self._patch([q1, retyped, q3]).data)
+
+    def test_removed_id_nobody_answered_can_be_reused(self):
+        self._respond(answers={"q1": 0, "q3": "Busy week"})
+        q1, q2, q3 = self.QUESTIONS
+        self.assertEqual(self._patch([q1, q3]).status_code, 200)
+        self.assertEqual(self._patch([q1, {"id": "q2", "type": "longtext", "text": "New"}, q3]).status_code, 200)
+
+    def test_removed_answered_id_is_rejected_even_with_the_same_type(self):
+        self._respond()
+        q1, q2, q3 = self.QUESTIONS
+        self.assertEqual(self._patch([q1, q2]).status_code, 200)
+        resp = self._patch([q1, q2, {"id": "q3", "type": "longtext", "text": "Something else"}])
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("belonged to a removed question", str(resp.data))
+
+    def test_every_retyped_question_is_reported(self):
+        self._respond()
+        resp = self._patch([
+            {"id": "q1", "type": "longtext", "text": "How many times?"},
+            {"id": "q2", "type": "integer", "text": "How focused?"},
+            self.QUESTIONS[2],
+        ])
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(len(resp.data["questions"]), 2)
+
+    def test_scale_range_limits(self):
+        q1, q2, q3 = self.QUESTIONS
+        for lo, hi, ok in [(1, 5, True), (1, 10, True), (0, 10, True), (1, 12, False), (5, 5, False)]:
+            with self.subTest(lo=lo, hi=hi):
+                resp = self._patch([q1, {**q2, "min": lo, "max": hi}, q3])
+                self.assertEqual(resp.status_code == 200, ok, resp.data)
+
+    def test_type_specific_fields_left_over_after_retype_are_rejected(self):
+        q1, q2, q3 = self.QUESTIONS
+        resp = self._patch([q1, {**q2, "type": "longtext"}, q3])  # still carries min/max
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("not allowed on longtext", str(resp.data))
+
+    # ── participants answering after changes ──
+
+    def _submit(self, user, answers):
+        self.client.force_login(user)
+        return self.client.post("/api/survey-responses/", {"survey": self.survey.pk, "answers": answers}, format="json")
+
+    def test_api_submission_records_the_questions_answered(self):
+        resp = self._submit(self.student, {"q1": 1, "q2": 3, "q3": "Fine"})
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertEqual(SurveyResponse.objects.get(pk=resp.data["id"]).questions, self.QUESTIONS)
+        self.assertNotIn("questions", resp.data)
+
+    def test_answers_match_by_id_after_reorder(self):
+        q1, q2, q3 = self.QUESTIONS
+        self._patch([q3, q1, q2])
+        resp = self._submit(self.other, {"q3": "Fine", "q1": 2, "q2": 5})
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+
+    def test_answers_to_removed_or_old_scale_values_are_rejected_for_new_submissions(self):
+        q1, q2, q3 = self.QUESTIONS
+        self._patch([q1, {**q2, "min": 1, "max": 5}])
+        self.assertEqual(self._submit(self.other, {"q1": 1, "q2": 6}).status_code, 400)
+        self.assertEqual(self._submit(self.other, {"q1": 1, "q2": 0}).status_code, 400)
+        self.assertEqual(self._submit(self.other, {"q1": 1, "q2": 5, "q3": "x"}).status_code, 400)
+        self.assertEqual(self._submit(self.other, {"q1": 1, "q2": 5}).status_code, 201)
+
+    def test_skipped_answer_may_be_omitted(self):
+        self.assertEqual(self._submit(self.other, {"q1": 0, "q3": "Busy"}).status_code, 201)
+
+    # ── admin responses endpoint and export ──
+
+    def test_responses_endpoint_reports_changes_per_response(self):
+        self._respond()
+        self._patch(self.QUESTIONS[:2])
+        self._respond(user=self.other, answers={"q1": 1, "q2": 2})
+        data = {r["participant_id"]: r for r in self.client.get(f"/api/surveys/{self.survey.pk}/responses/").data}
+        self.assertEqual(data[self.student.pk]["question_changes"]["q3"]["status"], "removed")
+        self.assertEqual(data[self.other.pk]["question_changes"], {})
+
+    def _export_rows(self, url="/api/surveys/export/"):
+        import csv
+        text = self.client.get(url).content.decode("utf-8").lstrip("\ufeff")
+        return list(csv.DictReader(text.splitlines()))
+
+    def test_export_puts_removed_columns_last_and_ignores_added_questions(self):
+        self._respond()
+        q1, q2, q3 = self.QUESTIONS
+        self._patch([q1, q2, {"id": "q4", "type": "longtext", "text": "New"}])
+        import csv
+        text = self.client.get(f"/api/surveys/export/?survey={self.survey.pk}").content.decode("utf-8").lstrip("\ufeff")
+        header = next(csv.reader(text.splitlines()))
+        self.assertEqual(header[-4:], ["q1", "q2", "q4", "q3"])
+        row = self._export_rows(f"/api/surveys/export/?survey={self.survey.pk}")[0]
+        self.assertEqual(row["changed_questions"], "q3")
+        self.assertEqual(row["q3"], "Calm")
+        self.assertEqual(row["q4"], "")
+
+    def test_export_unchanged_response_has_empty_flag_column(self):
+        self._respond()
+        self.assertEqual(self._export_rows()[0]["changed_questions"], "")
+
+    def test_export_across_surveys_lists_each_removed_id_once(self):
+        other = Survey.objects.create(code="fu2", title="Follow-up 2", type="followup", questions=self.QUESTIONS)
+        self._respond()
+        SurveyResponse.objects.create(user=self.student, survey=other, answers={"q1": 1, "q2": 1, "q3": "x"})
+        self._patch(self.QUESTIONS[:2])
+        Survey.objects.filter(pk=other.pk).update(questions=self.QUESTIONS[:2])
+        import csv
+        text = self.client.get("/api/surveys/export/").content.decode("utf-8").lstrip("\ufeff")
+        header = next(csv.reader(text.splitlines()))
+        self.assertEqual(header.count("q3"), 1)
+
+
+class SurveySnapshotMigrationTests(TestCase):
+    def test_backfill_copies_each_surveys_current_questions(self):
+        import importlib
+        from django.apps import apps as django_apps
+        migration = importlib.import_module("app.migrations.0024_surveyresponse_questions")
+        user = User.objects.create_user(email="m@test.local", password="testpass")
+        survey = Survey.objects.create(code="m", title="M", type="followup", questions=[
+            {"id": "q1", "type": "longtext", "text": "Hi?"},
+        ])
+        response = SurveyResponse.objects.create(user=user, survey=survey, answers={"q1": "x"})
+        SurveyResponse.objects.filter(pk=response.pk).update(questions=[])
+        migration.snapshot_current_questions(django_apps, None)
+        response.refresh_from_db()
+        self.assertEqual(response.questions, survey.questions)

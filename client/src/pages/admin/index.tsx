@@ -10,10 +10,12 @@ import { useAsync } from "@/hooks/useAsync";
 import { getDashboardStats } from "@/lib/api";
 import { weekLabel } from "@/lib/weeks";
 import type { DashboardStats } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
+import { ChevronRightIcon } from "@/components/ui/icons";
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
 	return (
-		<Card variant="admin" className="p-5">
+		<Card className="p-5">
 			<p className="text-xs font-semibold uppercase tracking-wide text-muted">{label}</p>
 			<p className="mt-2 text-2xl font-extrabold text-ink">{value}</p>
 		</Card>
@@ -22,7 +24,7 @@ function StatCard({ label, value }: { label: string; value: string | number }) {
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: ReactNode }) {
 	return (
-		<Card variant="admin" className="p-5">
+		<Card className="p-5">
 			<div className="flex flex-wrap items-baseline justify-between gap-2">
 				<h2 className="text-sm font-bold uppercase tracking-wide text-muted">{title}</h2>
 				{hint && <span className="text-xs text-muted">{hint}</span>}
@@ -43,7 +45,11 @@ function ProgressBar({ label, pct, detail, href }: { label: string; pct: number;
 				) : (
 					<span className="min-w-0 wrap-anywhere font-semibold text-ink">{label}</span>
 				)}
-				<span className="shrink-0 text-muted">{detail}</span>
+				<span className="flex shrink-0 items-center gap-1 text-muted">
+					{detail}
+					{/* Shows the row opens something, matching the hint above the list. */}
+					{href && <ChevronRightIcon className="size-4" aria-hidden="true" />}
+				</span>
 			</div>
 			<div className="mt-1.5 h-2 rounded-full bg-gray-200">
 				<div className="h-2 rounded-full bg-brand-blue" style={{ width: `${Math.min(100, pct)}%` }} />
@@ -60,7 +66,7 @@ export default function AdminDashboardPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Dashboard — Admin</title>
+				<title>{adminPageTitle("Dashboard")}</title>
 			</Head>
 
 			<AdminPageHeader title="Dashboard" />
@@ -71,8 +77,13 @@ export default function AdminDashboardPage() {
 				<p className="mt-6 text-sm text-red-600">{error}</p>
 			) : stats ? (
 				<div className="mt-6 flex flex-col gap-6">
-					<div className="grid gap-4 sm:grid-cols-4">
-						<StatCard label="Total enrolled" value={stats.total_enrolled} />
+					{/* Every sign-up whatever its status, the same count as the cohort table's Total column
+					    (total_enrolled from the API is active enrolments only, which the Active card shows). */}
+					<div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+						<StatCard
+							label="Total sign-ups"
+							value={Object.values(stats.enrollment_status_breakdown).reduce((sum, n) => sum + n, 0)}
+						/>
 						<StatCard label="Pending approval" value={stats.enrollment_status_breakdown.pending ?? 0} />
 						<StatCard label="Active" value={stats.enrollment_status_breakdown.active ?? 0} />
 						<StatCard label="Completed" value={stats.enrollment_status_breakdown.completed ?? 0} />
@@ -102,7 +113,7 @@ export default function AdminDashboardPage() {
 								<thead>
 									<tr className="text-xs font-semibold uppercase tracking-wide text-muted">
 										<th className="py-2 pr-4">Cohort</th>
-										<th className="py-2 pr-4">Enrolled</th>
+										<th className="py-2 pr-4">Total</th>
 										<th className="py-2 pr-4">Pending</th>
 										<th className="py-2 pr-4">Active</th>
 										<th className="py-2 pr-4">Completed</th>
@@ -147,10 +158,13 @@ export default function AdminDashboardPage() {
 						</div>
 					</Section>
 
-					<div className="grid gap-4 sm:grid-cols-3">
+					<div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
 						<StatCard label="Forum threads" value={stats.forum_activity.thread_count} />
 						<StatCard label="Forum posts" value={stats.forum_activity.post_count} />
 						<StatCard label="Active participants" value={stats.forum_activity.active_participants} />
+						<Link href="/admin/moderation" className="rounded-xl focus-visible:outline-2 focus-visible:outline-brand-blue">
+							<StatCard label="Reported posts" value={stats.forum_activity.reported_post_count} />
+						</Link>
 					</div>
 				</div>
 			) : null}

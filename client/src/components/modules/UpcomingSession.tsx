@@ -111,11 +111,11 @@ export default function UpcomingSession({
 		const unfinished = findUnfinishedModule(list, completed);
 		if (!unfinished) {
 			return list.some((module) => module.is_unlocked) ? (
-				<div className="rounded-[10px] bg-white p-5 text-sm text-muted">You’ve completed all available modules.</div>
+				<div className="rounded-xl bg-white p-5 text-sm text-muted">You’ve completed all available modules.</div>
 			) : null;
 		}
 		return (
-			<Link href={`/modules/${unfinished.id}`} className="block rounded-[10px] focus-visible:outline-2 focus-visible:outline-brand-blue-dark">
+			<Link href={`/modules/${unfinished.id}`} className="block rounded-xl focus-visible:outline-2 focus-visible:outline-brand-blue-dark">
 				<NextSession
 					moduleTitle={unfinished.title ? `${weekLabel(unfinished.week_number)}: ${unfinished.title}` : weekLabel(unfinished.week_number)}
 				/>

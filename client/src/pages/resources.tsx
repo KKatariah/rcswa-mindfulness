@@ -13,6 +13,7 @@ import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { listAdditionalResources } from "@/lib/api";
 import { safeUrl } from "@/lib/safeUrl";
 import type { AdditionalResourceCategory, AdminAdditionalResource } from "@/types/admin";
+import { pageTitle } from "@/lib/pageTitle";
 
 type Resource = {
   id: number;
@@ -154,7 +155,7 @@ export default function ResourcesPage() {
   return (
     <>
       <Head>
-        <title>Resources | RCSWA Wellbeing</title>
+        <title>{pageTitle("Resources")}</title>
         <meta name="description" content="Books, documentaries, and online programmes to support your mindfulness journey." />
       </Head>
       <AppShell

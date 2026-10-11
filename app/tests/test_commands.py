@@ -1,4 +1,4 @@
-"""Management commands not covered elsewhere: push_adoption and import_rcswa_modules."""
+"""Management commands not covered elsewhere: push_adoption, import_rcswa_modules and seed_moderation."""
 
 import json
 from datetime import date, timedelta
@@ -178,3 +178,36 @@ class ImportRcswaModulesCommandTests(TestCase):
             with self.assertRaisesMessage(CommandError, "Expected exactly weeks 0–8."):
                 _run("import_rcswa_modules")
         self.assertFalse(Module.objects.exists())
+
+
+class SeedModerationCommandTests(TestCase):
+    def setUp(self):
+        self.admin = _make_user("admin@test.local")
+        self.admin.role = "admin"
+        self.admin.save()
+
+    def _as_admin(self):
+        from rest_framework.test import APIClient
+        client = APIClient()
+        client.force_authenticate(self.admin)
+        return client
+
+    def test_fills_every_moderation_tab(self):
+        _run("seed_moderation")
+        client = self._as_admin()
+        self.assertEqual(client.get("/api/forum/posts/reported/").data["count"], 5)
+        self.assertEqual(client.get("/api/forum/posts/removed/").data["count"], 4)
+        self.assertEqual(client.get("/api/users/?forum_banned=true").data["count"], 2)
+
+    def test_rerunning_resets_and_clear_removes_it(self):
+        _run("seed_moderation")
+        _run("seed_moderation")
+        client = self._as_admin()
+        self.assertEqual(client.get("/api/forum/posts/reported/").data["count"], 5)
+        _run("seed_moderation", "--clear")
+        from ..models import ForumFlag, ForumThread, User
+        self.assertFalse(User.objects.filter(email__endswith="@moderation-demo.test").exists())
+        self.assertFalse(ForumThread.objects.exists())
+        self.assertFalse(ForumFlag.objects.exists())
+        self.assertFalse(Cohort.objects.filter(name="Moderation demo").exists())
+        self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())

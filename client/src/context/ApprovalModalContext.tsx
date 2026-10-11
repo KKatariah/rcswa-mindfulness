@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from "react";
 import Modal from "@/components/main/Modal";
+import Button from "@/components/ui/Button";
 import { useAuth } from "@/context/AuthContext";
 
 type ApprovalModalValue = { open: () => void; close: () => void };
@@ -26,10 +27,14 @@ export function ApprovalModalProvider({ children }: { children: ReactNode }) {
         onClose={close}
         title="You have not been approved!"
         closeButtonAboveTitle
+        compact
       >
-        <p className="text-center text-lg text-ink">
+        <p className="text-center text-md leading-relaxed text-ink-soft">
           Please wait for admin approval for full access to the program.
         </p>
+        <Button size="lg" onClick={close} className="mt-8 w-full">
+          Got it
+        </Button>
       </Modal>
     </ApprovalModalContext.Provider>
   );

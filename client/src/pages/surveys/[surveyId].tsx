@@ -7,16 +7,13 @@ import Modal from "@/components/main/Modal";
 import Card from "@/components/ui/Card";
 import { FullPageMessage } from "@/components/ui/feedback";
 import PageHeader from "@/components/ui/PageHeader";
-import SurveyQuestions from "@/components/surveys/SurveyQuestions";
+import SurveyQuestions, { type SurveyAnswers } from "@/components/surveys/SurveyQuestions";
 import { useAsync } from "@/hooks/useAsync";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { getSurvey, submitSurveyResponse, type ApiSurveyDetail } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
-
-type NormalizedQuestion = {
-	id: number;
-	text: string;
-}
+import { pageTitle } from "@/lib/pageTitle";
+import type { SurveyQuestion } from "@/types/admin";
 
 type SubmissionFeedback = {
 	title: string;
@@ -38,62 +35,31 @@ export default function SurveyPage() {
 	const [submissionFeedback, setSubmissionFeedback] = useState<SubmissionFeedback | null>(null);
 
 	// Only trust well-formed entries: a malformed question from the API is dropped rather than
-	// crashing the page (e.g. a non-string id has no .replace, an object `text` can't render).
-	const questions = useMemo(() => {
+	// crashing the page (e.g. an unknown type has no input, an object `text` can't render).
+	const questions = useMemo<SurveyQuestion[]>(() => {
 		if (!Array.isArray(survey?.questions)) return [];
 		return survey.questions
-			.filter((q) => q && typeof q === "object" && typeof q.id === "string")
+			.filter(
+				(q) =>
+					q && typeof q === "object" && typeof q.id === "string" &&
+					(q.type === "integer" || q.type === "likert" || q.type === "longtext"),
+			)
 			.map((q) => ({
-				id: q.id,
+				...q,
+				type: q.type as SurveyQuestion["type"],
 				text: typeof q.text === "string" ? q.text : "",
-				section: typeof q.section === "string" ? q.section : "",
+				section: typeof q.section === "string" ? q.section : undefined,
 			}));
 	}, [survey]);
 
-	const formalQuestions = useMemo<NormalizedQuestion[]>(() => {
-		return questions
-		.filter((q) => ["q3", "q4", "q5", "q6"].includes(q.id))
-		.map((q) => ({
-			id: Number(q.id.replace("q", "")),
-			text: q.text,
-		}));
-	}, [questions]);
-
-	const informalQuestions = useMemo<NormalizedQuestion[]>(() => {
-		return questions
-		.filter((q) => ["q7", "q8", "q9", "q10", "q11", "q12"].includes(q.id))
-		.map((q) => ({
-			id: Number(q.id.replace("q", "")),
-			text: q.text,
-		}));
-	}, [questions]);
-	
-	// Wording for the questions SurveyQuestions lays out itself, so admin edits show up.
-	const { questionText, sectionText } = useMemo(() => {
-		const questionText: Record<number, string> = {};
-		const sectionText: Record<number, string> = {};
-		for (const q of questions) {
-			const n = Number(q.id.replace("q", ""));
-			if (q.text) questionText[n] = q.text;
-			if (q.section) sectionText[n] = q.section;
-		}
-		return { questionText, sectionText };
-	}, [questions]);
-
 	const title = (typeof survey?.title === "string" && survey.title) || `Week ${surveyId ?? "1"} Survey`;
 
-	const handleSubmit = async (answers: Record<number, number | string>) => {
+	const handleSubmit = async (answers: SurveyAnswers) => {
 		if (!surveyId || !user) return;
-
-		const payloadAnswers: Record<string, number | string> = {};
-
-		Object.entries(answers).forEach(([key, value]) => {
-			payloadAnswers[`q${Number(key)}`] = value;
-		});
 
 		setSubmitting(true);
 		try {
-			await submitSurveyResponse({ survey: Number(surveyId), answers: payloadAnswers });
+			await submitSurveyResponse({ survey: Number(surveyId), answers });
 			setSurvey((current) => current && { ...current, has_responded: true });
 			setSubmissionFeedback({
 				title: "Response recorded",
@@ -140,7 +106,7 @@ export default function SurveyPage() {
 	return (
 		<>
 			<Head>
-				<title>{title}</title>
+				<title>{pageTitle(title)}</title>
 			</Head>
 			<Modal
 				isOpen={submissionFeedback !== null}
@@ -170,10 +136,7 @@ export default function SurveyPage() {
 						</Card>
 					) : (
 						<SurveyQuestions
-							formalQuestions={formalQuestions}
-							informalQuestions={informalQuestions}
-							questionText={questionText}
-							sectionText={sectionText}
+							questions={questions}
 							onSubmit={handleSubmit}
 							isSubmitting={submitting}
 						/>

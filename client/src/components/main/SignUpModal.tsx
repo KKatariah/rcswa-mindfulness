@@ -4,6 +4,8 @@ import Modal from "@/components/main/Modal";
 import GoogleSignIn from "@/components/main/GoogleSignIn";
 import { FormActions, FormError, TextField } from "@/components/ui/form";
 import { useAuth } from "@/context/AuthContext";
+import type { AuthUser } from "@/types/user";
+import { landingPathFor } from "@/components/main/ApprovalGate";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
 
 type SignUpModalProps = {
@@ -32,9 +34,9 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 	const [confirmPassword, setConfirmPassword] = useState("");
 	const { submitting, error, setError, run } = useFormSubmit("Registration failed");
 
-	async function finish() {
+	async function finish(signedIn: AuthUser) {
 		onClose();
-		await router.push("/modules");
+		await router.push(landingPathFor(signedIn));
 	}
 
 	function handleSubmit(event: FormEvent) {
@@ -50,8 +52,7 @@ export default function SignUpModal({ isOpen, onClose }: SignUpModalProps) {
 		setFullName(cleanedFullName);
 
 		void run(async () => {
-			await register(email, cleanedFullName, password);
-			await finish();
+			await finish(await register(email, cleanedFullName, password));
 		});
 	}
 

@@ -1,4 +1,4 @@
-"""Push subscriptions and notification preferences."""
+"""Push subscriptions, notification preferences and the in-app inbox."""
 
 
 from rest_framework import serializers

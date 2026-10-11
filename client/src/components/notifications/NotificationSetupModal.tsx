@@ -9,6 +9,7 @@ import {
 	type Platform,
 } from "@/components/notifications/notificationSetupContent";
 import StepVisual from "@/components/notifications/StepVisual";
+import Button from "@/components/ui/Button";
 
 type Props = {
 	isOpen: boolean;
@@ -77,14 +78,14 @@ export default function NotificationSetupModal({ isOpen, onClose }: Props) {
 
 			{/* Enable button */}
 			<div className="mt-6 border-t border-gray-100 pt-6">
-				<button
+				<Button
 					type="button"
 					onClick={handleEnable}
 					disabled={enabling}
-					className="w-full rounded-xl bg-brand-blue py-3 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)] transition-opacity hover:opacity-90 disabled:opacity-60"
+					variant="primary" size={null} className="w-full rounded-xl py-3 text-md font-bold shadow-button hover:opacity-90 disabled:opacity-60"
 				>
 					{enabling ? "Enabling…" : "Enable notifications"}
-				</button>
+				</Button>
 				{result && (
 					<p
 						role={result.isError ? "alert" : "status"}

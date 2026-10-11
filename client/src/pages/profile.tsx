@@ -4,13 +4,17 @@ import AppShell from "@/components/main/AppShell";
 import Modal from "@/components/main/Modal";
 import NotificationSetupModal from "@/components/notifications/NotificationSetupModal";
 import UpcomingSession from "@/components/modules/UpcomingSession";
+import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import Card from "@/components/ui/Card";
+import PageHeader from "@/components/ui/PageHeader";
 import { LockIcon } from "@/components/ui/icons";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAsync } from "@/hooks/useAsync";
 import { useFormSubmit } from "@/hooks/useFormSubmit";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { updateProfile, changePassword, getNotificationPreferences, updateNotificationPreferences } from "@/lib/api";
+import { pageTitle } from "@/lib/pageTitle";
+import Button from "@/components/ui/Button";
 
 type ReminderKey = "daily_content_reminder" | "survey_unlocked_reminder" | "daily_survey_reminder";
 type Reminders = Record<ReminderKey, boolean>;
@@ -164,18 +168,18 @@ function ChangePasswordForm() {
           className={FIELD_CLASS}
         />
 
-        <button
+        <Button
           type="submit"
           disabled={submitting}
-          className="w-fit rounded-lg bg-brand-blue px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-brand-blue-dark disabled:opacity-60"
+          variant="primary" size={null} className="w-fit rounded-lg px-4 py-2 text-sm font-semibold hover:bg-brand-blue-dark disabled:opacity-60"
         >
           {submitting ? "Changing..." : "Change Password"}
-        </button>
+        </Button>
       </form>
 
       <Modal isOpen={showForgotModal} onClose={() => setShowForgotModal(false)} title="Forgot your password?">
         <div className="flex flex-col gap-6 text-center">
-          <p className="text-[15px] text-ink">
+          <p className="text-md text-ink">
             Please email admin Sarah at{" "}
             <a
               href={`mailto:${ADMIN_EMAIL}?subject=Password%20reset%20request`}
@@ -185,13 +189,13 @@ function ChangePasswordForm() {
             </a>{" "}
             to reset your password.
           </p>
-          <button
+          <Button
             type="button"
             onClick={() => setShowForgotModal(false)}
-            className="h-12 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white"
+            variant="dark" size="lg"
           >
             Close
-          </button>
+          </Button>
         </div>
       </Modal>
     </>
@@ -245,11 +249,20 @@ export default function ProfilePage() {
   return (
     <>
       <Head>
-        <title>Profile</title>
+        <title>{pageTitle("Profile")}</title>
       </Head>
 
-      <AppShell rightRail={<UpcomingSession />}>
-        <div className="flex min-w-0 flex-col gap-6">
+      <AppShell
+        rightRail={
+          <div className="space-y-4">
+            <UpcomingSession />
+            <NotificationsPanel />
+          </div>
+        }
+      >
+        <div className="flex min-w-0 flex-col gap-4">
+          <PageHeader title="Your Profile" description="Manage how you appear in the forum, your reminders and your password" />
+
           <Card className="overflow-hidden">
             <div className="flex items-center gap-4 border-b border-gray-100 p-6">
               <UserAvatar
@@ -260,7 +273,7 @@ export default function ProfilePage() {
               />
 
               <div>
-                <h1 className="text-lg font-semibold text-ink">{signedInName}</h1>
+                <h2 className="text-lg font-semibold text-ink">{signedInName}</h2>
                 <p className="mt-0.5 text-sm text-muted">Profile photo powered by Gravatar</p>
                 <a
                   href="https://gravatar.com"
@@ -347,14 +360,14 @@ export default function ProfilePage() {
             </div>
 
             <div className="p-6 pt-0">
-              <button
+              <Button
                 type="button"
                 onClick={handleSave}
                 disabled={status === "saving" || !hasChanges}
-                className="w-full rounded-lg bg-brand-blue py-3 text-sm font-semibold text-white transition-colors hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
+                variant="primary" size={null} className="w-full rounded-lg py-3 text-sm font-semibold hover:bg-brand-blue-dark disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {status === "saving" ? "Saving..." : "Save Changes"}
-              </button>
+              </Button>
               {status === "success" && <p className="mt-2 text-sm text-green-600">Changes saved.</p>}
               {status === "error" && (
                 <p className="mt-2 text-sm text-red-600">

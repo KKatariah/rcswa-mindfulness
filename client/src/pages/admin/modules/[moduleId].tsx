@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import AdminLayout from "@/components/admin/AdminLayout";
@@ -27,6 +27,10 @@ import {
 import { errorMessage } from "@/lib/errors";
 import { deleteModuleMessage } from "@/lib/modules";
 import type { AdminModule, AdminContentItem } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
+import Button from "@/components/ui/Button";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
+import { weekLabel } from "@/lib/weeks";
 
 type ContentItemFormState = {
 	title: string;
@@ -91,7 +95,7 @@ function ContentItemForm({
 	}
 
 	return (
-		<Card as="form" variant="admin" onSubmit={handleSubmit} className="flex flex-col gap-4 p-5">
+		<Card as="form" onSubmit={handleSubmit} className="flex flex-col gap-4 p-5">
 			<FormError message={error} />
 
 			<TextField
@@ -151,6 +155,9 @@ export default function AdminModuleEditorPage() {
 	const [editingItem, setEditingItem] = useState<AdminContentItem | null>(null);
 	const meta = useFormSubmit("Failed to save module");
 	const [deleteError, setDeleteError] = useState<string | null>(null);
+	// A dragged content-item order waiting to be saved, like every other edit on this page.
+	const [pendingItemOrder, setPendingItemOrder] = useState<number[] | null>(null);
+	const [savingItemOrder, setSavingItemOrder] = useState(false);
 	const { draggingId, startDrag, handleKey } = useDragReorder<number>();
 	const [confirmingModuleDelete, setConfirmingModuleDelete] = useState(false);
 	const [moduleDeleting, setModuleDeleting] = useState(false);
@@ -222,22 +229,34 @@ export default function AdminModuleEditorPage() {
 		await refresh();
 	}
 
-	function itemReorder(current: AdminModule): ReorderHandlers<number> {
-		const byId = new Map(current.content_items.map((item) => [item.id, item]));
-		const arrange = (ids: number[]) => patch({ content_items: ids.map((id) => byId.get(id)!) });
-		return {
-			onMove: arrange,
-			onCancel: arrange,
-			onDrop: async (ids, before) => {
-				setDeleteError(null);
-				try {
-					await reorderContentItems(current.id, ids);
-				} catch (err) {
-					arrange(before);
-					setDeleteError(errorMessage(err, "Failed to reorder content items"));
-				}
-			},
-		};
+	const savedItems = module?.content_items;
+	const shownItems = useMemo(() => {
+		if (!savedItems || !pendingItemOrder) return savedItems ?? [];
+		const byId = new Map(savedItems.map((item) => [item.id, item]));
+		// Items added or deleted since the drag keep the pending order for the rest.
+		const kept = pendingItemOrder.filter((id) => byId.has(id)).map((id) => byId.get(id)!);
+		return [...kept, ...savedItems.filter((item) => !pendingItemOrder.includes(item.id))];
+	}, [savedItems, pendingItemOrder]);
+
+	const itemReorder: ReorderHandlers<number> = {
+		onMove: (ids) => setPendingItemOrder(ids.join() === savedItems?.map((i) => i.id).join() ? null : ids),
+		onDrop: () => {},
+		onCancel: (before) => setPendingItemOrder(before.join() === savedItems?.map((i) => i.id).join() ? null : before),
+	};
+
+	async function saveItemOrder() {
+		if (!module || !pendingItemOrder) return;
+		setSavingItemOrder(true);
+		setDeleteError(null);
+		try {
+			await reorderContentItems(module.id, shownItems.map((i) => i.id));
+			patch({ content_items: shownItems });
+			setPendingItemOrder(null);
+		} catch (err) {
+			setDeleteError(errorMessage(err, "Failed to reorder content items"));
+		} finally {
+			setSavingItemOrder(false);
+		}
 	}
 
 	async function handleDeleteItem() {
@@ -268,7 +287,7 @@ export default function AdminModuleEditorPage() {
 	}
 
 	// Matches send_due_reminders: the week's first audio item is the one students are reminded about each day.
-	const reminderItemId = module?.content_items.find((item) => item.type === "audio")?.id;
+	const reminderItemId = shownItems.find((item) => item.type === "audio")?.id;
 
 	if (loading) {
 		return (
@@ -289,12 +308,16 @@ export default function AdminModuleEditorPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>{module.title} — Admin</title>
+				<title>{adminPageTitle(module.title)}</title>
 			</Head>
-			{/* The page is all form fields; screen readers still need a page title. */}
-			<h1 className="sr-only">Edit module: {module.title}</h1>
+			{/* The stored title exactly as in the Title field below, with the week as a label above it. */}
+			<AdminPageHeader
+				title={module.title}
+				eyebrow={weekLabel(module.week_number)}
+				back={{ href: "/admin/modules", label: "All modules" }}
+			/>
 
-			<Card as="form" variant="admin" onSubmit={handleMetaSubmit} className="p-5">
+			<Card as="form" onSubmit={handleMetaSubmit} className="mt-4 p-5">
 				{meta.error && <ErrorBanner className="mb-4">{meta.error}</ErrorBanner>}
 				<div className="grid gap-4 sm:grid-cols-2">
 					<TextField
@@ -354,13 +377,13 @@ export default function AdminModuleEditorPage() {
 					/>
 					Published
 				</label>
-				<button
+				<Button
 					type="submit"
 					disabled={meta.submitting}
-					className="mt-4 h-11 rounded-xl bg-brand-blue-dark px-6 text-sm font-bold text-white disabled:opacity-50"
+					variant="dark" size="md" className="mt-4 px-6"
 				>
 					{meta.submitting ? "Saving…" : "Save module"}
-				</button>
+				</Button>
 			</Card>
 
 			{deleteError && <ErrorBanner className="mt-4">{deleteError}</ErrorBanner>}
@@ -368,13 +391,13 @@ export default function AdminModuleEditorPage() {
 			<div className="mt-6 flex items-center justify-between">
 				<h2 className="text-lg font-extrabold text-ink">Content items</h2>
 				{!addingItem && (
-					<button
+					<Button
 						type="button"
 						onClick={() => setAddingItem(true)}
-						className="rounded-xl bg-brand-blue px-4 py-2 text-sm font-bold text-white"
+						variant="primary" size={null} className="rounded-xl px-4 py-2 text-sm font-bold"
 					>
 						Add content item
-					</button>
+					</Button>
 				)}
 			</div>
 
@@ -384,12 +407,12 @@ export default function AdminModuleEditorPage() {
 				)}
 
 				{module.content_items.length === 0 && !addingItem && (
-					<Card as="p" variant="admin" className="p-6 text-sm text-muted">
+					<Card as="p" className="p-6 text-sm text-muted">
 						No content items yet.
 					</Card>
 				)}
 
-				{module.content_items.map((item) =>
+				{shownItems.map((item) =>
 					editingItem?.id === item.id ? (
 						<ContentItemForm
 							key={item.id}
@@ -400,15 +423,14 @@ export default function AdminModuleEditorPage() {
 					) : (
 						<Card
 							key={item.id}
-							variant="admin"
 							data-reorder-id={item.id}
 							className={`flex items-center justify-between gap-3 p-4 ${draggingId === item.id ? "opacity-50" : ""}`}
 						>
 							<div className="flex min-w-0 items-center gap-3">
 								<DragHandle
 									label={`Reorder ${item.title}`}
-									onPointerDown={(e) => startDrag(e, item.id, module.content_items.map((i) => i.id), itemReorder(module))}
-									onKeyDown={(e) => handleKey(e, item.id, module.content_items.map((i) => i.id), itemReorder(module))}
+									onPointerDown={(e) => startDrag(e, item.id, shownItems.map((i) => i.id), itemReorder)}
+									onKeyDown={(e) => handleKey(e, item.id, shownItems.map((i) => i.id), itemReorder)}
 									disabled={editingItem !== null}
 								/>
 								<span className="rounded-full bg-surface-muted px-2.5 py-0.5 text-xs font-semibold uppercase text-muted">
@@ -436,6 +458,34 @@ export default function AdminModuleEditorPage() {
 					),
 				)}
 			</div>
+
+			{/* Only once the drag ends: toggling mid-drag (each time the row passes its old spot) resized the page and made the sticky sidebar jump. */}
+			{pendingItemOrder && draggingId === null && (
+				<div
+					role="status"
+					className="mt-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between"
+				>
+					<p>Content item order changed. Save to show students the new order.</p>
+					<div className="flex shrink-0 gap-2">
+						<button
+							type="button"
+							onClick={() => setPendingItemOrder(null)}
+							disabled={savingItemOrder}
+							className="h-10 rounded-xl border border-amber-300 bg-white px-4 font-semibold text-ink disabled:opacity-50"
+						>
+							Discard
+						</button>
+						<Button
+							type="button"
+							onClick={saveItemOrder}
+							disabled={savingItemOrder}
+							variant="primary" size={null} className="h-10 rounded-xl px-4 font-bold disabled:opacity-50"
+						>
+							{savingItemOrder ? "Saving…" : "Save order"}
+						</Button>
+					</div>
+				</div>
+			)}
 
 			<ReorderHelp />
 

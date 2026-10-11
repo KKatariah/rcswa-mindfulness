@@ -1,25 +1,34 @@
 import type { ButtonHTMLAttributes, ReactNode } from "react";
+import PageHeader from "@/components/ui/PageHeader";
 import { PlusIcon } from "@/components/ui/icons";
+import Button from "@/components/ui/Button";
 
-/** Page title with optional content (a count, a "New" button) on the right. */
-export default function AdminPageHeader({ title, children }: { title: string; children?: ReactNode }) {
-	return (
-		<div className="flex flex-wrap items-center justify-between gap-3">
-			<h1 className="text-2xl font-extrabold text-ink">{title}</h1>
-			{children}
-		</div>
-	);
+/** Page title card, the same as the student pages, with optional content (a count, a "New" button) on the right. */
+export default function AdminPageHeader({
+	title,
+	description,
+	eyebrow,
+	back,
+	children,
+}: {
+	title: string;
+	description?: ReactNode;
+	eyebrow?: string;
+	back?: { href: string; label: string };
+	children?: ReactNode;
+}) {
+	return <PageHeader title={title} description={description} eyebrow={eyebrow} back={back} actions={children} />;
 }
 
 export function CreateButton({ children, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
 	return (
-		<button
+		<Button
 			type="button"
-			className="flex h-11 items-center gap-2 rounded-xl bg-brand-blue px-4 text-[14px] font-bold text-white disabled:opacity-50"
+			variant="primary" size="md" className="px-4"
 			{...props}
 		>
 			<PlusIcon className="size-4" />
 			{children}
-		</button>
+		</Button>
 	);
 }

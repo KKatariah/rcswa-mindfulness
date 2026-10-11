@@ -2,6 +2,7 @@ import { useState } from "react";
 import Select from "@/components/ui/Select";
 import { downloadSurveyResponsesCsv } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
+import Button from "@/components/ui/Button";
 
 type Props =
 	// Lets the admin pick one survey or all of them.
@@ -55,14 +56,14 @@ export default function SurveyExport(props: Props) {
 					/>
 					Include names and emails
 				</label>
-				<button
+				<Button
 					type="button"
 					onClick={handleDownload}
 					disabled={downloading}
-					className="h-11 rounded-xl bg-brand-blue px-4 text-[14px] font-bold text-white disabled:opacity-50 sm:ml-auto"
+					variant="primary" size="md" className="px-4 sm:ml-auto"
 				>
 					{downloading ? "Preparing…" : "Download CSV"}
-				</button>
+				</Button>
 			</div>
 			<p className="mt-2 text-xs text-muted">
 				Participants are identified by ID unless names and emails are included. Treat the file as confidential research data.

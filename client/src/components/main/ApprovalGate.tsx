@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/router";
 import { useAuth } from "@/context/AuthContext";
+import type { AuthUser } from "@/types/user";
 
 const HOME_PATH = "/";
 const MODULES_PATH = "/modules";
@@ -13,6 +14,11 @@ const APPROVED_ONLY_PATHS = [
   "/resources",
   "/profile",
 ];
+
+/** Where to go after logging in: the programme, or home while the account awaits approval. */
+export function landingPathFor(user: Pick<AuthUser, "is_approved">) {
+  return user.is_approved === true ? MODULES_PATH : HOME_PATH;
+}
 
 function matchesPath(pathname: string, path: string) {
   return pathname === path || pathname.startsWith(`${path}/`);

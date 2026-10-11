@@ -6,7 +6,7 @@ from django.test import override_settings
 from django.utils import timezone
 from rest_framework import status
 
-from ..models import Cohort, ContentItem, Enrollment, ForumPost, ForumThread, Module
+from ..models import Cohort, ContentItem, Enrollment, ForumFlag, ForumPost, ForumThread, Module
 from ..serializers import ForumPostSerializer
 from .base import User, APITestCase, _enroll
 
@@ -882,6 +882,7 @@ class ForumRulesBypassTests(APITestCase):
             ("patch", f"/api/forum/posts/{op}/", {"body": "Edited"}),
             ("patch", f"/api/forum/posts/{r}/", {"body": "Edited"}),
             ("delete", f"/api/forum/posts/{r}/", None),
+            ("post", f"/api/forum/posts/{op}/flag/", {"reason": "Rude"}),
         ]
 
     def _assert_all_blocked(self):
@@ -1045,3 +1046,272 @@ class ForumEdgeCaseTests(APITestCase):
                 self.assertLessEqual(len(title), 60)
                 rest = ("a" * filler + emoji * 3)[len(title):]
                 self.assertFalse(rest and rest[0] in ("‍", "\U0001F3FD"), (filler, title))
+
+
+class ForumModerationTests(APITestCase):
+    """Reporting posts, the admin moderation queue, removed posts and forum bans."""
+
+    def setUp(self):
+        self.author = User.objects.create_user(email="author@test.local", password="pw", full_name="Ann Author")
+        self.reporter = User.objects.create_user(email="reporter@test.local", password="pw", full_name="Rae Reporter")
+        self.admin = User.objects.create_user(
+            email="admin@test.local", password="pw", full_name="Admin User", role=User.Role.ADMIN,
+        )
+        User.objects.filter(pk__in=[self.author.pk, self.reporter.pk]).update(forum_rules_accepted_at=timezone.now())
+        self.author.refresh_from_db()
+        self.reporter.refresh_from_db()
+        _enroll(self.author, self.reporter)
+        self.thread = ForumThread.objects.create(created_by=self.author, title="Opening")
+        self.opening = ForumPost.objects.create(thread=self.thread, author=self.author, body="Opening", is_head_post=True)
+        self.thread.opened_by = self.opening
+        self.thread.save(update_fields=["opened_by"])
+        self.reply = ForumPost.objects.create(thread=self.thread, author=self.author, body="Nasty reply")
+
+    def _flag(self, post, user=None, reason="Unkind"):
+        self.client.force_authenticate(user or self.reporter)
+        return self.client.post(f"/api/forum/posts/{post.pk}/flag/", {"reason": reason}, format="json")
+
+    def _moderate(self, post, action, **extra):
+        self.client.force_authenticate(self.admin)
+        return self.client.post(f"/api/forum/posts/{post.pk}/moderate/", {"action": action, **extra}, format="json")
+
+    # ── Reporting ──────────────────────────────────────────────────────────────
+
+    def test_student_can_report_a_post(self):
+        resp = self._flag(self.reply)
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        flag = ForumFlag.objects.get()
+        self.assertEqual((flag.post, flag.flagged_by, flag.reason), (self.reply, self.reporter, "Unkind"))
+        self.assertIsNone(flag.resolved_at)
+
+    def test_reporting_twice_keeps_one_open_report(self):
+        self._flag(self.reply)
+        resp = self._flag(self.reply, reason="Again")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(ForumFlag.objects.count(), 1)
+
+    def test_can_report_again_after_a_report_is_dealt_with(self):
+        self._flag(self.reply)
+        self._moderate(self.reply, "dismiss")
+        self.assertEqual(self._flag(self.reply).status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ForumFlag.objects.filter(resolved_at__isnull=True).count(), 1)
+
+    def test_reason_is_optional_and_capped(self):
+        self.assertEqual(self._flag(self.reply, reason="").status_code, status.HTTP_201_CREATED)
+        resp = self._flag(self.opening, reason="x" * 501)
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_cannot_report_own_post(self):
+        resp = self._flag(self.reply, user=self.author)
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(ForumFlag.objects.exists())
+
+    def test_cannot_report_a_removed_post(self):
+        self.reply.soft_delete(self.author)
+        self.assertEqual(self._flag(self.reply).status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_reporting_is_rate_limited(self):
+        posts = [ForumPost.objects.create(thread=self.thread, author=self.author, body=f"p{i}") for i in range(11)]
+        for post in posts[:10]:
+            self.assertEqual(self._flag(post).status_code, status.HTTP_201_CREATED)
+        self.assertEqual(self._flag(posts[10]).status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    def test_thread_detail_shows_whether_viewer_reported_each_post(self):
+        self._flag(self.reply)
+        resp = self.client.get(f"/api/forum/threads/{self.thread.pk}/")
+        self.assertTrue(resp.data["replies"][0]["has_flagged"])
+        self.assertFalse(resp.data["opening_post"]["has_flagged"])
+        # Someone else's report doesn't show as yours.
+        self.client.force_authenticate(self.author)
+        resp = self.client.get(f"/api/forum/threads/{self.thread.pk}/")
+        self.assertFalse(resp.data["replies"][0]["has_flagged"])
+
+    # ── Admin queue ────────────────────────────────────────────────────────────
+
+    def test_moderation_endpoints_are_admin_only(self):
+        self.client.force_authenticate(self.reporter)
+        for method, url in [
+            ("get", "/api/forum/posts/reported/"),
+            ("get", "/api/forum/posts/removed/"),
+            ("post", f"/api/forum/posts/{self.reply.pk}/moderate/"),
+            ("post", f"/api/forum/posts/{self.reply.pk}/restore/"),
+            ("post", f"/api/users/{self.author.pk}/forum-ban/"),
+            ("delete", f"/api/users/{self.author.pk}/forum-ban/"),
+        ]:
+            with self.subTest(url=url):
+                resp = getattr(self.client, method)(url, {"action": "hide"}, format="json")
+                self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.reply.refresh_from_db()
+        self.assertFalse(self.reply.is_deleted)
+
+    def test_reported_lists_posts_with_open_reports_and_their_reasons(self):
+        other = User.objects.create_user(email="o@test.local", password="pw", full_name="Other")
+        User.objects.filter(pk=other.pk).update(forum_rules_accepted_at=timezone.now())
+        _enroll(other)
+        self._flag(self.reply, reason="Unkind")
+        self._flag(self.reply, user=User.objects.get(pk=other.pk), reason="Off topic")
+        self._flag(self.opening)
+        self._moderate(self.opening, "dismiss")
+
+        resp = self.client.get("/api/forum/posts/reported/")
+        self.assertEqual(resp.data["count"], 1)
+        post = resp.data["results"][0]
+        self.assertEqual(post["id"], self.reply.pk)
+        self.assertEqual(post["author"]["email"], "author@test.local")
+        self.assertEqual({f["reason"] for f in post["flags"]}, {"Unkind", "Off topic"})
+
+    def test_dismiss_closes_reports_and_leaves_post_up(self):
+        self._flag(self.reply)
+        resp = self._moderate(self.reply, "dismiss")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.reply.refresh_from_db()
+        self.assertFalse(self.reply.is_deleted)
+        flag = ForumFlag.objects.get()
+        self.assertEqual((flag.resolution, flag.resolved_by), ("dismissed", self.admin))
+
+    def test_hide_removes_reply_from_thread(self):
+        self._flag(self.reply)
+        self._moderate(self.reply, "hide")
+        self.reply.refresh_from_db()
+        self.assertTrue(self.reply.is_deleted)
+        self.assertEqual(self.reply.deleted_by, self.admin)
+        self.assertEqual(ForumFlag.objects.get().resolution, "hidden")
+        self.client.force_authenticate(self.reporter)
+        resp = self.client.get(f"/api/forum/threads/{self.thread.pk}/")
+        self.assertEqual(resp.data["replies"], [])
+
+    def test_hiding_opening_post_removes_the_thread(self):
+        self._flag(self.opening)
+        self._moderate(self.opening, "hide")
+        self.client.force_authenticate(self.reporter)
+        self.assertEqual(self.client.get("/api/forum/threads/").data["count"], 0)
+        self.assertEqual(self.client.get(f"/api/forum/threads/{self.thread.pk}/").status_code, 404)
+        resp = self.client.post("/api/forum/posts/", {"thread": self.thread.pk, "body": "hi"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_ban_hides_post_and_bans_author(self):
+        self._flag(self.reply)
+        resp = self._moderate(self.reply, "ban", ban_days=7)
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(resp.data["author"]["forum_banned"])
+        self.author.refresh_from_db()
+        self.assertTrue(self.author.is_forum_banned)
+        self.assertAlmostEqual(
+            self.author.forum_banned_until, timezone.now() + timedelta(days=7), delta=timedelta(minutes=1)
+        )
+        self.reply.refresh_from_db()
+        self.assertTrue(self.reply.is_deleted)
+        self.assertEqual(ForumFlag.objects.get().resolution, "banned")
+
+    def test_ban_rejects_unknown_length_and_admin_authors(self):
+        self._flag(self.reply)
+        self.assertEqual(self._moderate(self.reply, "ban", ban_days=3).status_code, status.HTTP_400_BAD_REQUEST)
+        admin_post = ForumPost.objects.create(thread=self.thread, author=self.admin, body="Admin here")
+        self._flag(admin_post)
+        self.assertEqual(self._moderate(admin_post, "ban").status_code, status.HTTP_400_BAD_REQUEST)
+        # Nothing changed for either.
+        self.author.refresh_from_db()
+        admin_post.refresh_from_db()
+        self.assertFalse(self.author.is_forum_banned)
+        self.assertFalse(admin_post.is_deleted)
+        self.assertEqual(ForumFlag.objects.filter(resolved_at__isnull=True).count(), 2)
+
+    def test_unknown_action_rejected(self):
+        self.assertEqual(self._moderate(self.reply, "explode").status_code, status.HTTP_400_BAD_REQUEST)
+
+    # ── Removed posts ──────────────────────────────────────────────────────────
+
+    def test_deleting_a_thread_keeps_it_for_admins_to_restore(self):
+        self.client.force_authenticate(self.author)
+        self.assertEqual(self.client.delete(f"/api/forum/threads/{self.thread.pk}/").status_code, 204)
+        self.assertTrue(ForumThread.objects.filter(pk=self.thread.pk).exists())
+        self.assertEqual(self.client.get("/api/forum/threads/").data["count"], 0)
+
+        self.client.force_authenticate(self.admin)
+        removed = self.client.get("/api/forum/posts/removed/").data["results"]
+        self.assertEqual([p["id"] for p in removed], [self.opening.pk])
+        self.assertTrue(removed[0]["removed_by_author"])
+
+        self.assertEqual(self.client.post(f"/api/forum/posts/{self.opening.pk}/restore/").status_code, 200)
+        self.assertEqual(self.client.get("/api/forum/threads/").data["count"], 1)
+        self.assertEqual(self.client.get("/api/forum/posts/removed/").data["count"], 0)
+
+    def test_removed_lists_deleted_replies_with_who_removed_them(self):
+        self.client.force_authenticate(self.admin)
+        self.client.delete(f"/api/forum/posts/{self.reply.pk}/")
+        removed = self.client.get("/api/forum/posts/removed/").data["results"]
+        self.assertEqual(removed[0]["id"], self.reply.pk)
+        self.assertFalse(removed[0]["removed_by_author"])
+        self.assertEqual(removed[0]["deleted_by_name"], "Admin User")
+
+    def test_restore_rejects_a_post_that_is_not_removed(self):
+        self.client.force_authenticate(self.admin)
+        resp = self.client.post(f"/api/forum/posts/{self.reply.pk}/restore/")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # ── Bans ───────────────────────────────────────────────────────────────────
+
+    def _ban(self, days=None):
+        self.client.force_authenticate(self.admin)
+        resp = self.client.post(f"/api/users/{self.author.pk}/forum-ban/", {"days": days}, format="json")
+        # force_authenticate hands requests this object, so it must see the ban.
+        self.author.refresh_from_db()
+        return resp
+
+    def test_banned_user_can_read_but_not_post_edit_or_report(self):
+        self._ban()
+        self.client.force_authenticate(self.author)
+        self.assertEqual(self.client.get("/api/forum/threads/").status_code, 200)
+        for method, url, data in [
+            ("post", "/api/forum/threads/", {"body": "New"}),
+            ("post", "/api/forum/posts/", {"thread": self.thread.pk, "body": "Reply"}),
+            ("patch", f"/api/forum/posts/{self.reply.pk}/", {"body": "Edited"}),
+            ("post", f"/api/forum/posts/{ForumPost.objects.create(thread=self.thread, body='x').pk}/flag/", {}),
+        ]:
+            with self.subTest(url=url):
+                resp = getattr(self.client, method)(url, data, format="json")
+                self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+                self.assertIn("banned", str(resp.data["detail"]))
+        # They can still take down their own post.
+        self.assertEqual(self.client.delete(f"/api/forum/posts/{self.reply.pk}/").status_code, 204)
+
+    def test_ban_shows_on_the_users_own_profile(self):
+        self._ban(days=1)
+        self.client.force_authenticate(self.author)
+        user = self.client.get("/api/user/").data["user"]
+        self.assertTrue(user["forum_banned"])
+        self.assertIsNotNone(user["forum_banned_until"])
+
+    def test_ban_expires_on_its_own(self):
+        self._ban(days=1)
+        User.objects.filter(pk=self.author.pk).update(forum_banned_until=timezone.now() - timedelta(minutes=1))
+        self.author.refresh_from_db()
+        self.client.force_authenticate(self.author)
+        resp = self.client.post("/api/forum/posts/", {"thread": self.thread.pk, "body": "Back"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self.client.get("/api/users/?forum_banned=true").data["count"], 0)
+
+    def test_lifting_a_ban(self):
+        self._ban()
+        self.assertEqual(self.client.get("/api/users/?forum_banned=true").data["count"], 1)
+        resp = self.client.delete(f"/api/users/{self.author.pk}/forum-ban/")
+        self.assertFalse(resp.data["forum_banned"])
+        self.assertEqual(self.client.get("/api/users/?forum_banned=true").data["count"], 0)
+
+    def test_admin_cannot_ban_self_or_another_admin(self):
+        self.client.force_authenticate(self.admin)
+        resp = self.client.post(f"/api/users/{self.admin.pk}/forum-ban/", {"days": None}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        other_admin = User.objects.create_user(email="a2@test.local", password="pw", role=User.Role.ADMIN)
+        resp = self.client.post(f"/api/users/{other_admin.pk}/forum-ban/", {"days": 7}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_dashboard_counts_reported_posts_and_skips_removed_threads(self):
+        self._flag(self.reply)
+        self.client.force_authenticate(self.admin)
+        forum = self.client.get("/api/dashboard/stats/").data["forum_activity"]
+        self.assertEqual((forum["thread_count"], forum["reported_post_count"]), (1, 1))
+        self.opening.soft_delete(self.admin)
+        forum = self.client.get("/api/dashboard/stats/").data["forum_activity"]
+        self.assertEqual((forum["thread_count"], forum["post_count"]), (0, 0))

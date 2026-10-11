@@ -6,7 +6,7 @@ import unicodedata
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.db import DatabaseError, connection, transaction
-from django.db.models import Count, Prefetch, ProtectedError, Q
+from django.db.models import Count, Exists, F, Max, OuterRef, Prefetch, ProtectedError, Q
 from django.http import HttpResponse
 from django.utils import timezone
 from google.auth.transport import requests as google_requests
@@ -28,7 +28,7 @@ from .access import (
     survey_is_unlocked,
 )
 from .exports import cohort_names, survey_responses_csv
-from .lockout import lock_minutes_left
+from .lockout import lock_minutes_left, unknown_email_entry
 from .models import (
     AdditionalResource,
     AuthToken,
@@ -37,6 +37,7 @@ from .models import (
     ContentItem,
     ContentView,
     Enrollment,
+    ForumFlag,
     ForumPost,
     ForumThread,
     Module,
@@ -46,6 +47,13 @@ from .models import (
     Survey,
     SurveyResponse,
     User,
+)
+from .moderation import (
+    ban_from_forum,
+    lift_forum_ban,
+    moderate_post,
+    parse_ban_days,
+    require_not_forum_banned,
 )
 from .notifications import notify_survey_unlocked
 from .pagination import ListPagination
@@ -67,17 +75,20 @@ from .serializers import (
     ContentItemSerializer,
     ContentViewSerializer,
     EnrollmentSerializer,
+    ForumFlagCreateSerializer,
     ForumPostCreateSerializer,
     ForumPostSerializer,
     ForumThreadCreateSerializer,
     ForumThreadDetailSerializer,
     ForumThreadSerializer,
+    ModeratedPostSerializer,
     ModuleSerializer,
     ModuleSummarySerializer,
     NotificationLogSerializer,
     NotificationPreferenceSerializer,
     PushSubscriptionSerializer,
     RegisterSerializer,
+    ReportedPostSerializer,
     SurveyAdminSerializer,
     SurveyDetailSerializer,
     SurveyResponseAdminSerializer,
@@ -87,7 +98,7 @@ from .serializers import (
     UserDisplayNameSerializer,
 )
 from .stats import dashboard_stats, module_student_progress, user_overview
-from .throttles import AuthRateThrottle
+from .throttles import AuthRateThrottle, ForumFlagRateThrottle
 from .utils import gravatar_url
 
 logger = logging.getLogger(__name__)
@@ -138,6 +149,8 @@ def _user_payload(user):
         "auth_provider": user.auth_provider,
         "cohort_start_date": _iso_or_none(active_cohort_start_date(user)),
         "forum_rules_accepted": user.forum_rules_accepted_at is not None,
+        "forum_banned": user.is_forum_banned,
+        "forum_banned_until": _iso_or_none(user.forum_banned_until) if user.is_forum_banned else None,
         "is_approved": user_is_approved(user),
         "enrollment_status": _enrollment_status(user),
     }
@@ -189,19 +202,22 @@ def login_view(request):
         )
 
     # Emails are matched case-insensitively; authenticate() needs the stored spelling.
+    # Unknown emails go through authenticate() too, so they're counted and locked like accounts.
     match = User.objects.filter(email__iexact=email.strip()).first()
-    user = authenticate(request, email=match.email, password=password) if match else None
+    user = authenticate(request, email=match.email if match else email.strip(), password=password)
 
     if user is None:
         if match:
             match.refresh_from_db(fields=["locked_until"])
             minutes = lock_minutes_left(match)
-            if minutes:
-                unit = "minute" if minutes == 1 else "minutes"
-                return Response(
-                    {"error": f"Too many failed attempts. Try again in {minutes} {unit}."},
-                    status=status.HTTP_403_FORBIDDEN,
-                )
+        else:
+            minutes = lock_minutes_left(unknown_email_entry(email))
+        if minutes:
+            unit = "minute" if minutes == 1 else "minutes"
+            return Response(
+                {"error": f"Too many failed attempts. Try again in {minutes} {unit}."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         return Response(
             {"error": "Invalid credentials."},
             status=status.HTTP_401_UNAUTHORIZED,
@@ -541,7 +557,8 @@ def _attaches_to_previous(ch: str) -> bool:
 
 class _ForumWriteMixin:
     """Shared by threads and posts: only creating is rate limited, authors and admins
-    edit and delete, and nothing new can be posted once the programme has ended."""
+    edit and delete, nothing new can be posted once the programme has ended, and
+    someone banned from the forum can't post or edit."""
 
     throttle_scope = "forum_post"
     # Validates the create payload; output_serializer_class renders the result.
@@ -558,16 +575,33 @@ class _ForumWriteMixin:
         return [IsApproved(), HasAcceptedForumRules()]
 
     def create(self, request, *args, **kwargs):
+        require_not_forum_banned(request.user)
         serializer = self.create_serializer_class(data=request.data, context=self.get_serializer_context())
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         out = self.output_serializer_class(serializer.instance, context=self.get_serializer_context())
         return Response(out.data, status=status.HTTP_201_CREATED, headers=self.get_success_headers(out.data))
 
+    def partial_update(self, request, *args, **kwargs):
+        require_not_forum_banned(request.user)
+        return super().partial_update(request, *args, **kwargs)
+
     @staticmethod
     def _require_program_active():
         if not is_program_active():
             raise PermissionDenied("The program has ended; the forum is read-only.")
+
+
+def _live_posts():
+    """Posts still on the forum: not deleted, and not in a thread whose opening post was deleted."""
+    return ForumPost.objects.filter(is_deleted=False).exclude(thread__opened_by__is_deleted=True)
+
+
+def _opening_post(thread):
+    """The thread's opening post (older threads may predate opened_by)."""
+    if thread.opened_by_id:
+        return thread.opened_by
+    return ForumPost.objects.filter(thread=thread).order_by("created_at", "pk").first()
 
 
 class ForumThreadViewSet(_ForumWriteMixin, viewsets.ModelViewSet):
@@ -577,11 +611,16 @@ class ForumThreadViewSet(_ForumWriteMixin, viewsets.ModelViewSet):
     pagination_class = ListPagination
 
     def get_queryset(self):
+        posts = ForumPost.objects.select_related("author")
+        if self.action == "retrieve":
+            posts = posts.annotate(flagged_by_me=Exists(ForumFlag.objects.filter(
+                post=OuterRef("pk"), flagged_by=self.request.user, resolved_at__isnull=True,
+            )))
         qs = (
             ForumThread.objects
-            .prefetch_related(
-                Prefetch("posts", queryset=ForumPost.objects.select_related("author"))
-            )
+            # A thread whose opening post was deleted is gone from the forum (admins see it under Moderation).
+            .exclude(opened_by__is_deleted=True)
+            .prefetch_related(Prefetch("posts", queryset=posts))
             .select_related("created_by")
             .order_by("-is_pinned", "pin_order", "-updated_at", "-pk")
         )
@@ -624,6 +663,14 @@ class ForumThreadViewSet(_ForumWriteMixin, viewsets.ModelViewSet):
             thread.opened_by = head_post
             thread.save(update_fields=["opened_by"])
 
+    def perform_destroy(self, instance):
+        # Soft delete: removing the opening post takes the thread off the forum, and an admin can restore it.
+        head = _opening_post(instance)
+        if head is None:
+            instance.delete()
+        else:
+            head.soft_delete(self.request.user)
+
 
 def _thread_search(text, viewer_is_admin):
     """Threads whose opening post or shown author name contains *text*.
@@ -650,13 +697,36 @@ class ForumPostViewSet(
     mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
-    http_method_names = ["post", "patch", "delete", "head", "options"]
+    """Replies, plus reporting posts and the admin moderation actions.
+
+    POST /forum/posts/{id}/flag/        report a post (anyone but its author)
+    GET  /forum/posts/reported/         admin: posts with open reports
+    GET  /forum/posts/removed/          admin: deleted posts and threads
+    POST /forum/posts/{id}/moderate/    admin: {"action": "dismiss" | "hide" | "ban", "ban_days"}
+    POST /forum/posts/{id}/restore/     admin: put a deleted post (or thread) back
+    """
+
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
     serializer_class = ForumPostSerializer
     create_serializer_class = ForumPostCreateSerializer
     output_serializer_class = ForumPostSerializer
+    pagination_class = ListPagination
+    _ADMIN_ACTIONS = ("reported", "removed", "moderate", "restore")
+
+    def get_permissions(self):
+        if self.action in self._ADMIN_ACTIONS:
+            return [IsApproved(), IsAdminOrStaff()]
+        return super().get_permissions()
+
+    def get_throttles(self):
+        if self.action == "flag":
+            return [ForumFlagRateThrottle()]
+        return super().get_throttles()
 
     def get_queryset(self):
-        return ForumPost.objects.filter(is_deleted=False).select_related("author")
+        if self.action in self._ADMIN_ACTIONS:
+            return ForumPost.objects.select_related("author", "thread", "deleted_by")
+        return _live_posts().select_related("author")
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -686,8 +756,72 @@ class ForumPostViewSet(
             raise ValidationError(
                 "Cannot delete the opening post. Delete the thread instead."
             )
-        instance.is_deleted = True
-        instance.save(update_fields=["is_deleted"])
+        instance.soft_delete(self.request.user)
+
+    @action(detail=True, methods=["post"])
+    def flag(self, request, pk=None):
+        post = self.get_object()
+        require_not_forum_banned(request.user)
+        if post.author_id == request.user.pk:
+            raise ValidationError({"detail": "You can't report your own post."})
+        serializer = ForumFlagCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        _, created = ForumFlag.objects.get_or_create(
+            post=post, flagged_by=request.user, resolved_at__isnull=True,
+            defaults={"reason": serializer.validated_data["reason"].strip()},
+        )
+        # Reporting twice is harmless: the first report is still waiting for a moderator.
+        return Response(
+            {"detail": "Thanks for letting us know. A moderator will review this post."},
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+    def _paged(self, queryset, serializer_class):
+        page = self.paginate_queryset(queryset)
+        return self.get_paginated_response(serializer_class(page, many=True, context=self.get_serializer_context()).data)
+
+    @action(detail=False, methods=["get"])
+    def reported(self, request):
+        open_flags = Q(flags__resolved_at__isnull=True)
+        qs = (
+            self.get_queryset()
+            .annotate(
+                open_flag_count=Count("flags", filter=open_flags),
+                last_flagged_at=Max("flags__created_at", filter=open_flags),
+            )
+            .filter(open_flag_count__gt=0)
+            .prefetch_related(Prefetch(
+                "flags",
+                queryset=ForumFlag.objects.filter(resolved_at__isnull=True).select_related("flagged_by"),
+                to_attr="open_flags",
+            ))
+            .order_by("-last_flagged_at", "-pk")
+        )
+        return self._paged(qs, ReportedPostSerializer)
+
+    @action(detail=False, methods=["get"])
+    def removed(self, request):
+        qs = self.get_queryset().filter(is_deleted=True).order_by(F("deleted_at").desc(nulls_last=True), "-pk")
+        return self._paged(qs, ModeratedPostSerializer)
+
+    @action(detail=True, methods=["post"])
+    def moderate(self, request, pk=None):
+        post = self.get_object()
+        action_name = request.data.get("action")
+        ban_days = parse_ban_days({"days": request.data.get("ban_days")}) if action_name == "ban" else None
+        moderate_post(post, action_name, request.user, ban_days)
+        post.refresh_from_db()
+        if post.author_id:
+            post.author.refresh_from_db()
+        return Response(ModeratedPostSerializer(post, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"])
+    def restore(self, request, pk=None):
+        post = self.get_object()
+        if not post.is_deleted:
+            raise ValidationError({"detail": "This post hasn't been removed."})
+        post.restore()
+        return Response(ModeratedPostSerializer(post, context=self.get_serializer_context()).data)
 
 
 # ── User profile ───────────────────────────────────────────────────────────────
@@ -729,6 +863,10 @@ class UserProfileViewSet(
             role = self.request.query_params.get("role")
             if role:
                 qs = qs.filter(role=role)
+            if self.request.query_params.get("forum_banned") == "true":
+                qs = qs.filter(forum_banned_at__isnull=False).filter(
+                    Q(forum_banned_until__isnull=True) | Q(forum_banned_until__gt=timezone.now())
+                )
         return qs
 
     def get_serializer_class(self):
@@ -759,10 +897,20 @@ class UserProfileViewSet(
         user.auth_tokens.all().delete()
         return Response({"temporary_password": temp_password})
 
+    @action(detail=True, methods=["post", "delete"], url_path="forum-ban")
+    def forum_ban(self, request, pk=None):
+        """POST {"days": 1 | 7 | 30 | null} bans the user from posting in the forum; DELETE lifts it."""
+        user = self.get_object()
+        if request.method == "DELETE":
+            lift_forum_ban(user)
+        else:
+            ban_from_forum(user, parse_ban_days(request.data), request.user)
+        return Response(AdminUserSerializer(user, context=self.get_serializer_context()).data)
+
     def get_permissions(self):
         if self.action in ("partial_update", "update"):
             return [IsApproved(), IsAdminOrSelf()]
-        if self.action in ("destroy", "overview", "reset_password"):
+        if self.action in ("destroy", "overview", "reset_password", "forum_ban"):
             return [IsApproved(), IsAdminOrStaff()]
         return [IsApproved()]
 
@@ -841,6 +989,7 @@ class SurveyViewSet(viewsets.ModelViewSet):
                 "cohort": cohorts.get(r.user_id, ""),
                 "submitted_at": r.submitted_at,
                 "answers": r.answers,
+                "question_changes": r.question_changes(survey.questions),
             }
             for r in responses
         ])

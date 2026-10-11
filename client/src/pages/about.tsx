@@ -3,6 +3,7 @@ import Image from "next/image";
 import Hero from "@/components/main/Hero";
 import Footer from "@/components/main/Footer";
 import { LinkedinIcon, GlobeIcon } from "@/components/ui/icons";
+import { pageTitle } from "@/lib/pageTitle";
 
 const SARAH_EMAIL = "sarah.j.moore@rcswa.edu.au";
 
@@ -32,7 +33,7 @@ export default function AboutPage() {
 	return (
 		<>
 			<Head>
-				<title>About Us | RCSWA Wellbeing</title>
+				<title>{pageTitle("About Us")}</title>
 				<meta
 					name="description"
 					content="Learn about Dr Sarah Moore and the Rural Clinical School of Western Australia — the team behind this mindfulness programme for medical students."
@@ -87,13 +88,13 @@ export default function AboutPage() {
 							>
 								{PAGE_CONTENT.sarah.name}
 							</h2>
-							<p className="mt-2 text-[15px] font-semibold text-brand-blue">
+							<p className="mt-2 text-md font-semibold text-brand-blue">
 								{PAGE_CONTENT.sarah.role}
 							</p>
-							<p className="mt-6 text-[15px] leading-relaxed text-muted">
+							<p className="mt-6 text-md leading-relaxed text-muted">
 								{PAGE_CONTENT.sarah.bio}
 							</p>
-							<p className="mt-4 text-[15px] leading-relaxed text-muted">
+							<p className="mt-4 text-md leading-relaxed text-muted">
 								{PAGE_CONTENT.sarah.phdIntro}{" "}
 								<a
 									href={PAGE_CONTENT.sarah.research}
@@ -157,7 +158,7 @@ export default function AboutPage() {
 							>
 								{PAGE_CONTENT.rcswa.name}
 							</h2>
-							<p className="mt-6 text-[15px] leading-relaxed text-muted">
+							<p className="mt-6 text-md leading-relaxed text-muted">
 								{PAGE_CONTENT.rcswa.description}
 							</p>
 							<div className="mt-8">
@@ -165,7 +166,7 @@ export default function AboutPage() {
 									href={PAGE_CONTENT.rcswa.href}
 									target="_blank"
 									rel="noopener noreferrer"
-									className="inline-flex h-12 items-center justify-center rounded-xl bg-brand-blue px-6 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]"
+									className="inline-flex h-12 items-center justify-center rounded-xl bg-brand-blue px-6 text-md font-bold text-white shadow-button"
 								>
 									About the RCSWA
 								</a>

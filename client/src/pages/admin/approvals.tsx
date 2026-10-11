@@ -11,6 +11,8 @@ import { usePagedList } from "@/hooks/usePagedList";
 import { listCohorts, listEnrollments, updateEnrollment, deleteUser } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import type { Cohort, Enrollment } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
+import Button from "@/components/ui/Button";
 
 export default function AdminApprovalsPage() {
 	const pending = usePagedList((page) => listEnrollments({ status: "pending", ...page }), [], {
@@ -62,7 +64,7 @@ export default function AdminApprovalsPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Approvals — Admin</title>
+				<title>{adminPageTitle("Approvals")}</title>
 			</Head>
 
 			<AdminPageHeader title="Approvals">
@@ -90,14 +92,14 @@ export default function AdminApprovalsPage() {
 						</td>
 						<td className="px-5 py-3">
 							<div className="flex justify-end gap-3">
-								<button
+								<Button
 									type="button"
 									disabled={actioningId === e.id}
 									onClick={() => setApproving(e)}
-									className="flex h-9 items-center gap-1.5 rounded-lg bg-brand-blue px-3 text-xs font-bold text-white disabled:opacity-50"
+									variant="primary" size="sm" className="px-3"
 								>
 									Approve
-								</button>
+								</Button>
 								<button
 									type="button"
 									disabled={actioningId === e.id}

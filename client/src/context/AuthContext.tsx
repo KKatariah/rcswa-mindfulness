@@ -18,14 +18,15 @@ import type { AuthUser } from "@/types/user";
 type AuthContextValue = {
 	user: AuthUser | null;
 	isLoading: boolean;
-	login: (email: string, password: string) => Promise<void>;
+	/** The login functions resolve to the signed-in user. */
+	login: (email: string, password: string) => Promise<AuthUser>;
 	register: (
 		email: string,
 		fullName: string,
 		password: string,
-	) => Promise<void>;
+	) => Promise<AuthUser>;
 	logout: () => Promise<void>;
-	loginWithGoogle: (credential: string) => Promise<void>;
+	loginWithGoogle: (credential: string) => Promise<AuthUser>;
 	updateUser: (updates: Partial<AuthUser>) => void;
 	refreshUser: () => Promise<void>;
 };
@@ -87,11 +88,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		const data = await loginUser({ email, password });
 		setUser(data.user);
 		localStorage.setItem("user", JSON.stringify(data.user));
+		return data.user;
 	}
 
 	async function register(email: string, fullName: string, password: string) {
 		await registerUser({ email, full_name: fullName, password });
-		await login(email, password);
+		return login(email, password);
 	}
 
 	async function logout() {
@@ -108,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 		const data = await loginWithGoogleApi(credential);
 		setUser(data.user);
 		localStorage.setItem("user", JSON.stringify(data.user));
+		return data.user;
 	}
 
 	async function refreshUser() {

@@ -13,6 +13,8 @@ import { useFormSubmit } from "@/hooks/useFormSubmit";
 import { listCohorts, listEnrollments, createCohort, updateCohort, deleteCohort } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import type { Cohort } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
+import { formatDate } from "@/lib/dates";
 
 type CohortFormState = { name: string; year: string; start_date: string; end_date: string };
 
@@ -160,7 +162,7 @@ export default function AdminCohortsPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Cohorts — Admin</title>
+				<title>{adminPageTitle("Cohorts")}</title>
 			</Head>
 
 			<AdminPageHeader title="Cohorts">
@@ -180,8 +182,8 @@ export default function AdminCohortsPage() {
 					<tr key={cohort.id} className="border-b border-gray-100 last:border-0">
 						<td className="px-5 py-3 font-semibold text-ink">{cohort.name}</td>
 						<td className="px-5 py-3 text-ink-soft">{cohort.year}</td>
-						<td className="px-5 py-3 text-ink-soft">{cohort.start_date}</td>
-						<td className="px-5 py-3 text-ink-soft">{cohort.end_date}</td>
+						<td className="px-5 py-3 text-ink-soft">{formatDate(cohort.start_date)}</td>
+						<td className="px-5 py-3 text-ink-soft">{formatDate(cohort.end_date)}</td>
 						<td className="px-5 py-3">
 							<div className="flex justify-end gap-3">
 								<button type="button" onClick={() => openEdit(cohort)} aria-label="Edit cohort">

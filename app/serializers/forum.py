@@ -11,6 +11,7 @@ from ..access import (
     is_admin,
 )
 from ..models import (
+    ForumFlag,
     ForumPost,
     ForumThread,
 )
@@ -83,6 +84,8 @@ class ForumPostCreateSerializer(serializers.ModelSerializer):
         extra_kwargs = {"body": {"max_length": FORUM_POST_MAX_CHARS}}
 
     def validate(self, attrs):
+        if ForumPost.objects.filter(thread=attrs["thread"], is_head_post=True, is_deleted=True).exists():
+            raise serializers.ValidationError({"thread": "This thread has been removed."})
         parent = attrs.get("parent_post")
         if parent is not None and parent.thread_id != attrs["thread"].pk:
             raise serializers.ValidationError({"parent_post": "A reply must be to a post in the same thread."})
@@ -91,6 +94,7 @@ class ForumPostCreateSerializer(serializers.ModelSerializer):
 
 class ForumPostSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer):
     is_thread_author = serializers.SerializerMethodField()
+    has_flagged = serializers.SerializerMethodField()
 
     class Meta:
         model = ForumPost
@@ -98,7 +102,7 @@ class ForumPostSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer):
             "id", "thread", "parent_post",
             "author_name", "author_avatar_url",
             "body", "created_at", "updated_at", "edited_at", "can_edit",
-            "is_own", "is_thread_author",
+            "is_own", "is_thread_author", "has_flagged",
         ]
         read_only_fields = ["thread", "parent_post", "created_at", "updated_at", "edited_at"]
         extra_kwargs = {"body": {"max_length": FORUM_POST_MAX_CHARS}}
@@ -111,6 +115,10 @@ class ForumPostSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer):
 
     def get_is_thread_author(self, obj):
         return obj.author_id is not None and obj.author_id == obj.thread.created_by_id
+
+    def get_has_flagged(self, obj):
+        """Whether the viewer has an open report on it (annotated by ForumThreadViewSet)."""
+        return bool(getattr(obj, "flagged_by_me", False))
 
 
 def _thread_posts(thread):
@@ -200,3 +208,68 @@ class ForumThreadCreateSerializer(serializers.ModelSerializer):
                 "Provide either 'module' or 'content_item', not both."
             )
         return data
+
+
+# ── Moderation (admin only) ────────────────────────────────────────────────────
+
+class ForumFlagCreateSerializer(serializers.Serializer):
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
+
+
+class _ModeratedAuthorSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    full_name = serializers.CharField()
+    display_name = serializers.CharField()
+    email = serializers.EmailField()
+    forum_banned = serializers.BooleanField(source="is_forum_banned")
+    forum_banned_until = serializers.DateTimeField()
+
+
+class ModeratedPostSerializer(serializers.ModelSerializer):
+    """A post as the moderation pages show it, with its thread and its author's ban status."""
+
+    thread_title = serializers.CharField(source="thread.title")
+    author = _ModeratedAuthorSerializer(allow_null=True)
+    deleted_by_name = serializers.SerializerMethodField()
+    removed_by_author = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ForumPost
+        fields = [
+            "id", "thread", "thread_title", "is_head_post", "body", "created_at", "edited_at",
+            "author", "is_deleted", "deleted_at", "deleted_by_name", "removed_by_author",
+        ]
+
+    def get_deleted_by_name(self, obj):
+        if not obj.is_deleted or obj.deleted_by is None:
+            return None
+        return obj.deleted_by.full_name or obj.deleted_by.email
+
+    def get_removed_by_author(self, obj):
+        """True when the author deleted it themselves; null if it isn't deleted or nobody is recorded."""
+        if not obj.is_deleted or obj.deleted_by_id is None:
+            return None
+        return obj.deleted_by_id == obj.author_id
+
+
+class _OpenFlagSerializer(serializers.ModelSerializer):
+    flagged_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ForumFlag
+        fields = ["id", "reason", "created_at", "flagged_by_name"]
+
+    def get_flagged_by_name(self, obj):
+        user = obj.flagged_by
+        if user is None:
+            return "Deleted user"
+        return user.full_name or user.email
+
+
+class ReportedPostSerializer(ModeratedPostSerializer):
+    """A post with open reports; `open_flags` is prefetched by the view, newest first."""
+
+    flags = _OpenFlagSerializer(source="open_flags", many=True)
+
+    class Meta(ModeratedPostSerializer.Meta):
+        fields = ModeratedPostSerializer.Meta.fields + ["flags"]

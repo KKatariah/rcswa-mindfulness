@@ -45,12 +45,12 @@ export function SidebarLink({
       href={href}
       aria-current={active ? "page" : undefined}
       onClick={onClick}
-      className={`flex h-[44px] w-full items-center gap-3 rounded-[5px] px-3 transition-colors ${
+      className={`flex h-[44px] w-full items-center gap-3 rounded-lg px-3 transition-colors ${
         active ? "bg-brand-blue text-white shadow-[0_4px_2px_rgba(0,0,0,0.1)]" : ""
       }`}
     >
       <Icon className="size-5 shrink-0" />
-      <span className={`text-[14px] leading-none ${active ? "font-bold text-white" : "font-semibold text-gray-700"}`}>
+      <span className={`text-sm leading-none ${active ? "font-bold text-white" : "font-semibold text-gray-700"}`}>
         {label}
       </span>
     </Link>
@@ -65,7 +65,7 @@ export default function Sidebar() {
 
   return (
     <>
-      <aside className="hidden w-full flex-col overflow-y-auto overscroll-contain rounded-[10px] border border-gray-200 bg-white p-4 shadow-[0_6px_9px_rgba(0,0,0,0.05)] md:sticky md:top-24 md:bottom-4 md:flex md:h-[calc(100dvh-7rem)] md:max-h-[1032px] lg:top-[7.5rem] lg:bottom-6 lg:h-[calc(100dvh-9rem)]">
+      <aside className="hidden w-full flex-col overflow-y-auto overscroll-contain rounded-xl border border-gray-200 bg-white p-4 shadow-card md:sticky md:top-24 md:bottom-4 md:flex md:h-[calc(100dvh-7rem)] md:max-h-[1032px] lg:top-[7.5rem] lg:bottom-6 lg:h-[calc(100dvh-9rem)]">
         <nav aria-label="Main navigation" className="grid grid-cols-2 gap-2 md:block md:shrink-0 md:space-y-2">
           {NAV_ITEMS.map((item) => (
             <SidebarLink
@@ -81,12 +81,12 @@ export default function Sidebar() {
         <Link
           href="/profile"
           aria-current={onProfile ? "page" : undefined}
-          className={`flex w-full shrink-0 items-center gap-3 rounded-[10px] border px-3 py-[10px] transition-colors ${
+          className={`flex w-full shrink-0 items-center gap-3 rounded-xl border px-3 py-[10px] transition-colors ${
             onProfile ? "border-brand-blue bg-brand-blue/5" : "border-gray-200 bg-gray-50 hover:bg-gray-100"
           }`}
         >
           <UserAvatar avatarUrl={user?.avatar_url} fullName={fullName} size={32} className="shrink-0" />
-          <span className="min-w-0 truncate text-[14px] font-semibold text-ink">{fullName}</span>
+          <span className="min-w-0 truncate text-sm font-semibold text-ink">{fullName}</span>
         </Link>
       </aside>
 
@@ -102,7 +102,7 @@ export default function Sidebar() {
                 className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 text-center"
               >
                 <Icon className={`size-[18px] shrink-0 transition-colors ${active ? "text-brand-blue" : "text-gray-700"}`} />
-                <span className={`text-[11px] leading-none ${active ? "font-bold text-brand-blue" : "font-medium text-gray-700"}`}>
+                <span className={`text-2xs leading-none ${active ? "font-bold text-brand-blue" : "font-medium text-gray-700"}`}>
                   {label}
                 </span>
               </Link>

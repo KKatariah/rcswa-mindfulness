@@ -15,6 +15,7 @@ import { errorMessage } from "@/lib/errors";
 import { SURVEY_TYPE_LABELS } from "@/lib/surveys";
 import { weekLabel } from "@/lib/weeks";
 import type { AdminModule, AdminSurvey, SurveyType } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 type SurveyFormState = { title: string; code: string; type: SurveyType; module: string; copyFrom: string };
 
@@ -78,7 +79,7 @@ export default function AdminSurveysPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Surveys — Admin</title>
+				<title>{adminPageTitle("Surveys")}</title>
 			</Head>
 
 			<AdminPageHeader title="Surveys">
@@ -114,7 +115,7 @@ export default function AdminSurveysPage() {
 			</AdminTable>
 
 			{!loading && !error && surveys.length > 0 && (
-				<Card variant="admin" className="mt-6 p-5">
+				<Card className="mt-6 p-5">
 					<SurveyExport surveys={surveys} />
 				</Card>
 			)}

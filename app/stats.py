@@ -11,6 +11,7 @@ from .models import (
     ContentCompletion,
     ContentView,
     Enrollment,
+    ForumFlag,
     ForumPost,
     ForumThread,
     Module,
@@ -116,11 +117,12 @@ def survey_response_rates(eligible_count):
 
 
 def forum_activity_stats():
-    live_posts = ForumPost.objects.filter(is_deleted=False)
+    live_posts = ForumPost.objects.filter(is_deleted=False).exclude(thread__opened_by__is_deleted=True)
     return {
-        "thread_count": ForumThread.objects.count(),
+        "thread_count": ForumThread.objects.exclude(opened_by__is_deleted=True).count(),
         "post_count": live_posts.count(),
         "active_participants": live_posts.values("author").distinct().count(),
+        "reported_post_count": ForumFlag.objects.filter(resolved_at__isnull=True).values("post").distinct().count(),
     }
 
 
@@ -298,7 +300,7 @@ def user_overview(user):
         "modules": modules,
         "surveys": surveys,
         "forum": {
-            "thread_count": ForumThread.objects.filter(created_by=user).count(),
+            "thread_count": ForumThread.objects.filter(created_by=user).exclude(opened_by__is_deleted=True).count(),
             "post_count": posts.filter(is_head_post=False).count(),
             "recent_posts": recent_posts,
         },

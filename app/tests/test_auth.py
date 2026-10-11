@@ -243,6 +243,46 @@ class LoginLockoutTests(APITestCase):
         self.assertEqual(self.user.failed_login_count, 0)
         self.assertEqual(self._login("wrong", ip="10.0.2.60").status_code, status.HTTP_401_UNAUTHORIZED)
 
+    def test_unknown_email_gets_the_same_responses_as_a_real_account(self):
+        # AT22: the lock must not reveal which emails are registered.
+        def attempts(email, prefix):
+            return [
+                self.client.post(
+                    "/api/login/", {"email": email, "password": "wrong"}, format="json",
+                    REMOTE_ADDR=f"{prefix}.{i}",
+                )
+                for i in range(6)
+            ]
+
+        real = attempts("Lock@Test.local", "10.0.3")
+        unknown = attempts("Nobody@Test.local", "10.0.4")
+        self.assertEqual([r.status_code for r in real], [r.status_code for r in unknown])
+        self.assertEqual([r.data for r in real], [r.data for r in unknown])
+        self.assertEqual(unknown[-1].data["error"], "Too many failed attempts. Try again in 15 minutes.")
+
+    def test_unknown_email_lock_ignores_case_and_expires(self):
+        from ..models import UnknownEmailLockout
+        for i in range(5):
+            self._login_as("ghost@test.local", ip=f"10.0.5.{i}")
+        self.assertEqual(self._login_as("GHOST@test.local", ip="10.0.5.50").status_code, status.HTTP_403_FORBIDDEN)
+        later = timezone.now() + timedelta(minutes=16)
+        with patch("django.utils.timezone.now", return_value=later):
+            self.assertEqual(self._login_as("ghost@test.local", ip="10.0.5.60").status_code, 401)
+        # Only a hash is kept, never the address itself.
+        self.assertFalse(UnknownEmailLockout.objects.filter(email_hash__icontains="ghost").exists())
+
+    def test_old_unknown_email_entries_are_pruned(self):
+        from ..models import UnknownEmailLockout
+        self._login_as("old@test.local")
+        UnknownEmailLockout.objects.update(updated_at=timezone.now() - timedelta(days=31))
+        self._login_as("new@test.local", ip="10.0.6.1")
+        self.assertEqual(UnknownEmailLockout.objects.count(), 1)
+
+    def _login_as(self, email, ip="10.0.0.1"):
+        return self.client.post(
+            "/api/login/", {"email": email, "password": "wrong"}, format="json", REMOTE_ADDR=ip,
+        )
+
     def test_django_admin_login_is_locked_too(self):
         admin = User.objects.create_user(email="boss@test.local", password="Calm-River-42", role=User.Role.ADMIN)
         for _ in range(5):
