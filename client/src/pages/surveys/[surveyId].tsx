@@ -209,6 +209,27 @@ export default function SurveyPage() {
 					tabIndex={0}
 					className="flex min-w-0 flex-col gap-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 				>
+					<div>
+	<Link
+		href="/surveys"
+		className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-[0_6px_9px_rgba(0,0,0,0.05)] transition-colors hover:bg-surface-muted"
+	>
+		<svg
+			aria-hidden="true"
+			className="h-4 w-4"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			<path d="m12 19-7-7 7-7" />
+			<path d="M5 12h14" />
+		</svg>
+		Back to Surveys
+	</Link>
+</div>
 					<SurveyHeader title={title} />
 					{survey.has_responded ? (
 						<section

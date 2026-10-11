@@ -551,22 +551,22 @@ function ThreadDetailView({
       </div>
 
       {/* Replies */}
-      {thread.replies.length > 0 && (
-        <div className="mt-4 space-y-3">
-          <p className="text-xs font-semibold uppercase tracking-wide text-white">
-            {thread.replies.length}{" "}
-            {thread.replies.length === 1 ? "Reply" : "Replies"}
-          </p>
-          {thread.replies.map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              onEdit={onEditPost}
-              onDelete={onDeletePost}
-            />
-          ))}
-        </div>
-      )}
+{thread.replies.length > 0 && (
+  <div className="mt-4 space-y-3 rounded-[10px] border border-gray-200 bg-gray-100 p-4 sm:p-5">
+    <p className="text-xs font-semibold uppercase tracking-wide text-ink">
+      {thread.replies.length}{" "}
+      {thread.replies.length === 1 ? "Reply" : "Replies"}
+    </p>
+    {thread.replies.map((post) => (
+      <PostCard
+        key={post.id}
+        post={post}
+        onEdit={onEditPost}
+        onDelete={onDeletePost}
+      />
+    ))}
+  </div>
+)}
 
       {/* Reply composer */}
       {isActive ? (
