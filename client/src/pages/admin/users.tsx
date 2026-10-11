@@ -107,7 +107,7 @@ export default function AdminUsersPage() {
 						{ value: "admin", label: "Admin" },
 						{ value: "student", label: "Student" },
 					]}
-					className="h-11 w-48"
+					className="h-11 w-48 cursor-pointer"
 				/>
 			</div>
 
@@ -142,7 +142,7 @@ export default function AdminUsersPage() {
 													title="Reset password"
 													className="rounded-lg p-1.5 hover:bg-surface-muted"
 												>
-													<LockIcon className="size-4 text-muted hover:text-brand-blue" />
+													<LockIcon className="size-4 text-muted hover:text-brand-blue cursor-pointer" />
 												</button>
 											)}
 											<button
@@ -151,7 +151,7 @@ export default function AdminUsersPage() {
 												aria-label="Edit user"
 												className="rounded-lg p-1.5 hover:bg-surface-muted"
 											>
-												<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
+												<PencilIcon className="size-4 text-muted hover:text-brand-blue cursor-pointer" />
 											</button>
 										</div>
 									</div>
@@ -200,13 +200,13 @@ export default function AdminUsersPage() {
 													aria-label={`Reset password for ${u.full_name || u.email}`}
 													title="Reset password"
 												>
-													<LockIcon className="size-4 text-muted hover:text-brand-blue" />
+													<LockIcon className="size-4 text-muted hover:text-brand-blue cursor-pointer" />
 												</button>
 											) : (
 												<span className="size-4" aria-hidden="true" />
 											)}
 											<button type="button" onClick={() => setEditingUser(u)} aria-label="Edit user">
-												<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
+												<PencilIcon className="size-4 text-muted hover:text-brand-blue cursor-pointer" />
 											</button>
 										</div>
 									</td>

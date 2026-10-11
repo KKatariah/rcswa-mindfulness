@@ -68,7 +68,7 @@ export default function ResetPasswordModal({ user, onClose }: Props) {
 						<button
 							type="button"
 							onClick={close}
-							className="h-12 flex-1 rounded-xl border border-gray-200 text-md font-semibold text-ink"
+							className="h-12 flex-1 rounded-xl border border-gray-200 text-md font-semibold text-ink cursor-pointer hover:bg-surface-muted"
 						>
 							Cancel
 						</button>
