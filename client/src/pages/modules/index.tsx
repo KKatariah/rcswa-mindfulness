@@ -11,6 +11,7 @@ import { CheckIcon, LockIcon, PlayIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { listModules, listProgress, type ApiModule } from "@/lib/api";
 import { weekLabel } from "@/lib/weeks";
+import { pageTitle } from "@/lib/pageTitle";
 
 type WeekStatus = "completed" | "current" | "locked";
 
@@ -129,7 +130,7 @@ export default function ModulesIndexPage() {
 	return (
 		<>
 			<Head>
-				<title>Progress</title>
+				<title>{pageTitle("Your Progress")}</title>
 			</Head>
 			<div
 				className="bg-cover bg-center bg-fixed bg-no-repeat"

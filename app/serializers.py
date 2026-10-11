@@ -691,6 +691,8 @@ class SurveyResponseSerializer(serializers.ModelSerializer):
             errors = _validate_survey_answers(survey.questions, answers)
             if errors:
                 raise serializers.ValidationError({"answers": errors})
+            # Record the version of the questions these answers were given to.
+            attrs["questions"] = survey.questions
         return attrs
 
 
@@ -708,9 +710,6 @@ SURVEY_MAX_QUESTIONS = 100
 SURVEY_CODE_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 # Control characters other than tab/newline; Postgres also rejects NUL in JSON.
 _CONTROL_CHARS_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
-# Changing these on a survey that already has responses would invalidate stored
-# answers or shift CSV columns, so they're frozen once anyone has responded.
-_SURVEY_STRUCTURE_KEYS = ("id", "type", "min", "max", "skip_if")
 
 
 def _is_int(value):
@@ -810,6 +809,28 @@ class SurveyAdminSerializer(serializers.ModelSerializer):
     def validate_questions(self, value):
         return validate_survey_questions(value)
 
+    @staticmethod
+    def _check_question_ids_keep_meaning(survey, questions):
+        current = {q["id"]: q for q in survey.questions or []}
+        answered = set()
+        for answers in survey.responses.values_list("answers", flat=True):
+            answered.update(answers or {})
+        errors = []
+        for q in questions:
+            qid = q["id"]
+            if qid not in current and qid in answered:
+                errors.append(
+                    f"Question {qid}: this id belonged to a removed question that participants answered. "
+                    "Give the new question a different id."
+                )
+            elif qid in current and q["type"] != current[qid]["type"] and qid in answered:
+                errors.append(
+                    f"Question {qid}: participants have answered this question, so it needs a new id to "
+                    "change answer type. Remove it and add a new question instead."
+                )
+        if errors:
+            raise serializers.ValidationError({"questions": errors})
+
     def validate(self, attrs):
         survey = self.instance
         if survey is not None and survey.responses.exists():
@@ -819,13 +840,10 @@ class SurveyAdminSerializer(serializers.ModelSerializer):
                         {field: "Can't be changed once participants have responded."}
                     )
             if "questions" in attrs:
-                def structure(qs):
-                    return [tuple(q.get(k) for k in _SURVEY_STRUCTURE_KEYS) for q in qs]
-                if structure(attrs["questions"]) != structure(survey.questions or []):
-                    raise serializers.ValidationError({"questions": [
-                        "Participants have already responded, so questions can't be added, removed, "
-                        "reordered or change type, range or skip logic. Wording can still be edited."
-                    ]})
+                # Questions may be edited, reordered, added or removed after people respond:
+                # each response keeps the questions it answered, and changed ones are flagged.
+                # Answers are matched to questions by id, so an id must keep meaning one thing.
+                self._check_question_ids_keep_meaning(survey, attrs["questions"])
         candidate = Survey(
             type=attrs.get("type", survey.type if survey else None),
             module=attrs.get("module", survey.module if survey else None),

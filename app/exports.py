@@ -20,13 +20,20 @@ def _safe_cell(value):
     return value
 
 
-def _question_ids(surveys):
-    """Question ids across the surveys, in each survey's own order, without repeats."""
+def _question_ids(surveys, responses=()):
+    """Question ids across the surveys, in each survey's own order, without repeats.
+
+    Questions since removed from a survey follow, so answers already given to them aren't lost.
+    """
     ids = []
     for survey in surveys:
         for question in survey.questions or []:
             qid = question.get("id")
             if qid and qid not in ids:
+                ids.append(qid)
+    for response in responses:
+        for qid in response.answers or {}:
+            if qid not in ids:
                 ids.append(qid)
     return ids
 
@@ -53,19 +60,20 @@ def survey_responses_csv(surveys, include_identity=False):
     when *include_identity* is True.
     """
     surveys = list(surveys)
-    question_ids = _question_ids(surveys)
     responses = list(
         SurveyResponse.objects
         .filter(survey__in=surveys)
         .select_related("survey__module", "user")
         .order_by("survey__module__week_number", "survey__code", "submitted_at")
     )
+    question_ids = _question_ids(surveys, responses)
     cohorts = cohort_names({r.user_id for r in responses})
 
     header = ["response_id", "survey_code", "survey_title", "week", "participant_id"]
     if include_identity:
         header += ["full_name", "email"]
-    header += ["cohort", "submitted_at"] + question_ids
+    # changed_questions: answers given to a question that has since been edited or removed.
+    header += ["cohort", "submitted_at", "changed_questions"] + question_ids
 
     out = io.StringIO()
     # BOM so Excel opens the file as UTF-8 (accents and emoji in journal answers).
@@ -80,6 +88,9 @@ def survey_responses_csv(surveys, include_identity=False):
         row += [
             cohorts.get(r.user_id, ""),
             timezone.localtime(r.submitted_at).isoformat(timespec="seconds"),
+            " ".join(
+                qid for qid, change in r.question_changes().items() if change["status"] != "added"
+            ),
         ]
         row += [(r.answers or {}).get(qid) for qid in question_ids]
         writer.writerow([_safe_cell(v) for v in row])
