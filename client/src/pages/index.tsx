@@ -41,11 +41,11 @@ const HOW_IT_WORKS = [
 
 const CARD_SCROLL_DISTANCE = 320;
 const CTA_CLASS =
-	"items-center justify-center rounded-xl bg-brand-blue px-8 text-md font-bold text-white shadow-button";
+	"items-center justify-center rounded-xl bg-brand-blue px-8 text-md font-bold text-white shadow-button cursor-pointer";
 
 function ScrollButtons({ onScroll, className }: { onScroll: (direction: number) => void; className: string }) {
 	const buttonClass =
-		"flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white text-ink hover:bg-surface-muted";
+		"flex size-10 items-center justify-center rounded-full border border-gray-200 bg-white text-ink hover:bg-surface-muted cursor-pointer";
 	return (
 		<div className={`items-center gap-3 ${className}`}>
 			<button type="button" onClick={() => onScroll(-1)} aria-label="Scroll to previous weeks" className={buttonClass}>
