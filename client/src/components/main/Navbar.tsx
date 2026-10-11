@@ -138,7 +138,7 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 						onClick={() => setIsOpen((open) => !open)}
 						aria-label={isOpen ? "Close menu" : "Open menu"}
 						aria-expanded={isOpen}
-						className="flex size-10 items-center rounded-lg text-white lg:hidden"
+						className="flex size-10 items-center justify-center rounded-lg text-white lg:hidden cursor-pointer hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"
 					>
 						{isOpen ? (
 							<XIcon className="size-6" />

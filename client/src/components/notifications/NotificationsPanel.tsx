@@ -355,7 +355,7 @@ export function NotificationsBell() {
         onClick={() => setIsOpen((open) => !open)}
         aria-expanded={isOpen}
         aria-controls={listId}
-        className="relative flex size-10 items-center justify-center rounded-lg text-white hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"
+        className="relative flex size-10 items-center justify-center rounded-lg text-white cursor-pointer hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"
       >
         <span className="sr-only">Notifications</span>
         <BellIcon className="size-6" aria-hidden="true" />
