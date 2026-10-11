@@ -118,7 +118,7 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 								<button
 									type="button"
 									onClick={openLogin}
-									className="text-md font-semibold text-white"
+									className="text-md font-semibold text-white cursor-pointer hover:underline"
 								>
 									Log In
 								</button>
@@ -156,7 +156,7 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 								key={link.href}
 								href={link.href}
 								onClick={(event) => handleLinkClick(event, link.href)}
-								className="rounded-lg px-3 py-2.5 text-md font-semibold text-ink"
+								className="rounded-lg px-3 py-2.5 text-md font-semibold text-ink hover:underline"
 							>
 								{link.label}
 							</Link>
@@ -167,7 +167,7 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 								<Link
 									href={PROFILE_HREF}
 									onClick={(event) => handleLinkClick(event, PROFILE_HREF)}
-									className="truncate rounded-lg px-3 py-2.5 text-left text-md font-semibold text-ink"
+									className="truncate rounded-lg px-3 py-2.5 text-left text-md font-semibold text-ink hover:underline"
 								>
 									Hi, {user.full_name}
 								</Link>
@@ -184,7 +184,7 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 								<button
 									type="button"
 									onClick={openLogin}
-									className="rounded-lg px-3 py-2.5 text-left text-md font-semibold text-ink"
+									className="rounded-lg px-3 py-2.5 text-left text-md font-semibold text-ink cursor-pointer hover:underline"
 								>
 									Log In
 								</button>

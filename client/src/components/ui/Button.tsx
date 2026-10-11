@@ -30,7 +30,7 @@ export type ButtonSize = keyof typeof SIZES;
  * Pass `null` as the size when the button sets its own height, corners and type in `className`.
  */
 export function buttonClass(variant: ButtonVariant, size: ButtonSize | null, className = "") {
-	return ["inline-flex items-center justify-center gap-2 transition-colors", VARIANTS[variant], size ? SIZES[size] : "", className]
+	return ["inline-flex items-center justify-center gap-2 transition-colors cursor-pointer", VARIANTS[variant], size ? SIZES[size] : "", className]
 		.filter(Boolean)
 		.join(" ");
 }
