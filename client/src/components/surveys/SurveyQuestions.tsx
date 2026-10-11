@@ -159,7 +159,7 @@ export default function SurveyQuestions({ questions, onSubmit, isSubmitting = fa
 									value={value}
 									checked={answers[q.id] === value}
 									onChange={() => updateAnswer(q.id, value)}
-									className="size-4 border-brand-blue bg-white accent-brand-blue checked:bg-brand-blue focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
+									className="size-4 border-brand-blue bg-white cursor-pointer accent-brand-blue checked:bg-brand-blue focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 								/>
 							</label>
 						))}
@@ -244,7 +244,7 @@ export default function SurveyQuestions({ questions, onSubmit, isSubmitting = fa
 						type="button"
 						disabled={isSubmitting || !hasScaleAnswers}
 						onClick={() => setConfirmingClear(true)}
-						className="inline-flex h-11 shrink-0 items-center justify-center whitespace-nowrap rounded-xl border border-gray-300 bg-white px-5 text-md font-semibold text-ink-soft transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-2xs"
+						className="inline-flex h-11 shrink-0 items-center justify-center cursor-pointer whitespace-nowrap rounded-xl border border-gray-300 bg-white px-5 text-md font-semibold text-ink-soft transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue disabled:cursor-not-allowed disabled:opacity-50 max-[380px]:h-10 max-[380px]:shrink max-[380px]:px-1.5 max-[380px]:text-2xs"
 					>
 						Clear selections
 					</button>
