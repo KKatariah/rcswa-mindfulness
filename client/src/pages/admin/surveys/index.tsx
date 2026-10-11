@@ -153,7 +153,7 @@ export default function AdminSurveysPage() {
 									value={form.type}
 									onChange={(v) => setForm((f) => f && { ...f, type: v as SurveyType })}
 									options={Object.entries(SURVEY_TYPE_LABELS).map(([value, label]) => ({ value, label }))}
-									className="h-12"
+									className="h-12 cursor-pointer"
 								/>
 							</Field>
 							<Field id="survey-module" label="Module">
@@ -165,7 +165,7 @@ export default function AdminSurveysPage() {
 										{ value: "", label: "None" },
 										...modules.map((m) => ({ value: String(m.id), label: `${weekLabel(m.week_number)}: ${m.title}` })),
 									]}
-									className="h-12"
+									className="h-12 cursor-pointer"
 								/>
 							</Field>
 						</div>
@@ -176,7 +176,7 @@ export default function AdminSurveysPage() {
 								value={form.copyFrom}
 								onChange={(v) => setForm((f) => f && { ...f, copyFrom: v })}
 								options={surveys.map((s) => ({ value: String(s.id), label: s.title }))}
-								className="h-12"
+								className="h-12 cursor-pointer"
 							/>
 							<p className="text-xs text-muted">You can edit the wording after the survey is created.</p>
 						</Field>

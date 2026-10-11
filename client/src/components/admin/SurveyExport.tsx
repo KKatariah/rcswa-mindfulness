@@ -47,7 +47,7 @@ export default function SurveyExport(props: Props) {
 						className="h-11 sm:w-64 cursor-pointer"
 					/>
 				)}
-				<label className="flex items-center gap-2 text-sm text-ink">
+				<label className="flex items-center gap-2 text-sm text-ink cursor-pointer">
 					<input
 						type="checkbox"
 						checked={includeIdentity}
