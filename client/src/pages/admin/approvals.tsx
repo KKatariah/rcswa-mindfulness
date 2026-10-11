@@ -87,7 +87,7 @@ export default function AdminApprovalsPage() {
 								value={String(selectedCohort[e.id] ?? e.cohort)}
 								onChange={(v) => setSelectedCohort((prev) => ({ ...prev, [e.id]: v }))}
 								options={cohorts.data.map((c) => ({ value: String(c.id), label: c.name }))}
-								className="h-10 w-56"
+								className="h-10 w-56 cursor-pointer"
 							/>
 						</td>
 						<td className="px-5 py-3">
@@ -104,7 +104,7 @@ export default function AdminApprovalsPage() {
 									type="button"
 									disabled={actioningId === e.id}
 									onClick={() => setRejecting(e)}
-									className="flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-3 text-xs font-semibold text-ink-soft hover:border-red-300 hover:text-red-500 disabled:opacity-50"
+									className="flex h-9 items-center gap-1.5 rounded-lg border border-gray-200 px-3 text-xs font-semibold text-ink-soft hover:border-red-300 hover:text-red-500 disabled:opacity-50 cursor-pointer"
 								>
 									Reject
 								</button>
