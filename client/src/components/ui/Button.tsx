@@ -7,7 +7,7 @@ const VARIANTS = {
 	/** Navy: modal and form submit buttons (Log in, Save, Agree). */
 	dark: "bg-brand-blue-dark text-white hover:bg-brand-blue-dark/90",
 	danger: "bg-red-500 text-white hover:bg-red-600",
-	secondary: "border border-gray-200 text-ink",
+	secondary: "border border-gray-200 text-ink hover:bg-surface-muted",
 	/** White outline for the dark photo header, where a filled button would read as the main action. */
 	onDark: "border border-white/60 text-white hover:bg-white/10",
 } as const;

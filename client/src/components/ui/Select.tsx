@@ -101,7 +101,7 @@ export default function Select({
 									onChange(opt.value);
 									setOpen(false);
 								}}
-								className={`block w-full px-4 py-2 text-left text-sm hover:bg-surface-muted ${
+								className={`block w-full px-4 py-2 text-left text-sm cursor-pointer hover:bg-surface-muted ${
 									opt.value === value ? "font-semibold text-brand-blue" : "text-ink"
 								}`}
 							>

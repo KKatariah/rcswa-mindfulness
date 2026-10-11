@@ -59,11 +59,20 @@ function CohortForm({
 				id="cohort-start"
 				label="Start date (Monday of week 1)"
 				type="date"
+				className="[&::-webkit-calendar-picker-indicator]:cursor-pointer"
 				required
 				value={form.start_date}
 				onChange={set("start_date")}
 			/>
-			<TextField id="cohort-end" label="End date" type="date" required value={form.end_date} onChange={set("end_date")} />
+			<TextField
+				id="cohort-end"
+				label="End date"
+				type="date"
+				className="[&::-webkit-calendar-picker-indicator]:cursor-pointer"
+				required
+				value={form.end_date}
+				onChange={set("end_date")}
+			/>
 			<FormActions submitting={submitting} onCancel={onCancel} />
 
 			{confirmingStartChange && (
@@ -187,7 +196,7 @@ export default function AdminCohortsPage() {
 						<td className="px-5 py-3">
 							<div className="flex justify-end gap-3">
 								<button type="button" onClick={() => openEdit(cohort)} aria-label="Edit cohort">
-									<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
+									<PencilIcon className="size-4 text-muted hover:text-brand-blue cursor-pointer" />
 								</button>
 								<button
 									type="button"
@@ -196,7 +205,7 @@ export default function AdminCohortsPage() {
 									aria-label="Delete cohort"
 									className="disabled:opacity-50"
 								>
-									<TrashIcon className="size-4 text-muted hover:text-red-500" />
+									<TrashIcon className="size-4 text-muted hover:text-red-500 cursor-pointer" />
 								</button>
 							</div>
 						</td>
