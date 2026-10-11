@@ -27,7 +27,7 @@ RESOURCES = [
     },
     {
         "category": "book",
-        "title": "Know Thyself: The Stress Release Program",
+        "title": "Know Thyself: The Stress Release Programme",
         "author": "Dr Craig Hassed",
         "url": "",
         "cover": "know-thyself-c-hassed.jpg",
