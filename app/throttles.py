@@ -32,4 +32,3 @@ class ForumFlagRateThrottle(MultiPeriodRateMixin, UserRateThrottle):
     """Per-user limit on reporting forum posts, so the moderation queue can't be flooded."""
 
     scope = "forum_flag"
-    
