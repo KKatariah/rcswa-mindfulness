@@ -15,6 +15,7 @@ import {
   getNotificationPreferences,
   updateNotificationPreferences,
 } from "@/lib/api";
+import { pageTitle } from "@/lib/pageTitle";
 
 type NotificationPreferences = {
   dailyContentReminder: boolean;
@@ -279,7 +280,7 @@ useEffect(() => {
   return (
     <>
       <Head>
-        <title>Profile</title>
+        <title>{pageTitle("Profile")}</title>
       </Head>
 
       <div

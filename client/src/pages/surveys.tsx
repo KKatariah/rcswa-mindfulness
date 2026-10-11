@@ -9,6 +9,7 @@ import SurveyHeader from "@/components/surveys/SurveyHeader";
 import SurveyLinks, {type SurveyLinkItem } from "@/components/surveys/SurveyLinks";
 import { useAuth } from "@/context/AuthContext";
 import { listSurveys } from "@/lib/api";
+import { pageTitle } from "@/lib/pageTitle";
 
 export default function SurveysHomePage() {
 	const router = useRouter();
@@ -66,7 +67,7 @@ export default function SurveysHomePage() {
 	return (
 		<>
 			<Head>
-				<title>Weekly Surveys</title>
+				<title>{pageTitle("Weekly Surveys")}</title>
 			</Head>
 			<AppShell
 				rightRail={

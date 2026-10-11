@@ -61,7 +61,9 @@ export default function AdminSidebar() {
         })}
       </nav>
 
-      <div className="mt-auto pt-6" />
+      {/* Directly under the nav, not pinned to the bottom: the sidebar is taller than the
+          viewport below the page header, so a bottom-pinned link needed a scroll to reach. */}
+      <div className="my-4 h-px w-full bg-[#E5E7EB]" />
 
       <Link
         href="/"

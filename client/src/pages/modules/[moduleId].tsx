@@ -20,6 +20,7 @@ import {
 } from "@/lib/api";
 import type { ContentBlock } from "@/types/module";
 import { weekLabel } from "@/lib/weeks";
+import { pageTitle } from "@/lib/pageTitle";
 
 // Background photo by Michael Metschl (Pexels): https://www.pexels.com/photo/18284929/
 
@@ -163,7 +164,7 @@ export default function ModulePage() {
 	return (
 		<>
 			<Head>
-				<title>{module.title}</title>
+				<title>{pageTitle(module.title)}</title>
 			</Head>
 			<AppShell
 				rightRail={

@@ -6,6 +6,7 @@ import SurveyExport from "@/components/admin/SurveyExport";
 import { getDashboardStats } from "@/lib/api";
 import type { DashboardStats } from "@/types/admin";
 import { weekLabel } from "@/lib/weeks";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 function StatCard({ label, value }: { label: string; value: string | number }) {
 	return (
@@ -60,7 +61,7 @@ export default function AdminDashboardPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Dashboard — Admin</title>
+				<title>{adminPageTitle("Dashboard")}</title>
 			</Head>
 
 			<h1 className="text-2xl font-extrabold text-ink">Dashboard</h1>

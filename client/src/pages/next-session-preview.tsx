@@ -1,10 +1,11 @@
 import Head from "next/head";
 import NextSession from "@/components/modules/NextSession";
+import { pageTitle } from "@/lib/pageTitle";
 
 export default function NextSessionPreview() {
   return (
     <>
-      <Head><title>Next Session preview</title></Head>
+      <Head><title>{pageTitle("Next Session Preview")}</title></Head>
       <div className="min-h-screen bg-brand-blue/20 p-4">
         <div className="w-full max-w-[366px]">
           <NextSession

@@ -8,6 +8,7 @@ import UpcomingSession, { findUpcomingModule } from "@/components/modules/Upcomi
 import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import { CheckIcon, PlayIcon, LockIcon } from "@/components/ui/icons";
 import { weekLabel } from "@/lib/weeks";
+import { pageTitle } from "@/lib/pageTitle";
 
 export default function ProgressPage() {
   const { user, loading, error, modules, completions, reload } = useProgramme();
@@ -34,7 +35,7 @@ export default function ProgressPage() {
   return (
     <>
       <Head>
-        <title>Your Progress | RCSWA Wellbeing</title>
+        <title>{pageTitle("Your Progress")}</title>
         <meta name="description" content="Track your progress through the eight-week mindfulness programme." />
       </Head>
       <AppShell

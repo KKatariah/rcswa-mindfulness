@@ -16,7 +16,7 @@ test("a student posts a thread that another student can read but not edit", asyn
 	await otherPage.goto("/forum");
 	await otherPage.getByText(body).first().click();
 	await expect(otherPage.getByText(body).first()).toBeVisible();
-	await expect(otherPage.getByRole("button", { name: "Edit", exact: true })).toHaveCount(0);
+	await expect(otherPage.getByRole("button", { name: "Edit post", exact: true })).toHaveCount(0);
 
 	// The API refuses the edit too, not just the UI.
 	const studentToken = await apiToken(request, STUDENT);

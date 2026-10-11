@@ -5,6 +5,7 @@ import Select from "@/components/ui/Select";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { listCohorts, listEnrollments, updateEnrollment, deleteUser } from "@/lib/api";
 import type { Cohort, Enrollment } from "@/types/admin";
+import { adminPageTitle } from "@/lib/pageTitle";
 
 export default function AdminApprovalsPage() {
 	const [pendingEnrollments, setPendingEnrollments] = useState<Enrollment[]>([]);
@@ -76,7 +77,7 @@ export default function AdminApprovalsPage() {
 	return (
 		<AdminLayout>
 			<Head>
-				<title>Approvals — Admin</title>
+				<title>{adminPageTitle("Approvals")}</title>
 			</Head>
 
 			<div className="flex flex-wrap items-center justify-between gap-3">

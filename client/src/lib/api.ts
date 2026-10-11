@@ -890,6 +890,7 @@ export type ApiSurveyDetail = ApiSurvey & {
 		max?: number;
 		unit?: string;
 		section?: string;
+		scale_labels?: Record<string, string>;
 		skip_if?: {
 			question_id: string;
 			value: number;
