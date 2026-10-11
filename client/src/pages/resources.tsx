@@ -108,7 +108,7 @@ function ResourceSection({ id, title, count, children }: { id: string; title: st
 /** A documentary or online programme: thumbnail, title and a link out. */
 function ResourceRow({ resource, image, linkLabel }: { resource: Resource; image: ReactNode; linkLabel: string }) {
   return (
-    <li className="flex items-center gap-4 py-4 first:pt-0 last:pb-0">
+    <li className="flex flex-col items-start gap-4 py-4 first:pt-0 last:pb-0 sm:flex-row sm:items-center">
       {image}
       <div className="min-w-0 flex-1">
         <p className="wrap-anywhere font-semibold text-ink">{resource.title}</p>
