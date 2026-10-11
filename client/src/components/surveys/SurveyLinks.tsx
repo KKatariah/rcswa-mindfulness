@@ -43,7 +43,7 @@ export default function SurveyLinks({ items = DEFAULT_SURVEYS }: SurveyLinksProp
 			<ul>
 				{items.map((item) => {
 					const isLocked = item.status === "locked";
-					const rowClassName = `flex items-center gap-4 px-6 py-4 font-semibold ${
+					const rowClassName = `flex items-center gap-4 px-6 py-4 text-sm font-semibold sm:text-base ${
 						isLocked ? "text-muted" : "text-ink"
 					}`;
 					const iconClassName = `flex size-8 shrink-0 items-center justify-center rounded-full ${

@@ -143,10 +143,10 @@ export default function ModulesIndexPage() {
 				<div className="mx-auto grid max-w-[1920px] items-start gap-6 p-4 md:grid-cols-[240px_minmax(0,1fr)] lg:p-6 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
 					<Sidebar responsive />
 
-					<div className="flex min-w-0 flex-col gap-6">
-							<div className="rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)] sm:p-8">
+					<div className="flex min-w-0 flex-col gap-4">
+							<div className="rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
 								<h1 className="text-2xl font-extrabold text-ink sm:text-3xl">Your Progress</h1>
-								<p className="mt-1 text-muted">Track your 8-week meditation journey</p>
+								<p className="mt-1 text-sm text-muted sm:text-base">Track your 8-week meditation journey</p>
 							</div>
 
 							{(loading || authLoading) && (
@@ -196,7 +196,7 @@ export default function ModulesIndexPage() {
 											>
 														{icon}
 													</span>
-													<span className={`flex-1 font-semibold ${isLocked ? "text-gray-400" : "text-ink"}`}>
+													<span className={`flex-1 text-sm font-semibold sm:text-base ${isLocked ? "text-gray-400" : "text-ink"}`}>
 														{weekLabel(m.week_number)}
 													</span>
 													{!isLocked && (

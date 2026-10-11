@@ -1157,8 +1157,8 @@ export default function ForumPage() {
                 )}
                 {!selectedThread && (
                   <div className="mb-4 rounded-[10px] border border-gray-200 bg-white p-6 shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
-                    <h1 className="text-2xl font-extrabold text-ink">Forum</h1>
-                    <p className="mt-1 text-sm text-[#9CA3AF]">
+                    <h1 className="text-2xl font-extrabold text-ink sm:text-3xl">Forum</h1>
+                    <p className="mt-1 text-sm text-muted sm:text-base">
                       Connect, share, and support each other on your wellness
                       journeys.
                     </p>
