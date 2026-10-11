@@ -41,7 +41,7 @@ test("sign up rejects a weak password, then accepts a strong one", async ({ page
 	await page.getByRole("button", { name: "Sign up", exact: true }).click();
 
 	// New accounts wait for an admin to approve them, so they're signed in but kept on the home page,
-	// without a detour through the programme page.
+	// without a detour through the program page.
 	await expect(page.getByRole("dialog")).toHaveCount(0);
 	await expect.poll(() => page.evaluate(() => window.localStorage.getItem("token"))).not.toBeNull();
 	await expect(page).toHaveURL(/\/$/);

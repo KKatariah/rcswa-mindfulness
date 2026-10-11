@@ -66,7 +66,7 @@ describe("ApprovalGate", () => {
 		expect(screen.getByText("Page content")).toBeInTheDocument();
 	});
 
-	it("lets an approved student into the programme", async () => {
+	it("lets an approved student into the program", async () => {
 		signedInAs(approved);
 		await renderAt("/modules");
 		expect(router.replace).not.toHaveBeenCalled();

@@ -147,7 +147,7 @@ function BanDialog({
 				<p className="text-sm text-ink-soft">
 					{post.is_head_post ? "This thread" : "This post"} will be hidden and {authorLabel(post.author)} won&apos;t
 					be able to post, reply, edit or report in the forum. They can still read it and use the rest of the
-					programme.
+					program.
 				</p>
 				<div className="flex flex-col gap-2">
 					<span id="ban-length-label" className="text-sm font-semibold text-ink">

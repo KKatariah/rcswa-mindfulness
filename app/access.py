@@ -74,7 +74,7 @@ def module_is_unlocked(module, user):
 # ── Surveys ────────────────────────────────────────────────────────────────────
 
 # Enrollment statuses whose surveys count as research data. "completed" covers the
-# end-of-programme and follow-up surveys answered after a cohort finishes.
+# end-of-program and follow-up surveys answered after a cohort finishes.
 PARTICIPANT_STATUSES = (Enrollment.Status.ACTIVE, Enrollment.Status.COMPLETED)
 
 
@@ -127,13 +127,13 @@ def survey_is_unlocked(survey, user, completed_ids=None, responded_ids=None):
     return module_content_completed(survey.module, user, completed_ids)
 
 
-# ── Programme dates ────────────────────────────────────────────────────────────
+# ── Program dates ────────────────────────────────────────────────────────────
 # Computed on read, not stored: archive state is always derived fresh from today's date.
 
 def is_program_active(today=None):
     """True if `today` falls within [start_date, end_date] of ANY cohort.
     The forum is read-only (not hidden) whenever this is False. If no cohort has
-    ever been created, there is no "programme" to have ended yet, so stay open."""
+    ever been created, there is no "program" to have ended yet, so stay open."""
     if not Cohort.objects.exists():
         return True
     today = today or timezone.localdate()

@@ -728,7 +728,7 @@ class ForumArchiveTests(APITestCase):
             module=self.module, created_by=self.student, title="Existing Thread",
         )
         ForumPost.objects.create(thread=self.thread, author=self.student, body="Opening")
-        # Approved through a cohort that has already ended, so the programme still
+        # Approved through a cohort that has already ended, so the program still
         # counts as inactive until a test adds a running cohort.
         past = Cohort.objects.create(
             name="Past Cohort", year=2025,
@@ -784,7 +784,7 @@ class ForumArchiveTests(APITestCase):
 
     def test_program_status_endpoint_reflects_active_cohort(self):
         self.client.force_login(self.student)
-        # The student's own cohort has ended, so the programme starts out inactive.
+        # The student's own cohort has ended, so the program starts out inactive.
         self.assertFalse(self.client.get("/api/program-status/").data["is_active"])
 
         Cohort.objects.create(

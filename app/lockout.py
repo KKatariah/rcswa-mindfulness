@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # This many wrong passwords in a row locks the account for LOCK_DURATION.
 MAX_FAILED_LOGINS = 5
-LOCK_DURATION = timedelta(minutes=15)
+LOCK_DURATION = timedelta(minutes=5)
 # Unknown-email entries untouched this long are deleted, so the table doesn't grow forever.
 UNKNOWN_EMAIL_RETENTION = timedelta(days=30)
 

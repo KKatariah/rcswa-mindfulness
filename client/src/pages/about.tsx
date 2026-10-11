@@ -19,7 +19,7 @@ const PAGE_CONTENT = {
 		linkedinLabel: "Sarah's LinkedIn",
 		research: "https://research-repository.uwa.edu.au/en/persons/sarah-moore/",
 		researchLinkText: "Read Sarah's research on UWA Research Repository",
-		phdIntro: "This programme has been developed and evaluated through Sarah's PhD research at UWA.",
+		phdIntro: "This program has been developed and evaluated through Sarah's PhD research at UWA.",
 	},
 	rcswa: {
 		name: "The Rural Clinical School of Western Australia",
@@ -36,13 +36,13 @@ export default function AboutPage() {
 				<title>{pageTitle("About Us")}</title>
 				<meta
 					name="description"
-					content="Learn about Dr Sarah Moore and the Rural Clinical School of Western Australia — the team behind this mindfulness programme for medical students."
+					content="Learn about Dr Sarah Moore and the Rural Clinical School of Western Australia — the team behind this mindfulness program for medical students."
 				/>
 			</Head>
 
 			<Hero
 				title="About Us"
-				subtitle="The mindfulness programme for medical students and junior doctors, created by Dr Sarah Moore at the Rural Clinical School of Western Australia."
+				subtitle="The mindfulness program for medical students and junior doctors, created by Dr Sarah Moore at the Rural Clinical School of Western Australia."
 				heightClass="min-h-[360px] sm:min-h-[440px]"
 			/>
 

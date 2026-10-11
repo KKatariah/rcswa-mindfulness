@@ -3,14 +3,14 @@ import { GlobeIcon, LinkedinIcon } from "@/components/ui/icons";
 import { useAuth } from "@/context/AuthContext";
 import { useApprovalGuard } from "@/context/ApprovalModalContext";
 
-const PROGRAMME_HREF = "/modules";
+const PROGRAM_HREF = "/modules";
 
 const FOOTER_COLUMNS = [
   {
     title: "Course",
     links: [
       { label: "Overview", href: "/" },
-      { label: "Programme", href: PROGRAMME_HREF },
+      { label: "Program", href: PROGRAM_HREF },
     ],
   },
   {
@@ -52,14 +52,14 @@ export default function Footer() {
               <h2 className="text-sm font-bold text-white">{column.title}</h2>
               <ul className="flex flex-col gap-2.5">
                 {column.links
-                  // Programme is only shown when logged in.
-                  .filter((link) => link.href !== PROGRAMME_HREF || user)
+                  // Program is only shown when logged in.
+                  .filter((link) => link.href !== PROGRAM_HREF || user)
                   .map((link) => (
                     <li key={link.label}>
                       <Link
                         href={link.href}
                         // Pending users get the approval popup instead of navigating.
-                        onClick={link.href === PROGRAMME_HREF ? guardApproval : undefined}
+                        onClick={link.href === PROGRAM_HREF ? guardApproval : undefined}
                         className="text-sm text-white/50"
                       >
                         {link.label}

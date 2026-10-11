@@ -54,7 +54,7 @@ const FEATURED = [
   {
     id: "online-programs",
     label: "Online Programs",
-    description: "Guided courses beyond this programme",
+    description: "Guided courses beyond this program",
     icon: GlobeIcon,
     cardBg: "bg-green-50",
     iconBg: "bg-green-600",
@@ -105,7 +105,7 @@ function ResourceSection({ id, title, count, children }: { id: string; title: st
   );
 }
 
-/** A documentary or online programme: thumbnail, title and a link out. */
+/** A documentary or online program: thumbnail, title and a link out. */
 function ResourceRow({ resource, image, linkLabel }: { resource: Resource; image: ReactNode; linkLabel: string }) {
   return (
     <li className="flex items-center gap-4 py-4 first:pt-0 last:pb-0">
@@ -156,7 +156,7 @@ export default function ResourcesPage() {
     <>
       <Head>
         <title>{pageTitle("Resources")}</title>
-        <meta name="description" content="Books, documentaries, and online programmes to support your mindfulness journey." />
+        <meta name="description" content="Books, documentaries, and online programs to support your mindfulness journey." />
       </Head>
       <AppShell
         rightRail={
@@ -225,12 +225,12 @@ export default function ResourcesPage() {
               </ul>
             </ResourceSection>
 
-            <ResourceSection id="online-programs" title="Online Programs" count={`${onlinePrograms.length} programmes`}>
+            <ResourceSection id="online-programs" title="Online Programs" count={`${onlinePrograms.length} programs`}>
               <ul className="mt-4 divide-y divide-gray-100">
                 {onlinePrograms.map((program) => (
                   <ResourceRow
                     key={program.id}
-                    // Programmes show no author line.
+                    // Programs show no author line.
                     resource={{ ...program, author: undefined }}
                     linkLabel="Visit site"
                     image={

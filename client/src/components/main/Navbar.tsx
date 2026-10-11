@@ -14,11 +14,11 @@ const NAV_LINKS = [
 	{ label: "About Us", href: "/about" },
 ];
 
-const PROGRAMME_HREF = "/modules";
+const PROGRAM_HREF = "/modules";
 const PROFILE_HREF = "/profile";
 
 // Pending users get the approval popup instead of navigating to these.
-const APPROVED_ONLY_HREFS = [PROGRAMME_HREF, PROFILE_HREF];
+const APPROVED_ONLY_HREFS = [PROGRAM_HREF, PROFILE_HREF];
 
 /** `actions` sits at the right of the bar, before the account links and menu (e.g. the notifications bell). */
 export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
@@ -30,7 +30,7 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 	const [loginOpen, setLoginOpen] = useState(false);
 	const visibleLinks = [
 		...NAV_LINKS,
-		...(user ? [{ label: "Programme", href: PROGRAMME_HREF }] : []),
+		...(user ? [{ label: "Program", href: PROGRAM_HREF }] : []),
 		...(user?.role === "admin" ? [{ label: "Admin", href: "/admin" }] : []),
 	];
 	const [signUpOpen, setSignUpOpen] = useState(false);
