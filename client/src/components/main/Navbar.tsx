@@ -1,4 +1,4 @@
-import { useState, type MouseEvent } from "react";
+import { useState, type MouseEvent, type ReactNode } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import { MenuIcon, XIcon } from "@/components/ui/icons";
@@ -7,6 +7,7 @@ import SignUpModal from "@/components/main/SignUpModal";
 import { useAuth } from "@/context/AuthContext";
 import { useApprovalGuard } from "@/context/ApprovalModalContext";
 import { UserAvatar } from "@/components/ui/UserAvatar";
+import Button from "@/components/ui/Button";
 
 const NAV_LINKS = [
 	{ label: "Home", href: "/" },
@@ -19,7 +20,8 @@ const PROFILE_HREF = "/profile";
 // Pending users get the approval popup instead of navigating to these.
 const APPROVED_ONLY_HREFS = [PROGRAMME_HREF, PROFILE_HREF];
 
-export default function Navbar() {
+/** `actions` sits at the right of the bar, before the account links and menu (e.g. the notifications bell). */
+export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 	const router = useRouter();
 	const { user, logout } = useAuth();
 	const guardApproval = useApprovalGuard();
@@ -81,7 +83,7 @@ export default function Navbar() {
 						<img src="/assets/branding/rcswa-logo-white.png" alt="RCSWA logo" width={803} height={730} className="h-10 w-auto" />
 					</Link>
 
-					<ul className="hidden items-center justify-self-center gap-7 text-[15px] font-semibold text-white lg:flex">
+					<ul className="hidden items-center justify-self-center gap-7 text-md font-semibold text-white lg:flex">
 						{visibleLinks.map((link) => (
 							<li key={link.href}>
 								<Link href={link.href} onClick={(event) => handleLinkClick(event, link.href)}>
@@ -91,40 +93,42 @@ export default function Navbar() {
 						))}
 					</ul>
 
-					<div className="hidden items-center justify-self-end gap-4 lg:flex">
+					<div className="col-start-3 flex items-center justify-self-end gap-3">
+					{actions}
+					<div className="hidden items-center gap-4 lg:flex">
 						{user ? (
 							<>
 								<Link
 									href={PROFILE_HREF}
 									onClick={(event) => handleLinkClick(event, PROFILE_HREF)}
-									className="block max-w-64 truncate text-[15px] font-semibold text-white hover:underline"
+									className="block max-w-64 truncate text-md font-semibold text-white hover:underline"
 								>
 									Hi, {user.full_name}
 								</Link>
-								<button
+								<Button
 									type="button"
 									onClick={handleLogout}
-									className="flex h-11 items-center justify-center rounded-xl bg-brand-blue px-4.5 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]"
+									variant="onDark" size={null} className="h-11 rounded-xl px-4.5 text-md font-semibold"
 								>
 									Log Out
-								</button>
+								</Button>
 							</>
 						) : (
 							<>
 								<button
 									type="button"
 									onClick={openLogin}
-									className="text-[15px] font-semibold text-white"
+									className="text-md font-semibold text-white"
 								>
 									Log In
 								</button>
-								<button
+								<Button
 									type="button"
 									onClick={openSignUp}
-									className="flex h-11 items-center justify-center rounded-xl bg-brand-blue px-4.5 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]"
+									variant="primary" size={null} className="h-11 rounded-xl px-4.5 text-md font-bold shadow-button"
 								>
 									Sign Up
-								</button>
+								</Button>
 							</>
 						)}
 					</div>
@@ -134,7 +138,7 @@ export default function Navbar() {
 						onClick={() => setIsOpen((open) => !open)}
 						aria-label={isOpen ? "Close menu" : "Open menu"}
 						aria-expanded={isOpen}
-						className="col-start-3 flex size-10 items-center justify-self-end rounded-lg text-white lg:hidden"
+						className="flex size-10 items-center rounded-lg text-white lg:hidden"
 					>
 						{isOpen ? (
 							<XIcon className="size-6" />
@@ -142,16 +146,17 @@ export default function Navbar() {
 							<MenuIcon className="size-6" />
 						)}
 					</button>
+					</div>
 				</div>
 
 				{isOpen && (
-					<div className="mt-4 flex flex-col gap-1 rounded-2xl bg-white p-4 shadow-[0px_10px_20px_rgba(0,0,0,0.15)] lg:hidden">
+					<div className="mt-4 flex flex-col gap-1 rounded-2xl bg-white p-4 shadow-pop lg:hidden">
 						{visibleLinks.map((link) => (
 							<Link
 								key={link.href}
 								href={link.href}
 								onClick={(event) => handleLinkClick(event, link.href)}
-								className="rounded-lg px-3 py-2.5 text-[15px] font-semibold text-ink"
+								className="rounded-lg px-3 py-2.5 text-md font-semibold text-ink"
 							>
 								{link.label}
 							</Link>
@@ -162,34 +167,34 @@ export default function Navbar() {
 								<Link
 									href={PROFILE_HREF}
 									onClick={(event) => handleLinkClick(event, PROFILE_HREF)}
-									className="truncate rounded-lg px-3 py-2.5 text-left text-[15px] font-semibold text-ink"
+									className="truncate rounded-lg px-3 py-2.5 text-left text-md font-semibold text-ink"
 								>
 									Hi, {user.full_name}
 								</Link>
-								<button
+								<Button
 									type="button"
 									onClick={handleLogout}
-									className="flex h-11 items-center justify-center rounded-xl bg-brand-blue text-[15px] font-bold text-white"
+									variant="secondary" size={null} className="h-11 rounded-xl text-md font-semibold"
 								>
 									Log Out
-								</button>
+								</Button>
 							</>
 						) : (
 							<>
 								<button
 									type="button"
 									onClick={openLogin}
-									className="rounded-lg px-3 py-2.5 text-left text-[15px] font-semibold text-ink"
+									className="rounded-lg px-3 py-2.5 text-left text-md font-semibold text-ink"
 								>
 									Log In
 								</button>
-								<button
+								<Button
 									type="button"
 									onClick={openSignUp}
-									className="flex h-11 items-center justify-center rounded-xl bg-brand-blue text-[15px] font-bold text-white"
+									variant="primary" size={null} className="h-11 rounded-xl text-md font-bold"
 								>
 									Sign Up
-								</button>
+								</Button>
 							</>
 						)}
 					</div>

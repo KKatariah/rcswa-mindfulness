@@ -1,13 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import Head from "next/head";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import AppShell from "@/components/main/AppShell";
 import Modal from "@/components/main/Modal";
-import SurveyHeader from "@/components/surveys/SurveyHeader";
+import Card from "@/components/ui/Card";
+import { FullPageMessage } from "@/components/ui/feedback";
+import PageHeader from "@/components/ui/PageHeader";
 import SurveyQuestions, { type SurveyAnswers } from "@/components/surveys/SurveyQuestions";
-import { useAuth } from "@/context/AuthContext";
+import { useAsync } from "@/hooks/useAsync";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import { getSurvey, submitSurveyResponse, type ApiSurveyDetail } from "@/lib/api";
+import { errorMessage } from "@/lib/errors";
 import { pageTitle } from "@/lib/pageTitle";
 import type { SurveyQuestion } from "@/types/admin";
 
@@ -19,51 +23,16 @@ type SubmissionFeedback = {
 export default function SurveyPage() {
 	const router = useRouter();
 	const { surveyId } = router.query;
-	const { user, isLoading: authLoading } = useAuth();
+	const { user, isLoading: authLoading } = useRequireAuth();
 
-	useEffect(() => {
-		if (!authLoading && !user) {
-			router.replace("/");
-		}
-	}, [authLoading, user, router]);
-
-	const [survey, setSurvey] = useState<ApiSurveyDetail | null>(null);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
+	const { data: survey, setData: setSurvey, loading, error } = useAsync(
+		() => getSurvey(String(surveyId)),
+		[surveyId, user],
+		null as ApiSurveyDetail | null,
+		{ enabled: !authLoading && router.isReady && !!user, errorFallback: "Failed to load survey" },
+	);
 	const [submitting, setSubmitting] = useState(false);
 	const [submissionFeedback, setSubmissionFeedback] = useState<SubmissionFeedback | null>(null);
-
-	useEffect(() => {
-		if (authLoading || !router.isReady || !user) return;
-
-		let cancelled = false;
-
-		(async () => {
-			const token = localStorage.getItem("token") ?? "";
-			try {
-				setLoading(true);
-				setError(null);
-
-				const surveyData = await getSurvey(String(surveyId), token);
-
-				if (!cancelled) {
-					setSurvey(surveyData);
-				}
-			} catch (err) {
-				if (!cancelled) {
-					setError(err instanceof Error ? err.message : "Failed to load survey");
-				}
-			} finally {
-				if (!cancelled) {
-					setLoading(false);
-				}
-			}
-		})();
-
-		return () => {
-			cancelled = true;
-		};
-	}, [authLoading, router.isReady, surveyId, user]);
 
 	// Only trust well-formed entries: a malformed question from the API is dropped rather than
 	// crashing the page (e.g. an unknown type has no input, an object `text` can't render).
@@ -88,26 +57,19 @@ export default function SurveyPage() {
 	const handleSubmit = async (answers: SurveyAnswers) => {
 		if (!surveyId || !user) return;
 
-		const token = localStorage.getItem("token") ?? "";
 		setSubmitting(true);
 		try {
-			await submitSurveyResponse(
-				{
-					survey: Number(surveyId),
-					answers,
-				},
-				token,
-			);
+			await submitSurveyResponse({ survey: Number(surveyId), answers });
 			setSurvey((current) => current && { ...current, has_responded: true });
 			setSubmissionFeedback({
 				title: "Response recorded",
 				message: "Your survey responses have been recorded.",
 			});
 		} catch (err) {
-			const message = err instanceof Error ? err.message : "Please try again.";
+			const message = errorMessage(err, "Please try again.");
 			// Validation errors are also 400s, so ask the server whether a response
 			// now exists (e.g. submitted from another tab) instead of parsing the message.
-			const latest = await getSurvey(String(surveyId), token).catch(() => null);
+			const latest = await getSurvey(String(surveyId)).catch(() => null);
 			if (latest?.has_responded) {
 				setSurvey(latest);
 				setSubmissionFeedback({
@@ -127,28 +89,18 @@ export default function SurveyPage() {
 
 	if (!authLoading && !user) {
 		return (
-			<div className="flex min-h-screen items-center justify-center p-6">
-				<p className="text-ink-soft">
-					Please <Link href="/" className="text-brand-blue underline">log in</Link> to view this survey.
-				</p>
-			</div>
-    	);
-	}
-
-	if (loading || authLoading) {
-		return (
-			<div className="flex min-h-screen items-center justify-center p-6">
-        		<p className="text-ink-soft">Loading survey…</p>
-      		</div>
+			<FullPageMessage>
+				Please <Link href="/" className="text-brand-blue underline">log in</Link> to view this survey.
+			</FullPageMessage>
 		);
 	}
 
+	if (loading || authLoading) {
+		return <FullPageMessage>Loading survey…</FullPageMessage>;
+	}
+
 	if (error || !survey) {
-		return (
-      		<div className="flex min-h-screen items-center justify-center p-6">
-        		<p className="text-ink-soft">{error ?? "Survey not found."}</p>
-      		</div>
-    	);
+		return <FullPageMessage>{error ?? "Survey not found."}</FullPageMessage>;
 	}
 
 	return (
@@ -169,44 +121,40 @@ export default function SurveyPage() {
 				</div>
 			</Modal>
 			<AppShell>
-				<main
-					role="region"
+				<section
 					aria-label={`${title} content`}
 					tabIndex={0}
-					className="flex min-w-0 flex-col gap-5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
+					className="flex min-w-0 flex-col gap-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 				>
 					<div>
-	<Link
-		href="/surveys"
-		className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-[0_6px_9px_rgba(0,0,0,0.05)] transition-colors hover:bg-surface-muted"
-	>
-		<svg
-			aria-hidden="true"
-			className="h-4 w-4"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			<path d="m12 19-7-7 7-7" />
-			<path d="M5 12h14" />
-		</svg>
-		Back to Surveys
-	</Link>
-</div>
-					<SurveyHeader title={title} />
-					{survey.has_responded ? (
-						<section
-							role="status"
-							className="rounded-[10px] border border-gray-200 bg-white p-6 text-center shadow-[0_6px_18px_-6px_rgba(0,0,0,0.05)] md:p-10"
+						<Link
+							href="/surveys"
+							className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-[0_6px_9px_rgba(0,0,0,0.05)] transition-colors hover:bg-surface-muted"
 						>
+							<svg
+								aria-hidden="true"
+								className="h-4 w-4"
+								viewBox="0 0 24 24"
+								fill="none"
+								stroke="currentColor"
+								strokeWidth="2"
+								strokeLinecap="round"
+								strokeLinejoin="round"
+							>
+								<path d="m12 19-7-7 7-7" />
+								<path d="M5 12h14" />
+							</svg>
+							Back to Surveys
+						</Link>
+					</div>
+					<PageHeader title={title} description="Mindfulness Adherence Questionnaire" />
+					{survey.has_responded ? (
+						<Card as="section" role="status" className="p-6 text-center md:p-10">
 							<p className="text-base font-bold text-ink">Thank you, your survey has been submitted.</p>
 							<Link href="/surveys" className="mt-3 inline-block text-sm text-brand-blue underline">
 								Back to surveys
 							</Link>
-						</section>
+						</Card>
 					) : (
 						<SurveyQuestions
 							questions={questions}
@@ -214,7 +162,7 @@ export default function SurveyPage() {
 							isSubmitting={submitting}
 						/>
 					)}
-				</main>
+				</section>
 			</AppShell>
 		</>
 	);

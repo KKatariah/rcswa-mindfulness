@@ -7,13 +7,13 @@ export type StepVisualKey =
 	| "android-menu"
 	| "desktop-prompt";
 
-export type SetupStep = {
+type SetupStep = {
 	instruction: string;
 	/** If provided, renders a step illustration below the instruction text. */
 	visual?: StepVisualKey;
 };
 
-export type PlatformContent = {
+type PlatformContent = {
 	tabLabel: string;
 	steps: SetupStep[];
 };

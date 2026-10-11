@@ -40,8 +40,8 @@ export default function Footer() {
     <footer className="bg-ink px-6 py-16 sm:px-10 lg:px-30">
       <div className="flex flex-col justify-between gap-12 lg:flex-row lg:items-start">
         <div className="max-w-xs">
-          <img src="/assets/branding/rcswa-logo-white.png" alt="RCSWA logo" width={803} height={730} className="h-24 w-auto" />
-          <p className="mt-4 text-[15px] text-white/50">
+          <img src="/assets/branding/rcswa-logo-white.png" alt="RCSWA logo" width={803} height={730} className="h-16 w-auto" />
+          <p className="mt-4 text-md text-white/50">
             An 8-week guided meditation journey for lasting wellbeing.
           </p>
         </div>
@@ -49,7 +49,7 @@ export default function Footer() {
         <div className="grid grid-cols-2 gap-8 sm:gap-16">
           {FOOTER_COLUMNS.map((column) => (
             <div key={column.title} className="flex flex-col gap-3">
-              <h3 className="text-sm font-bold text-white">{column.title}</h3>
+              <h2 className="text-sm font-bold text-white">{column.title}</h2>
               <ul className="flex flex-col gap-2.5">
                 {column.links
                   // Programme is only shown when logged in.

@@ -1,14 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/router";
 import Link from "next/link";
 import Head from "next/head";
 import AppShell from "@/components/main/AppShell";
-import Footer from "@/components/main/Footer";
 import UpcomingSession from "@/components/modules/UpcomingSession";
 import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import ModuleHeader from "@/components/modules/ModuleHeader";
 import ModuleContent from "@/components/modules/ModuleContent";
-import { useAuth } from "@/context/AuthContext";
+import Card from "@/components/ui/Card";
+import { FullPageMessage } from "@/components/ui/feedback";
+import { useAsync } from "@/hooks/useAsync";
+import { useRequireAuth } from "@/hooks/useRequireAuth";
 import {
 	deleteContentCompletion,
 	getModule,
@@ -18,13 +20,19 @@ import {
 	markModuleViewed,
 	type ApiModuleDetail,
 } from "@/lib/api";
-import type { ContentBlock } from "@/types/module";
 import { weekLabel } from "@/lib/weeks";
+import type { ContentBlock } from "@/types/module";
 import { pageTitle } from "@/lib/pageTitle";
 
 // Background photo by Michael Metschl (Pexels): https://www.pexels.com/photo/18284929/
 
-// Maps content_item id -> its completion row id, so a completed item can be un-completed via DELETE.
+type ModulePageData = {
+	module: ApiModuleDetail | null;
+	// Maps content_item id -> its completion row id, so a completed item can be un-completed via DELETE.
+	completions: Map<number, number>;
+	viewed: boolean;
+};
+
 function toBlocks(module: ApiModuleDetail, completions: Map<number, number>): ContentBlock[] {
 	const blocks: ContentBlock[] = [];
 	if (module.description) {
@@ -45,120 +53,85 @@ function toBlocks(module: ApiModuleDetail, completions: Map<number, number>): Co
 export default function ModulePage() {
 	const router = useRouter();
 	const { moduleId } = router.query;
-	const { user, isLoading: authLoading } = useAuth();
+	const { user, isLoading: authLoading } = useRequireAuth();
 
+	const { data, setData, loading, error } = useAsync<ModulePageData>(
+		async () => {
+			const [module, progress, views] = await Promise.all([getModule(moduleId as string), listProgress(), listModuleViews()]);
+			return {
+				module,
+				completions: new Map(progress.map((p) => [p.content_item, p.id])),
+				viewed: views.some((v) => v.module === module.id),
+			};
+		},
+		[moduleId, user],
+		{ module: null, completions: new Map(), viewed: false },
+		{ enabled: !authLoading && router.isReady && !!user, errorFallback: "Failed to load module" },
+	);
+	const { module, completions } = data;
+
+	// Opening this page counts as viewing the module. Recorded in the background.
+	const loadedModuleId = module?.id;
+	const viewed = data.viewed;
 	useEffect(() => {
-		if (!authLoading && !user) {
-			router.replace("/");
-		}
-	}, [authLoading, user, router]);
-
-	const [module, setModule] = useState<ApiModuleDetail | null>(null);
-	const [completions, setCompletions] = useState<Map<number, number>>(new Map());
-	const [moduleViewed, setModuleViewed] = useState(false);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
-
-	useEffect(() => {
-		if (authLoading || !router.isReady) return;
-
+		if (loadedModuleId === undefined || viewed) return;
 		let cancelled = false;
+		markModuleViewed(loadedModuleId)
+			.then(() => {
+				if (!cancelled) setData((d) => ({ ...d, viewed: true }));
+			})
+			.catch(() => {});
+		return () => {
+			cancelled = true;
+		};
+	}, [loadedModuleId, viewed, setData]);
 
-		(async () => {
-			if (!user) {
-				if (!cancelled) setLoading(false);
-				return;
-			}
+	function setCompletions(update: (prev: Map<number, number>) => Map<number, number>) {
+		setData((d) => ({ ...d, completions: update(d.completions) }));
+	}
 
-			setLoading(true);
-			setError(null);
-
-			const token = localStorage.getItem("token") ?? "";
-			try {
-				const [moduleData, progressData, viewsData] = await Promise.all([
-					getModule(moduleId as string, token),
-					listProgress(token),
-					listModuleViews(token),
-				]);
-				if (cancelled) return;
-				setModule(moduleData);
-				setCompletions(new Map(progressData.map((p) => [p.content_item, p.id])));
-
-				const alreadyViewed = viewsData.some((v) => v.module === moduleData.id);
-				setModuleViewed(alreadyViewed);
-
-				// Opening this page counts as viewing the module.
-				if (!alreadyViewed) {
-					markModuleViewed(moduleData.id, token)
-						.then(() => {
-							if (!cancelled) setModuleViewed(true);
-						})
-						.catch(() => {});
-				}
-			} catch (e) {
-				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load module");
-			} finally {
-				if (!cancelled) setLoading(false);
-			}
-		})();
-
-		return () => { cancelled = true; };
-	}, [authLoading, router.isReady, moduleId, user]);
+	function withoutItem(map: Map<number, number>, contentItemId: number) {
+		const next = new Map(map);
+		next.delete(contentItemId);
+		return next;
+	}
 
 	async function handleToggleComplete(contentItemId: number) {
-		const token = localStorage.getItem("token") ?? "";
 		const existingCompletionId = completions.get(contentItemId);
 
+		// Update the checkbox straight away, and undo it if the server refuses.
 		if (existingCompletionId !== undefined) {
-			setCompletions((prev) => {
-				const next = new Map(prev);
-				next.delete(contentItemId);
-				return next;
-			});
+			setCompletions((prev) => withoutItem(prev, contentItemId));
 			try {
-				await deleteContentCompletion(existingCompletionId, token);
+				await deleteContentCompletion(existingCompletionId);
 			} catch {
 				setCompletions((prev) => new Map(prev).set(contentItemId, existingCompletionId));
 			}
 		} else {
 			setCompletions((prev) => new Map(prev).set(contentItemId, -1));
 			try {
-				const completion = await markContentComplete(contentItemId, token);
+				const completion = await markContentComplete(contentItemId);
 				setCompletions((prev) => new Map(prev).set(contentItemId, completion.id));
 			} catch {
-				setCompletions((prev) => {
-					const next = new Map(prev);
-					next.delete(contentItemId);
-					return next;
-				});
+				setCompletions((prev) => withoutItem(prev, contentItemId));
 			}
 		}
 	}
 
 	if (!authLoading && !user) {
 		return (
-			<div className="flex min-h-screen items-center justify-center p-6">
-				<p className="text-ink-soft">
-					Please <Link href="/" className="text-brand-blue underline">log in</Link> to view this module.
-				</p>
-			</div>
+			<FullPageMessage>
+				Please <Link href="/" className="text-brand-blue underline">log in</Link> to view this module.
+			</FullPageMessage>
 		);
 	}
 
 	if (loading || authLoading) {
-		return (
-			<div className="flex min-h-screen items-center justify-center p-6">
-				<p className="text-ink-soft">Loading module…</p>
-			</div>
-		);
+		return <FullPageMessage>Loading module…</FullPageMessage>;
 	}
 
 	if (error || !module) {
-		return (
-			<div className="flex min-h-screen items-center justify-center p-6">
-				<p className="text-ink-soft">{error ?? "Module not found."}</p>
-			</div>
-		);
+		return <FullPageMessage>{error ?? "Module not found."}</FullPageMessage>;
 	}
 
 	return (
@@ -175,41 +148,40 @@ export default function ModulePage() {
 				}
 			>
 				<div className="mb-4">
-	<Link
-		href="/modules"
-		className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-[0_6px_9px_rgba(0,0,0,0.05)] transition-colors hover:bg-surface-muted"
-	>
-		<svg
-			aria-hidden="true"
-			className="h-4 w-4"
-			viewBox="0 0 24 24"
-			fill="none"
-			stroke="currentColor"
-			strokeWidth="2"
-			strokeLinecap="round"
-			strokeLinejoin="round"
-		>
-			<path d="m12 19-7-7 7-7" />
-			<path d="M5 12h14" />
-		</svg>
-		Back to Modules
-	</Link>
-</div>
-				<div className="flex min-w-0 flex-col rounded-[10px] border border-gray-200 bg-white shadow-[0_6px_9px_rgba(0,0,0,0.05)]">
+					<Link
+						href="/modules"
+						className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-ink shadow-[0_6px_9px_rgba(0,0,0,0.05)] transition-colors hover:bg-surface-muted"
+					>
+						<svg
+							aria-hidden="true"
+							className="h-4 w-4"
+							viewBox="0 0 24 24"
+							fill="none"
+							stroke="currentColor"
+							strokeWidth="2"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+						>
+							<path d="m12 19-7-7 7-7" />
+							<path d="M5 12h14" />
+						</svg>
+						Back to Modules
+					</Link>
+				</div>
+				<Card className="flex min-w-0 flex-col">
 					<ModuleHeader
 						embedded
 						title={module.title}
 						durationMinutes={module.content_items.length * 10}
-						description={weekLabel(module.week_number)}
-						viewed={moduleViewed}
+						eyebrow={weekLabel(module.week_number)}
+						viewed={data.viewed}
 					/>
 
-					<hr className="mx-6 mt-6 border-0 border-t border-gray-200 sm:mx-10 lg:mx-12" />
+					<hr className="mx-6 mt-6 border-0 border-t border-gray-200 sm:mx-8" />
 					<ModuleContent blocks={toBlocks(module, completions)} embedded onToggleComplete={handleToggleComplete} />
-				</div>
+				</Card>
 			</AppShell>
 
-			<Footer />
 		</>
 	);
 }

@@ -11,6 +11,7 @@ import {
 	logoutUser,
 	loginWithGoogle as loginWithGoogleApi,
 	getCurrentUser,
+	getToken,
 } from "@/lib/api";
 import type { AuthUser } from "@/types/user";
 
@@ -38,8 +39,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
 	useEffect(() => {
 		async function initAuth() {
-			const token = localStorage.getItem("token");
-			if (!token) {
+			if (!getToken()) {
 				setIsLoading(false);
 				return;
 			}

@@ -11,7 +11,6 @@ from .models import (
     Enrollment,
     Module,
     ContentItem,
-    Resource,
     AdditionalResource,
     ContentCompletion,
     ContentView,
@@ -22,6 +21,7 @@ from .models import (
     SurveyResponse,
     ForumThread,
     ForumPost,
+    ForumRulesRevision,
 )
 from .serializers import validate_survey_questions
 
@@ -191,8 +191,8 @@ class ContentItemAdmin(admin.ModelAdmin):
 
 @admin.register(NotificationPreference)
 class NotificationPreferenceAdmin(admin.ModelAdmin):
-    list_display = ("user", "email_enabled", "inapp_enabled", "push_denied", "reminder_time")
-    list_filter = ("email_enabled", "push_denied")
+    list_display = ("user", "inapp_enabled", "push_denied", "reminder_time")
+    list_filter = ("push_denied",)
     search_fields = ("user__email",)
 
 
@@ -210,12 +210,12 @@ class PushSubscriptionAdmin(admin.ModelAdmin):
 
 admin.site.register(Cohort)
 admin.site.register(Enrollment)
-admin.site.register(Resource)
 admin.site.register(AdditionalResource)
 admin.site.register(ContentCompletion)
 admin.site.register(ContentView)
 admin.site.register(NotificationLog)
 admin.site.register(SurveyResponse)
+admin.site.register(ForumRulesRevision)
 
 
 # ── Survey admin ──────────────────────────────────────────────────────────────

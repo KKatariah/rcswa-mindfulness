@@ -1,6 +1,6 @@
 """Notification service layer.
 
-Delivery helpers used by both the management command and the S21 signal handler.
+Delivery helpers used by the management commands and the S21 signal handler.
 All functions are importable independently so the call site can be stubbed or
 replaced without touching the delivery logic.
 
@@ -21,16 +21,16 @@ import logging
 from datetime import timedelta
 
 from django.conf import settings
-from django.core.mail import send_mail
-from django.template.loader import render_to_string
 from django.utils import timezone
 
-from .serializers import module_is_unlocked
+from .access import module_content_completed, module_is_unlocked
 from .models import (
     Enrollment,
     NotificationLog,
     NotificationPreference,
     PushSubscription,
+    Survey,
+    SurveyResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -40,7 +40,7 @@ CONTENT_UPDATE_DEBOUNCE_MINUTES = 60
 
 
 def _get_pref(user):
-    """Return the user's NotificationPreference or a safe default object."""
+    """Return the user's NotificationPreference, or None if they have never saved one."""
     try:
         return user.notification_preference
     except NotificationPreference.DoesNotExist:
@@ -52,23 +52,25 @@ def send_push(user, payload_dict, push_subs):
     Attempt to deliver a push notification to all of the user's registered
     endpoints. Prunes endpoints that return 404 or 410 (gone).
 
-    Returns NotificationLog.Channel.PUSH if at least one delivery succeeded,
-    otherwise None.
+    Returns True if at least one device accepted it.
     """
     try:
         from pywebpush import webpush, WebPushException
     except ImportError:
-        logger.warning("pywebpush not installed — push skipped for %s", user.email)
-        return None
+        logger.warning("pywebpush not installed — push skipped for user %s", user.pk)
+        return False
 
     if not settings.VAPID_PRIVATE_KEY:
         logger.warning("VAPID_PRIVATE_KEY not configured — push skipped")
-        return None
+        return False
 
     payload = json.dumps(payload_dict)
     sent_any = False
 
     for sub in list(push_subs):
+        # Already pruned by an earlier send in this run (the caller may reuse its list).
+        if sub.pk is None:
+            continue
         try:
             webpush(
                 subscription_info={
@@ -85,63 +87,69 @@ def send_push(user, payload_dict, push_subs):
             resp = getattr(exc, "response", None)
             if resp is not None and resp.status_code in (404, 410):
                 sub.delete()
-                logger.info("Pruned dead push endpoint for %s", user.email)
+                logger.info("Pruned dead push endpoint for user %s", user.pk)
             else:
-                logger.warning("Push failed for %s: %s", user.email, exc)
+                logger.warning("Push failed for user %s: %s", user.pk, exc)
         except Exception as exc:
-            logger.warning("Push error for %s: %s", user.email, exc)
+            logger.warning("Push error for user %s: %s", user.pk, exc)
 
-    return NotificationLog.Channel.PUSH if sent_any else None
+    return sent_any
 
 
-def send_email_notification(user, subject, template, context):
+def deliver(user, payload_dict, push_subs=None):
     """
-    Render *template* with *context* and send to the user's email address.
-    Returns NotificationLog.Channel.EMAIL on success, None on failure.
-    """
-    try:
-        body = render_to_string(template, context)
-        send_mail(
-            subject=subject,
-            message=body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            recipient_list=[user.email],
-            fail_silently=False,
-        )
-        return NotificationLog.Channel.EMAIL
-    except Exception as exc:
-        logger.warning("Email failed for %s: %s", user.email, exc)
-        return None
+    Send *payload_dict* as a web push to every device *user* has registered.
 
+    *push_subs* lets a caller that has already loaded the user's subscriptions
+    pass them in; otherwise they are fetched here.
 
-def deliver(user, payload_dict, subject, email_template, email_context):
-    """
-    Deliver a notification to *user* via push (primary) or email (fallback).
-
-    Push-denied semantics:
-        push_denied=True  → skip entirely (user explicitly refused)
-        No subscription   → email fallback (user hasn't subscribed yet)
-        Push broken       → email fallback (404/410 pruned; other errors)
-
-    Returns (channel, success) where channel is the Channel used or None.
+    Returns the NotificationLog.Status for the attempt:
+        SKIPPED  the user refused notifications or has no registered device
+        SENT     at least one device accepted it
+        FAILED   they have devices but none accepted it (or push isn't configured)
     """
     pref = _get_pref(user)
-
     if pref and pref.push_denied:
-        return None, False
+        return NotificationLog.Status.SKIPPED
 
-    push_subs = list(PushSubscription.objects.filter(user=user))
-    if push_subs:
-        channel = send_push(user, payload_dict, push_subs)
-        if channel:
-            return channel, True
+    if push_subs is None:
+        push_subs = list(PushSubscription.objects.filter(user=user))
+    if not push_subs:
+        return NotificationLog.Status.SKIPPED
 
-    # Fall back to email only if push permission hasn't been explicitly denied.
-    if pref is None or pref.email_enabled:
-        channel = send_email_notification(user, subject, email_template, email_context)
-        return channel, channel is not None
+    if send_push(user, payload_dict, push_subs):
+        return NotificationLog.Status.SENT
+    return NotificationLog.Status.FAILED
 
-    return None, False
+
+def deliver_and_log(
+    user,
+    notification_type,
+    payload_dict,
+    module=None,
+    content_item=None,
+    scheduled_for=None,
+    push_subs=None,
+):
+    """deliver(), then record the attempt in NotificationLog.
+
+    Only SENT rows count as delivered, so callers retry SKIPPED and FAILED ones on
+    their next run (a user may register a device in between).
+    Returns the status.
+    """
+    status = deliver(user=user, payload_dict=payload_dict, push_subs=push_subs)
+    now = timezone.now()
+    NotificationLog.objects.create(
+        user=user,
+        type=notification_type,
+        module=module,
+        content_item=content_item,
+        channel=NotificationLog.Channel.PUSH,
+        scheduled_for=scheduled_for or now,
+        sent_at=now if status == NotificationLog.Status.SENT else None,
+        status=status,
+    )
+    return status
 
 
 # ── S21: content added / changed ───────────────────────────────────────────────
@@ -178,9 +186,8 @@ def notify_content_update(module=None, content_item=None):
         logger.debug("Debounced content-update notification for module %s", module)
         return
 
-    from zoneinfo import ZoneInfo
-    PERTH_TZ = ZoneInfo("Australia/Perth")
-    today = timezone.now().astimezone(PERTH_TZ).date()
+    # TIME_ZONE is Australia/Perth, so this is today's date in Perth.
+    today = timezone.localdate()
 
     # Only notify students in cohorts that are currently running:
     #   start_date <= today <= end_date
@@ -214,31 +221,17 @@ def notify_content_update(module=None, content_item=None):
         if not module_is_unlocked(module, user):
             continue
 
-        payload = {
-            "title": f"New content: {module.week_label}",
-            "body": module.title,
-            "url": f"/modules/{module.week_number}/",
-        }
-        channel, success = deliver(
+        if deliver_and_log(
             user=user,
-            payload_dict=payload,
-            subject=f"New mindfulness content: {module.title}",
-            email_template="app/content_update_email.txt",
-            email_context={"user": user, "module": module},
-        )
-        log_status = (
-            NotificationLog.Status.SENT if success else NotificationLog.Status.FAILED
-        )
-        NotificationLog.objects.create(
-            user=user,
-            type=NotificationLog.NotificationType.CONTENT_UPDATE,
+            notification_type=NotificationLog.NotificationType.CONTENT_UPDATE,
+            payload_dict={
+                "title": f"New content: {module.week_label}",
+                "body": module.title,
+                "url": f"/modules/{module.id}",
+            },
             module=module,
-            channel=channel or NotificationLog.Channel.PUSH,
             scheduled_for=scheduled_for,
-            sent_at=scheduled_for if success else None,
-            status=log_status,
-        )
-        if success:
+        ) == NotificationLog.Status.SENT:
             sent += 1
 
     logger.info("S21 content-update: module=%s sent=%d", module, sent)
@@ -249,14 +242,6 @@ def notify_survey_unlocked(user, module):
     Notify a user when completing all content in a module
     unlocks its weekly survey.
     """
-    from .models import (
-        ContentCompletion,
-        ContentItem,
-        NotificationLog,
-        Survey,
-        SurveyResponse,
-    )
-
     pref = _get_pref(user)
 
     # User disabled the "survey unlocked" notification.
@@ -267,25 +252,9 @@ def notify_survey_unlocked(user, module):
     if not module_is_unlocked(module, user):
         return False
 
-    # The survey unlock rule must match serializers.py:
-    # every ContentItem in this module must be completed.
-    required_ids = set(
-        ContentItem.objects.filter(
-            module=module
-        ).values_list("id", flat=True)
-    )
-
-    if not required_ids:
-        return False
-
-    completed_ids = set(
-        ContentCompletion.objects.filter(
-            user=user,
-            content_item_id__in=required_ids,
-        ).values_list("content_item_id", flat=True)
-    )
-
-    if required_ids != completed_ids:
+    # Same rule as access.survey_is_unlocked: every ContentItem in the module is
+    # completed. A module with no content never triggers this notice.
+    if not module.content_items.exists() or not module_content_completed(module, user):
         return False
 
     surveys = Survey.objects.filter(
@@ -297,10 +266,7 @@ def notify_survey_unlocked(user, module):
 
     for survey in surveys:
         # No need to notify if the user already submitted it.
-        if SurveyResponse.objects.filter(
-            user=user,
-            survey=survey,
-        ).exists():
+        if SurveyResponse.objects.filter(user=user, survey=survey).exists():
             continue
 
         # Prevent duplicate unlock notifications.
@@ -314,40 +280,16 @@ def notify_survey_unlocked(user, module):
         if already_notified:
             continue
 
-        payload = {
-            "title": "Your survey is now available",
-            "body": survey.title,
-            "url": "/surveys",
-        }
-
-        now = timezone.now()
-
-        channel, success = deliver(
+        if deliver_and_log(
             user=user,
-            payload_dict=payload,
-            subject=f"Survey available: {survey.title}",
-            email_template="app/content_update_email.txt",
-            email_context={
-                "user": user,
-                "module": module,
+            notification_type=NotificationLog.NotificationType.SURVEY_PROMPT,
+            payload_dict={
+                "title": "Your survey is now available",
+                "body": survey.title,
+                "url": "/surveys",
             },
-        )
-
-        NotificationLog.objects.create(
-            user=user,
-            type=NotificationLog.NotificationType.SURVEY_PROMPT,
             module=module,
-            channel=channel or NotificationLog.Channel.PUSH,
-            scheduled_for=now,
-            sent_at=now if success else None,
-            status=(
-                NotificationLog.Status.SENT
-                if success
-                else NotificationLog.Status.FAILED
-            ),
-        )
-
-        if success:
+        ) == NotificationLog.Status.SENT:
             sent_any = True
 
     return sent_any

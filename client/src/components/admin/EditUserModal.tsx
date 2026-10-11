@@ -1,7 +1,9 @@
 import { useState, type FormEvent } from "react";
 import Modal from "@/components/main/Modal";
-import Select from "@/components/ui/Select";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
+import { Field, FormActions, FormError, TextField } from "@/components/ui/form";
+import Select from "@/components/ui/Select";
+import { useFormSubmit } from "@/hooks/useFormSubmit";
 import { updateUser, createEnrollment, updateEnrollment, deleteEnrollment } from "@/lib/api";
 import type { AdminUser, Cohort, Enrollment } from "@/types/admin";
 
@@ -24,8 +26,7 @@ function EditUserForm({
 	onCancel: () => void;
 }) {
 	const [form, setForm] = useState(initial);
-	const [error, setError] = useState<string | null>(null);
-	const [submitting, setSubmitting] = useState(false);
+	const { submitting, error, run } = useFormSubmit("Failed to save user");
 	const [confirmingPromote, setConfirmingPromote] = useState(false);
 	const [pendingChanges, setPendingChanges] = useState<string[] | null>(null);
 
@@ -55,48 +56,33 @@ function EditUserForm({
 		save();
 	}
 
-	async function save() {
+	function save() {
 		setPendingChanges(null);
-		setError(null);
-		setSubmitting(true);
-		try {
-			await onSubmit(form);
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to save user");
-		} finally {
-			setSubmitting(false);
-		}
+		void run(() => onSubmit(form));
 	}
 
 	return (
 		<form onSubmit={handleSubmit} className="flex flex-col gap-4">
-			{error && <p className="text-sm text-red-600" role="alert">{error}</p>}
+			<FormError message={error} />
 
-			<div className="flex flex-col gap-2">
-				<label htmlFor="user-name" className="text-sm font-semibold text-ink">Full name</label>
-				<input
-					id="user-name"
-					required
-					value={form.full_name}
-					onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
-					className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-				/>
-			</div>
+			<TextField
+				id="user-name"
+				label="Full name"
+				required
+				value={form.full_name}
+				onChange={(e) => setForm((f) => ({ ...f, full_name: e.target.value }))}
+			/>
 
-			<div className="flex flex-col gap-2">
-				<label htmlFor="user-email" className="text-sm font-semibold text-ink">Email</label>
-				<input
-					id="user-email"
-					type="email"
-					required
-					value={form.email}
-					onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
-					className="h-12 rounded-xl border border-gray-200 px-4 text-[15px] text-ink outline-none focus:ring-2 focus:ring-brand-blue"
-				/>
-			</div>
+			<TextField
+				id="user-email"
+				label="Email"
+				type="email"
+				required
+				value={form.email}
+				onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+			/>
 
-			<div className="flex flex-col gap-2">
-				<label htmlFor="user-role" className="text-sm font-semibold text-ink">Role</label>
+			<Field id="user-role" label="Role">
 				<Select
 					id="user-role"
 					value={form.role}
@@ -113,10 +99,9 @@ function EditUserForm({
 					]}
 					className="h-12 w-full"
 				/>
-			</div>
+			</Field>
 
-			<div className="flex flex-col gap-2">
-				<label htmlFor="user-cohort" className="text-sm font-semibold text-ink">Cohort</label>
+			<Field id="user-cohort" label="Cohort">
 				<Select
 					id="user-cohort"
 					value={form.cohort}
@@ -127,24 +112,9 @@ function EditUserForm({
 					]}
 					className="h-12 w-full"
 				/>
-			</div>
+			</Field>
 
-			<div className="mt-2 flex gap-3">
-				<button
-					type="submit"
-					disabled={submitting}
-					className="h-12 flex-1 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white disabled:opacity-50"
-				>
-					{submitting ? "Saving…" : "Save"}
-				</button>
-				<button
-					type="button"
-					onClick={onCancel}
-					className="h-12 flex-1 rounded-xl border border-gray-200 text-[15px] font-semibold text-ink"
-				>
-					Cancel
-				</button>
-			</div>
+			<FormActions submitting={submitting} onCancel={onCancel} />
 
 			{pendingChanges && (
 				<ConfirmDialog
@@ -173,7 +143,6 @@ function EditUserForm({
 	);
 }
 
-
 /**
  * Edit a person's details and cohort. Used by the Users list and the profile page.
  * `enrollment` is their most recent enrollment; changing the cohort moves it, and
@@ -195,24 +164,19 @@ export default function EditUserModal({
 }) {
 	async function handleSave(form: EditFormState) {
 		if (!user) return;
-		const token = localStorage.getItem("token") ?? "";
 
-		const updated = await updateUser(
-			user.id,
-			{ full_name: form.full_name, email: form.email, role: form.role },
-			token,
-		);
+		const updated = await updateUser(user.id, { full_name: form.full_name, email: form.email, role: form.role });
 
 		const nextCohortId = form.cohort ? Number(form.cohort) : null;
 		let nextEnrollment: Enrollment | null | undefined;
 
 		if (nextCohortId === null && enrollment) {
-			await deleteEnrollment(enrollment.id, token);
+			await deleteEnrollment(enrollment.id);
 			nextEnrollment = null;
 		} else if (nextCohortId !== null && !enrollment) {
-			nextEnrollment = await createEnrollment({ user: user.id, cohort: nextCohortId }, token);
+			nextEnrollment = await createEnrollment({ user: user.id, cohort: nextCohortId });
 		} else if (nextCohortId !== null && enrollment && enrollment.cohort !== nextCohortId) {
-			nextEnrollment = await updateEnrollment(enrollment.id, { cohort: nextCohortId }, token);
+			nextEnrollment = await updateEnrollment(enrollment.id, { cohort: nextCohortId });
 		}
 
 		onSaved(updated, nextEnrollment);

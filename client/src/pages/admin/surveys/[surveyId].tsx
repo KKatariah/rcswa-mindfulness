@@ -1,18 +1,29 @@
-import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import Head from "next/head";
 import Link from "next/link";
 import { useRouter } from "next/router";
 import AdminLayout from "@/components/admin/AdminLayout";
+import DangerZone from "@/components/admin/DangerZone";
 import SurveyExport from "@/components/admin/SurveyExport";
+import Card from "@/components/ui/Card";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import Select from "@/components/ui/Select";
 import DragHandle, { ReorderHelp } from "@/components/ui/DragHandle";
+import { ErrorBanner, LoadingState } from "@/components/ui/feedback";
+import { TextAreaField, TextField } from "@/components/ui/form";
+import { PlusIcon, TrashIcon } from "@/components/ui/icons";
+import Select from "@/components/ui/Select";
+import Tabs from "@/components/ui/Tabs";
+import { useAsync } from "@/hooks/useAsync";
 import { useDragReorder, type ReorderHandlers } from "@/hooks/useDragReorder";
-import { ChevronLeftIcon, PlusIcon, TrashIcon } from "@/components/ui/icons";
+import { useFormSubmit } from "@/hooks/useFormSubmit";
 import { deleteSurvey, getSurveyAdmin, listSurveyResponses, updateSurvey } from "@/lib/api";
+import { errorMessage } from "@/lib/errors";
 import { SURVEY_TYPE_LABELS, describeAnswerFormat } from "@/lib/surveys";
 import type { AdminSurvey, AdminSurveyResponse, SurveyQuestion } from "@/types/admin";
 import { adminPageTitle } from "@/lib/pageTitle";
+import Button from "@/components/ui/Button";
+import { formatDateTime } from "@/lib/dates";
+import AdminPageHeader from "@/components/admin/AdminPageHeader";
 
 type Survey = Omit<AdminSurvey, "response_count">;
 type Tab = "questions" | "responses";
@@ -177,8 +188,7 @@ function QuestionsEditor({
 	onSaved: (survey: Survey) => void;
 }) {
 	const [draft, setDraft] = useState(survey);
-	const [saving, setSaving] = useState(false);
-	const [error, setError] = useState<string | null>(null);
+	const { submitting: saving, error, setError, run } = useFormSubmit("Failed to save survey");
 	const [savedAt, setSavedAt] = useState<Date | null>(null);
 	const [confirmingSave, setConfirmingSave] = useState(false);
 	const [addedId, setAddedId] = useState<string | null>(null);
@@ -276,29 +286,18 @@ function QuestionsEditor({
 		save();
 	}
 
-	async function save() {
+	function save() {
 		setConfirmingSave(false);
-		setSaving(true);
-		setError(null);
-		try {
-			const token = localStorage.getItem("token") ?? "";
-			const updated = await updateSurvey(
-				survey.id,
-				{
-					title: draft.title,
-					code: draft.code,
-					questions: tidyQuestions(reassignRetypedIds(draft.questions, survey.questions, answeredIds)),
-				},
-				token,
-			);
+		void run(async () => {
+			const updated = await updateSurvey(survey.id, {
+				title: draft.title,
+				code: draft.code,
+				questions: tidyQuestions(reassignRetypedIds(draft.questions, survey.questions, answeredIds)),
+			});
 			onSaved(updated);
 			setDraft(updated);
 			setSavedAt(new Date());
-		} catch (err) {
-			setError(err instanceof Error ? err.message : "Failed to save survey");
-		} finally {
-			setSaving(false);
-		}
+		});
 	}
 
 	return (
@@ -311,39 +310,38 @@ function QuestionsEditor({
 				</p>
 			)}
 
-			<div className="grid gap-4 rounded-2xl border border-gray-200 bg-white p-5 sm:grid-cols-2">
-				<div className="flex flex-col gap-2">
-					<label htmlFor="survey-title" className="text-sm font-semibold text-ink">Title</label>
-					<input
-						id="survey-title"
-						required
-						maxLength={200}
-						value={draft.title}
-						onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
-						className={`h-11 ${fieldClass}`}
-					/>
-				</div>
-				<div className="flex flex-col gap-2">
-					<label htmlFor="survey-code" className="text-sm font-semibold text-ink">
-						Code <span className="font-normal text-muted">(used in the CSV export)</span>
-					</label>
-					<input
-						id="survey-code"
-						required
-						maxLength={50}
-						value={draft.code}
-						onChange={(e) => setDraft((d) => ({ ...d, code: e.target.value }))}
-						className={`h-11 font-mono ${fieldClass}`}
-					/>
-				</div>
-			</div>
+			<Card className="grid gap-4 p-5 sm:grid-cols-2">
+				<TextField
+					id="survey-title"
+					label="Title"
+					size="md"
+					required
+					maxLength={200}
+					value={draft.title}
+					onChange={(e) => setDraft((d) => ({ ...d, title: e.target.value }))}
+				/>
+				<TextField
+					id="survey-code"
+					label={
+						<>
+							Code <span className="font-normal text-muted">(used in the CSV export)</span>
+						</>
+					}
+					size="md"
+					required
+					maxLength={50}
+					value={draft.code}
+					onChange={(e) => setDraft((d) => ({ ...d, code: e.target.value }))}
+					className="font-mono"
+				/>
+			</Card>
 
 			<ReorderHelp />
 			{draft.questions.map((q, index) => (
-				<div
+				<Card
 					key={q.id}
 					data-reorder-id={q.id}
-					className={`rounded-2xl border border-gray-200 bg-white p-5 ${draggingId === q.id ? "opacity-50" : ""}`}
+					className={`p-5 ${draggingId === q.id ? "opacity-50" : ""}`}
 				>
 					<div className="flex flex-wrap items-center gap-2">
 						<DragHandle
@@ -383,41 +381,43 @@ function QuestionsEditor({
 					</div>
 
 					{q.section !== undefined && (
-						<div className="mt-4 flex flex-col gap-2">
-							<div className="flex items-center justify-between gap-2">
-								<label htmlFor={`section-${q.id}`} className="text-sm font-semibold text-ink">
-									Section heading <span className="font-normal text-muted">(starts a new section at this question)</span>
-								</label>
-								<button
-									type="button"
-									onClick={() => updateQuestion(index, { section: undefined })}
-									className="text-xs font-semibold text-muted hover:text-red-600"
-								>
-									Remove heading
-								</button>
-							</div>
-							<textarea
+						<div className="relative mt-4">
+							<button
+								type="button"
+								onClick={() => updateQuestion(index, { section: undefined })}
+								className="absolute right-0 top-0 text-xs font-semibold text-muted hover:text-red-600"
+							>
+								Remove heading
+							</button>
+							<TextAreaField
 								id={`section-${q.id}`}
+								label={
+									<>
+										Section heading <span className="font-normal text-muted">(starts a new section at this question)</span>
+									</>
+								}
+								size="md"
 								rows={2}
 								maxLength={1000}
 								value={q.section}
 								onChange={(e) => updateQuestion(index, { section: e.target.value })}
-								className={`resize-y py-2.5 ${fieldClass}`}
+								className="resize-y"
 							/>
 						</div>
 					)}
 
-					<div className="mt-4 flex flex-col gap-2">
-						<label htmlFor={`text-${q.id}`} className="text-sm font-semibold text-ink">Question</label>
-						<textarea
+					<div className="mt-4">
+						<TextAreaField
 							id={`text-${q.id}`}
+							label="Question"
+							size="md"
 							rows={2}
 							required
 							maxLength={1000}
 							autoFocus={q.id === addedId}
 							value={q.text}
 							onChange={(e) => updateQuestion(index, { text: e.target.value })}
-							className={`resize-y py-2.5 ${fieldClass}`}
+							className="resize-y"
 						/>
 					</div>
 
@@ -521,10 +521,10 @@ function QuestionsEditor({
 							))}
 						</div>
 					)}
-				</div>
+				</Card>
 			))}
 
-			<div className="flex flex-wrap items-center gap-2 rounded-2xl border border-dashed border-gray-300 bg-white p-4">
+			<div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-gray-300 bg-white p-4">
 				<span className="mr-1 text-sm font-semibold text-ink">Add a question:</span>
 				{NEW_QUESTION_TYPES.map(({ type, label }) => (
 					<button
@@ -539,20 +539,16 @@ function QuestionsEditor({
 				))}
 			</div>
 
-			{error && (
-				<p className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
-					{error}
-				</p>
-			)}
+			{error && <ErrorBanner>{error}</ErrorBanner>}
 
-			<div className="sticky bottom-4 flex items-center gap-3 rounded-2xl border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.15)]">
-				<button
+			<div className="sticky bottom-4 flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.15)]">
+				<Button
 					type="submit"
 					disabled={saving || !dirty}
-					className="h-11 rounded-xl bg-brand-blue-dark px-6 text-sm font-bold text-white disabled:opacity-50"
+					variant="dark" size="md" className="px-6"
 				>
 					{saving ? "Saving…" : "Save changes"}
-				</button>
+				</Button>
 				{dirty ? (
 					<button
 						type="button"
@@ -631,17 +627,17 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 
 	return (
 		<div className="flex flex-col gap-4">
-			<div className="rounded-2xl border border-gray-200 bg-white p-5">
+			<Card className="p-5">
 				<SurveyExport surveyId={survey.id} />
-			</div>
+			</Card>
 
 			{responses.length === 0 ? (
-				<p className="rounded-2xl border border-gray-200 bg-white p-6 text-sm text-muted">No responses yet.</p>
+				<Card as="p" className="p-6 text-sm text-muted">No responses yet.</Card>
 			) : (
 				<>
-					<div className="rounded-2xl border border-gray-200 bg-white p-5">
+					<Card className="p-5">
 						<h2 className="text-sm font-bold uppercase tracking-wide text-muted">Summary</h2>
-						<div className="mt-3 overflow-x-auto">
+						<div role="region" aria-label="Summary table" tabIndex={0} className="mt-3 overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
 							<table className="w-full text-left text-sm">
 								<thead>
 									<tr className="text-xs font-semibold uppercase tracking-wide text-muted">
@@ -674,7 +670,7 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 								</tbody>
 							</table>
 						</div>
-					</div>
+					</Card>
 
 					{anyFlagged && (
 						<p className="flex items-center gap-2 text-sm text-ink-soft">
@@ -684,7 +680,7 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 						</p>
 					)}
 
-					<div className="overflow-x-auto rounded-2xl border border-gray-200 bg-white">
+					<Card role="region" aria-label="Responses table" tabIndex={0} className="overflow-x-auto focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue">
 						<table className="w-full text-left text-sm">
 							<thead>
 								<tr className="border-b border-gray-200 text-xs font-semibold uppercase tracking-wide text-muted">
@@ -694,7 +690,7 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 									{columns.map((q) => (
 										<th key={q.id} className="px-4 py-3 font-mono normal-case" title={q.text}>
 											{q.id}
-											{q.removed && <span className="ml-1 font-sans text-[10px] uppercase">(removed)</span>}
+											{q.removed && <span className="ml-1 font-sans text-2xs uppercase">(removed)</span>}
 										</th>
 									))}
 								</tr>
@@ -710,7 +706,7 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 										</td>
 										<td className="whitespace-nowrap px-4 py-3 text-ink-soft">{r.cohort || "—"}</td>
 										<td className="whitespace-nowrap px-4 py-3 text-ink-soft">
-											{new Date(r.submitted_at).toLocaleString()}
+											{formatDateTime(r.submitted_at)}
 										</td>
 										{columns.map((q) => {
 											const change = changeNote(r, q.id);
@@ -744,7 +740,7 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 								))}
 							</tbody>
 						</table>
-					</div>
+					</Card>
 				</>
 			)}
 		</div>
@@ -754,36 +750,22 @@ function ResponsesView({ survey, responses }: { survey: Survey; responses: Admin
 export default function AdminSurveyPage() {
 	const router = useRouter();
 	const surveyId = router.query.surveyId;
-	const [survey, setSurvey] = useState<Survey | null>(null);
-	const [responses, setResponses] = useState<AdminSurveyResponse[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [error, setError] = useState<string | null>(null);
+	const validId = typeof surveyId === "string";
+	const surveyState = useAsync(() => getSurveyAdmin(Number(surveyId)), [surveyId], null as Survey | null, {
+		enabled: validId,
+		errorFallback: "Failed to load survey",
+	});
+	const responsesState = useAsync(() => listSurveyResponses(Number(surveyId)), [surveyId], [] as AdminSurveyResponse[], {
+		enabled: validId,
+		errorFallback: "Failed to load survey",
+	});
+	const { data: survey, setData: setSurvey } = surveyState;
+	const responses = responsesState.data;
+	const loading = surveyState.loading || responsesState.loading;
+	const error = surveyState.error ?? responsesState.error;
 	const [tab, setTab] = useState<Tab>("questions");
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
 	const [deleteError, setDeleteError] = useState<string | null>(null);
-
-	useEffect(() => {
-		if (!surveyId || Array.isArray(surveyId)) return;
-		let cancelled = false;
-		const token = localStorage.getItem("token") ?? "";
-		(async () => {
-			try {
-				const [surveyData, responseData] = await Promise.all([
-					getSurveyAdmin(Number(surveyId), token),
-					listSurveyResponses(Number(surveyId), token),
-				]);
-				if (!cancelled) {
-					setSurvey(surveyData);
-					setResponses(responseData);
-				}
-			} catch (e) {
-				if (!cancelled) setError(e instanceof Error ? e.message : "Failed to load survey");
-			} finally {
-				if (!cancelled) setLoading(false);
-			}
-		})();
-		return () => { cancelled = true; };
-	}, [surveyId]);
 
 	const answeredIds = useMemo(() => [...new Set(responses.flatMap((r) => Object.keys(r.answers)))], [responses]);
 
@@ -791,7 +773,7 @@ export default function AdminSurveyPage() {
 		setSurvey(updated);
 		// Which answers are flagged depends on the questions, so fetch the flags again.
 		try {
-			setResponses(await listSurveyResponses(updated.id, localStorage.getItem("token") ?? ""));
+			responsesState.setData(await listSurveyResponses(updated.id));
 		} catch {
 			// The saved questions are shown either way; flags refresh on the next page load.
 		}
@@ -802,10 +784,10 @@ export default function AdminSurveyPage() {
 		setConfirmingDelete(false);
 		setDeleteError(null);
 		try {
-			await deleteSurvey(survey.id, localStorage.getItem("token") ?? "");
+			await deleteSurvey(survey.id);
 			router.push("/admin/surveys");
 		} catch (err) {
-			setDeleteError(err instanceof Error ? err.message : "Failed to delete survey");
+			setDeleteError(errorMessage(err, "Failed to delete survey"));
 		}
 	}
 
@@ -813,9 +795,7 @@ export default function AdminSurveyPage() {
 		return (
 			<AdminLayout>
 				{loading ? (
-					<div className="flex justify-center py-16">
-						<span className="text-sm text-muted">Loading…</span>
-					</div>
+					<LoadingState />
 				) : (
 					<p className="text-sm text-red-600">{error ?? "Survey not found."}</p>
 				)}
@@ -834,31 +814,13 @@ export default function AdminSurveyPage() {
 				<title>{adminPageTitle(survey.title)}</title>
 			</Head>
 
-			<Link href="/admin/surveys" className="inline-flex items-center gap-1 text-sm font-semibold text-muted hover:text-brand-blue">
-				<ChevronLeftIcon className="size-4" />
-				All surveys
-			</Link>
-			<h1 className="mt-2 text-2xl font-extrabold wrap-anywhere text-ink">{survey.title}</h1>
-			<p className="mt-1 text-sm text-muted">
-				{SURVEY_TYPE_LABELS[survey.type]} survey · <span className="font-mono">{survey.code}</span>
-			</p>
+			<AdminPageHeader
+				title={survey.title}
+				back={{ href: "/admin/surveys", label: "All surveys" }}
+				description={<>{SURVEY_TYPE_LABELS[survey.type]} survey · <span className="font-mono">{survey.code}</span></>}
+			/>
 
-			<div role="tablist" aria-label="Survey sections" className="mt-5 flex gap-2 border-b border-gray-200">
-				{tabs.map((t) => (
-					<button
-						key={t.id}
-						type="button"
-						role="tab"
-						aria-selected={tab === t.id}
-						onClick={() => setTab(t.id)}
-						className={`-mb-px border-b-2 px-4 py-2 text-sm font-bold ${
-							tab === t.id ? "border-brand-blue text-brand-blue" : "border-transparent text-muted hover:text-ink"
-						}`}
-					>
-						{t.label}
-					</button>
-				))}
-			</div>
+			<Tabs tabs={tabs} active={tab} onChange={setTab} label="Survey sections" className="mt-5" />
 
 			{/* Both panels stay mounted so unsaved question edits survive a tab switch. */}
 			<div className="mt-5" role="tabpanel" hidden={tab !== "questions"}>
@@ -874,27 +836,14 @@ export default function AdminSurveyPage() {
 			</div>
 
 			{responses.length === 0 && (
-				<div className="mt-6 flex items-center justify-between gap-4 rounded-2xl border border-red-200 bg-red-50 p-4">
-					<div>
-						<p className="text-sm font-semibold text-red-700">Danger zone</p>
-						<p className="text-xs text-red-600">
-							Delete this survey. Surveys can only be deleted before anyone has responded.
-						</p>
-					</div>
-					<button
-						type="button"
-						onClick={() => setConfirmingDelete(true)}
-						className="h-10 shrink-0 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-600 hover:bg-red-100"
-					>
-						Delete survey
-					</button>
-				</div>
+				<DangerZone
+					description="Delete this survey. Surveys can only be deleted before anyone has responded."
+					actionLabel="Delete survey"
+					onAction={() => setConfirmingDelete(true)}
+					className="mt-6"
+				/>
 			)}
-			{deleteError && (
-				<p className="mt-4 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-600" role="alert">
-					{deleteError}
-				</p>
-			)}
+			{deleteError && <ErrorBanner className="mt-4">{deleteError}</ErrorBanner>}
 
 			{confirmingDelete && (
 				<ConfirmDialog

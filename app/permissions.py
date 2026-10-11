@@ -1,18 +1,14 @@
 from rest_framework.permissions import BasePermission
 
+from .access import can_edit_forum_item, is_admin
 from .models import Enrollment
 
 
 class IsAdminOrStaff(BasePermission):
-    """Module-level admin check, mirroring the getattr(u, "role"...) or u.is_staff
-    pattern already used ad hoc across views.py/serializers.py."""
+    """Only app admins (see access.is_admin)."""
 
     def has_permission(self, request, view):
-        u = request.user
-        return bool(
-            u and u.is_authenticated
-            and (getattr(u, "role", None) == "admin" or u.is_staff)
-        )
+        return is_admin(request.user)
 
 
 class IsAdminOrSelf(BasePermission):
@@ -20,17 +16,33 @@ class IsAdminOrSelf(BasePermission):
 
     def has_object_permission(self, request, view, obj):
         u = request.user
-        return bool(
-            u and u.is_authenticated
-            and (obj.pk == u.pk or getattr(u, "role", None) == "admin" or u.is_staff)
-        )
+        return bool(u and u.is_authenticated and (obj.pk == u.pk or is_admin(u)))
+
+
+class HasAcceptedForumRules(BasePermission):
+    message = "You must agree to the forum rules before using the forum."
+
+    def has_permission(self, request, view):
+        # Admins moderate the forum and aren't asked to accept the rules.
+        if is_admin(request.user):
+            return True
+        if request.user.forum_rules_outdated:
+            self.message = "The forum rules have changed. Please agree to the new rules to keep using the forum."
+        return request.user.has_accepted_forum_rules
+
+
+class IsAuthorOrAdmin(BasePermission):
+    """Forum threads and posts: only their author or an admin may change them."""
+
+    def has_object_permission(self, request, view, obj):
+        return can_edit_forum_item(request.user, obj)
 
 
 def user_is_approved(u):
     """Admins/staff, or anyone with an ACTIVE enrollment."""
     if not (u and u.is_authenticated):
         return False
-    if getattr(u, "role", None) == "admin" or u.is_staff:
+    if is_admin(u):
         return True
     return Enrollment.objects.filter(user=u, status=Enrollment.Status.ACTIVE).exists()
 

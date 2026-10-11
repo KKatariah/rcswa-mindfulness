@@ -32,7 +32,7 @@ test("admin approves one signup and rejects another", async ({ page, request }) 
 
 	// The server agrees: one is now active, the other account is gone.
 	const headers = { Authorization: `Token ${await apiToken(request, ADMIN)}` };
-	const enrollments = await (await request.get(`${API}/enrollments/`, { headers })).json();
+	const enrollments = (await (await request.get(`${API}/enrollments/?limit=100`, { headers })).json()).results;
 	const byEmail = new Map(enrollments.map((e: { user_email: string; status: string }) => [e.user_email, e.status]));
 	expect(byEmail.get("approve-me@e2e.local")).toBe("active");
 	expect(byEmail.has("reject-me@e2e.local")).toBe(false);

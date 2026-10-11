@@ -36,21 +36,15 @@ needs to exist on the server at runtime. This survives ephemeral filesystem rede
 
 ### 2. Set environment variables
 
-| Variable              | Value                                                                          |
-| --------------------- | ------------------------------------------------------------------------------ |
-| `VAPID_PRIVATE_KEY`   | Raw base64url private key — the string printed by the extraction command above |
-| `VAPID_PUBLIC_KEY`    | The `Application Server Key` printed by `vapid --gen`                          |
-| `VAPID_ADMIN_EMAIL`   | Your admin email (included in the VAPID `sub` claim)                           |
-| `EMAIL_BACKEND`       | `django.core.mail.backends.smtp.EmailBackend` in production                    |
-| `EMAIL_HOST`          | SMTP host                                                                      |
-| `EMAIL_PORT`          | `587`                                                                          |
-| `EMAIL_HOST_USER`     | SMTP username                                                                  |
-| `EMAIL_HOST_PASSWORD` | SMTP password                                                                  |
-| `DEFAULT_FROM_EMAIL`  | Sender address shown to students                                               |
+| Variable            | Value                                                                          |
+| ------------------- | ------------------------------------------------------------------------------ |
+| `VAPID_PRIVATE_KEY` | Raw base64url private key — the string printed by the extraction command above |
+| `VAPID_PUBLIC_KEY`  | The `Application Server Key` printed by `vapid --gen`                          |
+| `VAPID_ADMIN_EMAIL` | Your admin email (included in the VAPID `sub` claim)                           |
 
-In development `EMAIL_BACKEND` defaults to the console backend (emails are printed to
-stdout, no SMTP needed) and `VAPID_*` default to empty strings (push is skipped with
-a warning).
+In development `VAPID_*` default to empty strings (push is skipped with a warning).
+Notifications are push only: a student with no registered device gets a
+`status=SKIPPED` log entry, which is retried on the next run like a failure.
 
 **Windows note:** PowerShell's `>` operator writes UTF-16LE, which breaks pip on Linux
 CI. Always regenerate `requirements.txt` with:
@@ -79,7 +73,11 @@ On an empty database with no modules yet, load the placeholder modules with them
 `python manage.py loaddata dev_seed weekly_survey`. Don't load `dev_seed` into a
 database that already has data: it uses fixed IDs and overwrites user 1, modules 1–2
 and content items 1–4. After that, admins create surveys for later weeks from
-**Admin → Surveys → New Survey**, which copies an existing survey's questions.
+**Admin -> Surveys -> New Survey**, which copies an existing survey's questions.
+
+To try out **Admin -> Moderation** in development, `python manage.py seed_moderation`
+adds demo students (`@moderation-demo.test`) with reported posts, removed posts and
+forum bans. Re-running it resets that data; `--clear` deletes it. Don't run it in production.
 
 ### 4. Add the cron jobs
 
@@ -88,11 +86,11 @@ was sent successfully is never sent again, and failed sends are retried on the
 next run.
 
 - `send_due_reminders` must run **every hour** — it filters each user by their
-  `reminder_time` preference (Perth timezone) so a user who chose 5 pm receives their
-  reminder at the cron run that corresponds to 5 pm Perth time.
+  `reminder_time` preference (Perth timezone) so a user who chose 8 am receives their
+  reminder at the cron run that corresponds to 8 am Perth time.
 - `send_module_unlock_notifications` tells each participant "Week N is now
   available" on the day that week unlocks for their cohort (cohort start date +
-  (N − 1) weeks, Perth time). It only looks at weeks unlocking *today*, so it runs
+  (N − 1) weeks, Perth time). It only looks at weeks unlocking _today_, so it runs
   hourly during the day: the 7 am run sends the notices, later runs retry failures.
 
 ```cron
@@ -147,6 +145,32 @@ python manage.py push_adoption --csv    # machine-readable
   and only `status=SENT` entries prevent re-delivery. A server restart during a cron
   run simply leaves the failed users with a `status=FAILED` log entry that the next
   hourly run will retry.
+
+---
+
+## Production server settings
+
+These are separate from the secrets (`SECRET_KEY`, Google and VAPID keys) set up for production.
+
+| Variable             | Value                                                                                  |
+| -------------------- | -------------------------------------------------------------------------------------- |
+| `DJANGO_DEBUG`       | `False` in production (defaults to `True` for development)                             |
+| `MEDIA_ROOT`         | Folder for uploaded cover images. Must survive redeploys (persistent volume or disk)   |
+| `SERVE_MEDIA`        | Leave unset and Django serves `/media/`; `False` if a reverse proxy serves that folder |
+| `LOG_LEVEL`          | `INFO` by default; `WARNING` for quieter logs                                          |
+| `SENTRY_DSN`         | Optional. Reports unhandled errors (web requests and cron commands) to Sentry          |
+| `SENTRY_ENVIRONMENT` | Optional label shown in Sentry, e.g. `production` or `staging`                         |
+
+- Run `python manage.py collectstatic --noinput` on each deploy so the Django admin's CSS
+  and JS are served (by WhiteNoise) with `DJANGO_DEBUG=False`.
+- Logs go to the console (stderr); gunicorn, systemd, Docker and cron all capture it.
+  Users appear in logs by id, never by email. Sentry is sent no emails, IP addresses or
+  request bodies (survey answers).
+- `GET /api/health/` returns `200 {"status": "ok"}` when the API can reach its database
+  (`503` otherwise) and needs no login. Point an uptime monitor at it.
+- List endpoints that grow over time (`/api/users/`, `/api/enrollments/`,
+  `/api/forum/threads/`) are paged: `?limit=&offset=` (25 by default, at most 100), and
+  respond with `{count, next, previous, results}`.
 
 ---
 

@@ -1,7 +1,8 @@
+import type { ComponentType, MouseEvent } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  IconProps,
+  type IconProps,
   BookOpenIcon,
   MessageCircleIcon,
   FolderIcon,
@@ -10,137 +11,98 @@ import {
 import { useAuth } from "@/context/AuthContext";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 
-type NavItem = {
+export type NavItem = {
   label: string;
   href: string;
-  icon: React.ComponentType<IconProps>;
-  isBold?: boolean;
+  icon: ComponentType<IconProps>;
 };
 
-export const NAV_ITEMS: NavItem[] = [
+const NAV_ITEMS: NavItem[] = [
   { label: "Modules", href: "/modules", icon: BookOpenIcon },
   { label: "Surveys", href: "/surveys", icon: CalendarIcon },
   { label: "Forum", href: "/forum", icon: MessageCircleIcon },
   { label: "Resources", href: "/resources", icon: FolderIcon },
 ];
 
-function isNavActive(pathname: string | null, href: string) {
-  if (href === "/") return pathname === "/";
-  return pathname === href || pathname?.startsWith(`${href}/`);
+/** True when `href` is the current page or one below it; `exact` matches only the page itself. */
+export function isNavActive(pathname: string | null, href: string, exact = false) {
+  if (exact) return pathname === href;
+  return pathname === href || !!pathname?.startsWith(`${href}/`);
 }
 
-export default function Sidebar({
-  responsive = false,
+/** A row in the student or admin sidebar. */
+export function SidebarLink({
+  item: { label, href, icon: Icon },
+  active,
+  onClick,
 }: {
-  responsive?: boolean;
+  item: NavItem;
+  active: boolean;
+  onClick?: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
+  return (
+    <Link
+      href={href}
+      aria-current={active ? "page" : undefined}
+      onClick={onClick}
+      className={`flex h-[44px] w-full items-center gap-3 rounded-lg px-3 transition-colors ${
+        active ? "bg-brand-blue text-white shadow-[0_4px_2px_rgba(0,0,0,0.1)]" : ""
+      }`}
+    >
+      <Icon className="size-5 shrink-0" />
+      <span className={`text-sm leading-none ${active ? "font-bold text-white" : "font-semibold text-gray-700"}`}>
+        {label}
+      </span>
+    </Link>
+  );
+}
+
+export default function Sidebar() {
   const pathname = usePathname();
   const { user } = useAuth();
   const fullName = user?.full_name?.trim() || "Username";
+  const onProfile = pathname === "/profile";
 
   return (
     <>
-      <aside
-        className={`hidden md:flex flex-col rounded-[10px] border border-[#E5E7EB] bg-white p-4 shadow-[0_6px_9px_rgba(0,0,0,0.05)] ${responsive ? "w-full overflow-y-auto overscroll-contain md:sticky md:top-24 md:bottom-4 md:h-[calc(100dvh-7rem)] md:max-h-[1032px] lg:top-[7.5rem] lg:bottom-6 lg:h-[calc(100dvh-9rem)]" : "h-screen w-[280px] overflow-y-auto"}`}
-      >
-        <nav
-          aria-label="Main navigation"
-          className={
-            responsive
-              ? "grid grid-cols-2 gap-2 md:block md:shrink-0 md:space-y-2"
-              : "space-y-2"
-          }
-        >
-          {NAV_ITEMS.map(({ label, href, icon: Icon, isBold }) => {
-            const isActive = isNavActive(pathname, href);
-
-            return (
-              <Link
-                key={href}
-                aria-current={isActive ? "page" : undefined}
-                href={href}
-                onClick={(event) => {
-                  if (pathname === "/forum" && href === "/forum") {
-                    event.preventDefault();
-                    window.dispatchEvent(new CustomEvent("forum:reset"));
-                  }
-                }}
-                className={[
-                  "flex h-[44px] w-full items-center gap-3 rounded-[5px] px-3 transition-colors",
-                  isActive
-                    ? "bg-brand-blue text-white shadow-[0_4px_2px_rgba(0,0,0,0.1)]"
-                    : "",
-                ].join(" ")}
-              >
-                <Icon className="h-[20px] w-[20px] shrink-0" />
-
-                <span
-                  className={[
-                    "text-[14px] leading-none",
-                    isActive ? "text-white" : "text-[#374151]",
-                    isBold || isActive ? "font-bold" : "font-semibold",
-                  ].join(" ")}
-                >
-                  {label}
-                </span>
-              </Link>
-            );
-          })}
+      <aside className="hidden w-full flex-col overflow-y-auto overscroll-contain rounded-xl border border-gray-200 bg-white p-4 shadow-card md:sticky md:top-24 md:bottom-4 md:flex md:h-[calc(100dvh-7rem)] md:max-h-[1032px] lg:top-[7.5rem] lg:bottom-6 lg:h-[calc(100dvh-9rem)]">
+        <nav aria-label="Main navigation" className="grid grid-cols-2 gap-2 md:block md:shrink-0 md:space-y-2">
+          {NAV_ITEMS.map((item) => (
+            <SidebarLink
+              key={item.href}
+              item={item}
+              active={isNavActive(pathname, item.href)}
+            />
+          ))}
         </nav>
 
         <div className="mt-auto pt-6" />
 
         <Link
           href="/profile"
-          aria-current={pathname === "/profile" ? "page" : undefined}
-          className={[
-            "flex w-full shrink-0 items-center gap-3 rounded-[10px] border px-3 py-[10px] transition-colors",
-            pathname === "/profile"
-              ? "border-brand-blue bg-brand-blue/5"
-              : "border-[#E5E7EB] bg-[#F9FAFB] hover:bg-[#F3F4F6]",
-          ].join(" ")}
+          aria-current={onProfile ? "page" : undefined}
+          className={`flex w-full shrink-0 items-center gap-3 rounded-xl border px-3 py-[10px] transition-colors ${
+            onProfile ? "border-brand-blue bg-brand-blue/5" : "border-gray-200 bg-gray-50 hover:bg-gray-100"
+          }`}
         >
-          <UserAvatar
-            avatarUrl={user?.avatar_url}
-            fullName={fullName}
-            size={32}
-            className="shrink-0"
-          />
-          <span className="min-w-0 truncate text-[14px] font-semibold text-[#111827]">
-            {fullName}
-          </span>
+          <UserAvatar avatarUrl={user?.avatar_url} fullName={fullName} size={32} className="shrink-0" />
+          <span className="min-w-0 truncate text-sm font-semibold text-ink">{fullName}</span>
         </Link>
       </aside>
 
-      <nav
-        aria-label="Bottom navigation"
-        className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 md:hidden"
-      >
-        <div className="flex w-full max-w-[390px] items-center justify-between rounded-t-[18px] border border-[#E5E7EB] border-b-0 bg-white px-3 pb-[6px] pt-3 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
+      <nav aria-label="Bottom navigation" className="fixed inset-x-0 bottom-0 z-50 flex justify-center px-4 md:hidden">
+        <div className="flex w-full max-w-[390px] items-center justify-between rounded-t-[18px] border border-b-0 border-gray-200 bg-white px-3 pb-[6px] pt-3 shadow-[0_-4px_12px_rgba(0,0,0,0.08)]">
           {NAV_ITEMS.map(({ label, href, icon: Icon }) => {
-            const isActive = isNavActive(pathname, href);
-
+            const active = isNavActive(pathname, href);
             return (
               <Link
                 key={href}
                 href={href}
-                aria-current={isActive ? "page" : undefined}
+                aria-current={active ? "page" : undefined}
                 className="flex min-w-0 flex-1 flex-col items-center justify-center gap-1 text-center"
               >
-                <Icon
-                  className={[
-                    "h-[18px] w-[18px] shrink-0 transition-colors",
-                    isActive ? "text-[#5096CF]" : "text-[#374151]",
-                  ].join(" ")}
-                />
-                <span
-                  className={[
-                    "text-[11px] leading-none",
-                    isActive
-                      ? "font-bold text-[#5096CF]"
-                      : "font-medium text-[#374151]",
-                  ].join(" ")}
-                >
+                <Icon className={`size-[18px] shrink-0 transition-colors ${active ? "text-brand-blue" : "text-gray-700"}`} />
+                <span className={`text-2xs leading-none ${active ? "font-bold text-brand-blue" : "font-medium text-gray-700"}`}>
                   {label}
                 </span>
               </Link>
