@@ -74,13 +74,16 @@ export default function ContentEmbed({
 			)}
 
 			{!embedUrl ? (
-				<div className="flex aspect-video w-full items-center justify-center rounded-xl bg-white">
-					<span
-						aria-hidden="true"
-						className="flex size-16 items-center justify-center rounded-full border-4 border-gray-400 text-gray-500"
-					>
-						<PlayIcon className="ml-1 size-7" />
+				// Sized like the player it stands in for, so a missing recording doesn't leave a large blank area.
+				<div
+					className={`flex w-full flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-gray-300 bg-surface-muted text-muted ${
+						type === "audio" ? "h-[166px]" : "aspect-video"
+					}`}
+				>
+					<span aria-hidden="true" className="flex size-11 items-center justify-center rounded-full border-2 border-gray-300">
+						<PlayIcon className="ml-0.5 size-5" />
 					</span>
+					<span className="text-sm">This {type === "audio" ? "recording" : "video"} isn&apos;t available yet.</span>
 				</div>
 			) : type === "audio" ? (
 				<>

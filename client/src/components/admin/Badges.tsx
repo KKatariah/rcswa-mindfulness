@@ -23,16 +23,25 @@ export const PROGRESS_LABELS: Record<ModuleProgressStatus, string> = {
 const PROGRESS_TONES: Record<ModuleProgressStatus, BadgeTone> = {
 	completed: "green",
 	in_progress: "amber",
-	not_started: "red",
+	// Not started is a normal state, not an error, so it isn't red.
+	not_started: "gray",
 	locked: "gray",
 };
 
+/** "active" → "Active": sentence case, matching every other label. */
+const sentenceCase = (value: string) => value.charAt(0).toUpperCase() + value.slice(1);
+
 export function EnrollmentStatusBadge({ status }: { status: Enrollment["status"] }) {
-	return <Badge tone={ENROLLMENT_TONES[status]}>{status}</Badge>;
+	return <Badge tone={ENROLLMENT_TONES[status]}>{sentenceCase(status)}</Badge>;
+}
+
+/** For a user with no enrolment, so the status column always shows a badge. */
+export function NotEnrolledBadge() {
+	return <Badge tone="gray">Not enrolled</Badge>;
 }
 
 export function RoleBadge({ role }: { role: AdminUser["role"] }) {
-	return <Badge tone={ROLE_TONES[role]}>{role}</Badge>;
+	return <Badge tone={ROLE_TONES[role]}>{sentenceCase(role)}</Badge>;
 }
 
 export function ProgressStatusBadge({ status }: { status: ModuleProgressStatus }) {

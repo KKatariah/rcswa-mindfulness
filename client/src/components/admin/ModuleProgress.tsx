@@ -6,6 +6,7 @@ import { ProgressStatusBadge, PROGRESS_LABELS } from "@/components/admin/Badges"
 import { getModuleProgress } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import type { AdminContentItem, ModuleProgress as Progress, ModuleProgressStatus, ModuleStudentProgress } from "@/types/admin";
+import { formatDate } from "@/lib/dates";
 
 const STATUS_ORDER: ModuleProgressStatus[] = ["completed", "in_progress", "not_started", "locked"];
 
@@ -42,11 +43,6 @@ function SurveyCell({ submitted }: { submitted: boolean | null }) {
 	);
 }
 
-function formatDate(iso: string | null) {
-	if (!iso) return "—";
-	// A bare YYYY-MM-DD would otherwise be read as UTC midnight and can show as the previous day.
-	return new Date(iso.length === 10 ? `${iso}T00:00` : iso).toLocaleDateString();
-}
 
 export default function ModuleProgress({ moduleId, items }: { moduleId: number; items: AdminContentItem[] }) {
 	const [progress, setProgress] = useState<Progress | null>(null);
@@ -128,12 +124,12 @@ export default function ModuleProgress({ moduleId, items }: { moduleId: number; 
 
 			{!progress ? (
 				!error && (
-					<div className="mt-4 flex justify-center rounded-2xl border border-gray-200 bg-white py-10">
+					<div className="mt-4 flex justify-center rounded-xl border border-gray-200 bg-white shadow-card py-10">
 						<span className="text-sm text-muted">Loading…</span>
 					</div>
 				)
 			) : progress.students.length === 0 ? (
-				<p className="mt-4 rounded-2xl border border-gray-200 bg-white p-6 text-sm text-muted">
+				<p className="mt-4 rounded-xl border border-gray-200 bg-white shadow-card p-6 text-sm text-muted">
 					No active students yet.
 				</p>
 			) : (
@@ -165,7 +161,7 @@ export default function ModuleProgress({ moduleId, items }: { moduleId: number; 
 							onChange={(e) => setSearch(e.target.value)}
 							placeholder="Search by name or email"
 							aria-label="Search students"
-							className="h-11 min-w-[200px] flex-1 rounded-xl border border-gray-200 px-4 text-[14px] text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
+							className="h-11 min-w-[200px] flex-1 rounded-xl border border-gray-200 px-4 text-sm text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
 						/>
 						{cohorts.length > 1 && (
 							<Select
@@ -186,7 +182,7 @@ export default function ModuleProgress({ moduleId, items }: { moduleId: number; 
 					</div>
 
 					{shown.length === 0 ? (
-						<p className="mt-4 rounded-2xl border border-gray-200 bg-white p-6 text-sm text-muted">
+						<p className="mt-4 rounded-xl border border-gray-200 bg-white shadow-card p-6 text-sm text-muted">
 							No students match these filters.
 						</p>
 					) : (
@@ -194,7 +190,7 @@ export default function ModuleProgress({ moduleId, items }: { moduleId: number; 
 							{/* Mobile: stacked cards */}
 							<div className="mt-4 flex flex-col gap-3 md:hidden">
 								{shown.map((s) => (
-									<div key={s.user_id} className="rounded-2xl border border-gray-200 bg-white p-4">
+									<div key={s.user_id} className="rounded-xl border border-gray-200 bg-white shadow-card p-4">
 										<div className="flex items-start justify-between gap-3">
 											<Link href={`/admin/users/${s.user_id}`} className="group min-w-0">
 												<p className="truncate font-semibold text-ink group-hover:text-brand-blue group-hover:underline">{s.full_name || "—"}</p>
@@ -219,7 +215,7 @@ export default function ModuleProgress({ moduleId, items }: { moduleId: number; 
 							</div>
 
 							{/* Desktop: table */}
-							<div className="mt-4 hidden overflow-x-auto rounded-2xl border border-gray-200 bg-white md:block">
+							<div className="mt-4 hidden overflow-x-auto rounded-xl border border-gray-200 bg-white shadow-card md:block">
 								<table className="w-full text-left text-sm">
 									<thead>
 										<tr className="border-b border-gray-200 text-xs font-semibold uppercase tracking-wide text-muted">

@@ -4,6 +4,7 @@ import Link from "next/link";
 import AdminLayout from "@/components/admin/AdminLayout";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import AdminTable from "@/components/admin/AdminTable";
+import ForumRulesEditor from "@/components/admin/ForumRulesEditor";
 import Modal from "@/components/main/Modal";
 import Badge from "@/components/ui/Badge";
 import Card from "@/components/ui/Card";
@@ -26,18 +27,17 @@ import {
 import { errorMessage } from "@/lib/errors";
 import { adminPageTitle } from "@/lib/pageTitle";
 import type { AdminUser, ModeratedPost, ReportedPost } from "@/types/admin";
+import { formatDateTime } from "@/lib/dates";
 
-type Tab = "reported" | "removed" | "banned";
+type Tab = "reported" | "removed" | "banned" | "rules";
 
 const TABS: { id: Tab; label: string }[] = [
 	{ id: "reported", label: "Reported" },
 	{ id: "removed", label: "Removed posts" },
 	{ id: "banned", label: "Banned users" },
+	{ id: "rules", label: "Forum rules" },
 ];
 
-function formatDateTime(iso: string) {
-	return new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-}
 
 function banEnds(until: string | null) {
 	return until ? `until ${formatDateTime(until)}` : "until lifted";
@@ -201,7 +201,7 @@ function ReportedPanel() {
 			{actionError && <ErrorBanner>{actionError}</ErrorBanner>}
 
 			{list.items.map((post) => (
-				<Card key={post.id} variant="admin" as="section" aria-label={`Reported post by ${authorLabel(post.author)}`} className="p-5">
+				<Card key={post.id} as="section" aria-label={`Reported post by ${authorLabel(post.author)}`} className="p-5">
 					<PostSummary post={post}>
 						<RemovedNote post={post} />
 					</PostSummary>
@@ -318,7 +318,7 @@ function RemovedPanel() {
 			{actionError && <ErrorBanner>{actionError}</ErrorBanner>}
 
 			{list.items.map((post) => (
-				<Card key={post.id} variant="admin" as="section" aria-label={`Removed post by ${authorLabel(post.author)}`} className="p-5">
+				<Card key={post.id} as="section" aria-label={`Removed post by ${authorLabel(post.author)}`} className="p-5">
 					<PostSummary post={post}>
 						<RemovedNote post={post} />
 					</PostSummary>
@@ -432,6 +432,7 @@ export default function AdminModerationPage() {
 				{tab === "reported" && <ReportedPanel />}
 				{tab === "removed" && <RemovedPanel />}
 				{tab === "banned" && <BannedPanel />}
+				{tab === "rules" && <ForumRulesEditor />}
 			</div>
 		</AdminLayout>
 	);

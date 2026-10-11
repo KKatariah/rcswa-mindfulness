@@ -10,6 +10,7 @@ urlpatterns = [
     path("google-login/", views.google_login_view, name="google-login"),
     path("dashboard/stats/", views.dashboard_stats_view, name="dashboard-stats"),
     path("program-status/", views.program_status_view, name="program-status"),
+    path("forum/rules/", views.forum_rules_view, name="forum-rules"),
     path("forum/accept-rules/", views.accept_forum_rules_view, name="forum-accept-rules"),
     path("profile/", views.update_profile_view, name="update-profile"),
     path("change-password/", views.change_password_view, name="change-password"),

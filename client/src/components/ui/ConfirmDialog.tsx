@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { useDialogFocus } from "@/hooks/useDialogFocus";
+import Button from "@/components/ui/Button";
 
 export default function ConfirmDialog({
 	title,
@@ -41,18 +42,18 @@ export default function ConfirmDialog({
 					e.stopPropagation();
 					onCancel();
 				}}
-				className={`outline-none w-full max-w-[400px] rounded-2xl border-[3px] bg-white p-6 shadow-[0px_10px_20px_rgba(0,0,0,0.15)] ${danger ? "border-red-400" : "border-brand-blue"}`}
+				className={`outline-none w-full max-w-[400px] rounded-2xl border-[3px] bg-white p-6 shadow-pop ${danger ? "border-red-400" : "border-brand-blue"}`}
 			>
 				<h3 id="confirm-dialog-title" className="text-lg font-extrabold text-ink">{title}</h3>
 				<p id="confirm-dialog-message" className="mt-2 text-sm text-ink-soft">{message}</p>
 				<div className="mt-6 flex gap-3">
-					<button
+					<Button
 						type="button"
 						onClick={onConfirm}
-						className={`h-11 flex-1 rounded-xl text-sm font-bold text-white ${danger ? "bg-red-500" : "bg-brand-blue-dark"}`}
+						variant={danger ? "danger" : "dark"} size="md" className="flex-1"
 					>
 						{confirmLabel}
-					</button>
+					</Button>
 					<button
 						ref={cancelRef}
 						type="button"

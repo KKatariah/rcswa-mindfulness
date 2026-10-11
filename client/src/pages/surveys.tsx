@@ -1,6 +1,5 @@
 import Head from "next/head";
 import AppShell from "@/components/main/AppShell";
-import Footer from "@/components/main/Footer";
 import UpcomingSession from "@/components/modules/UpcomingSession";
 import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import { FullPageMessage } from "@/components/ui/feedback";
@@ -56,7 +55,6 @@ export default function SurveysHomePage() {
 					<SurveyLinks items={items} />
 				</div>
 			</AppShell>
-			<Footer />
 		</>
 	);
 }

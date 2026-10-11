@@ -41,7 +41,7 @@ const HOW_IT_WORKS = [
 
 const CARD_SCROLL_DISTANCE = 320;
 const CTA_CLASS =
-	"items-center justify-center rounded-xl bg-brand-blue px-8 text-[15px] font-bold text-white shadow-[0px_6px_8px_rgba(0,0,0,0.1)]";
+	"items-center justify-center rounded-xl bg-brand-blue px-8 text-md font-bold text-white shadow-button";
 
 function ScrollButtons({ onScroll, className }: { onScroll: (direction: number) => void; className: string }) {
 	const buttonClass =
@@ -127,7 +127,7 @@ export default function Home() {
 			<section className="bg-white px-6 py-20 sm:px-10 lg:px-30">
 				<div className="mx-auto max-w-2xl text-center">
 					<h2 className="text-3xl font-extrabold text-ink sm:text-4xl">How It Works</h2>
-					<p className="mt-4 text-[15px] text-muted">
+					<p className="mt-4 text-md text-muted">
 						A structured path with guided sessions, weekly focus, and community
 						support-designed to help you build a consistent practice.
 					</p>
@@ -199,7 +199,7 @@ export default function Home() {
 				{user ? (
 					<>
 						<h2 className="text-3xl font-extrabold text-ink sm:text-4xl">Ready for Your Next Session?</h2>
-						<p className="mt-4 text-[15px] text-muted">Pick up where you left off in the programme.</p>
+						<p className="mt-4 text-md text-muted">Pick up where you left off in the programme.</p>
 						<button
 							type="button"
 							onClick={goToProgramme}
@@ -211,7 +211,7 @@ export default function Home() {
 				) : (
 					<>
 						<h2 className="text-3xl font-extrabold text-ink sm:text-4xl">Ready to Begin?</h2>
-						<p className="mt-4 text-[15px] text-muted">Join others on the path to wellbeing.</p>
+						<p className="mt-4 text-md text-muted">Join others on the path to wellbeing.</p>
 						<button
 							type="button"
 							onClick={() => setSignUpOpen(true)}

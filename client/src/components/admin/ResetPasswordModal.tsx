@@ -2,6 +2,7 @@ import { useState } from "react";
 import Modal from "@/components/main/Modal";
 import { resetUserPassword } from "@/lib/api";
 import type { AdminUser } from "@/types/admin";
+import Button from "@/components/ui/Button";
 
 type Props = {
 	user: AdminUser | null;
@@ -51,7 +52,7 @@ export default function ResetPasswordModal({ user, onClose }: Props) {
 		<Modal isOpen={user !== null} onClose={close} title="Reset password">
 			{user && tempPassword === null && (
 				<div className="flex flex-col gap-5">
-					<p className="text-[15px] text-ink">
+					<p className="text-md text-ink">
 						Reset the password for <span className="font-semibold">{name}</span> ({user.email})?
 					</p>
 					<p className="text-sm text-muted">
@@ -67,25 +68,25 @@ export default function ResetPasswordModal({ user, onClose }: Props) {
 						<button
 							type="button"
 							onClick={close}
-							className="h-12 flex-1 rounded-xl border border-gray-200 text-[15px] font-semibold text-ink"
+							className="h-12 flex-1 rounded-xl border border-gray-200 text-md font-semibold text-ink"
 						>
 							Cancel
 						</button>
-						<button
+						<Button
 							type="button"
 							onClick={handleReset}
 							disabled={busy}
-							className="h-12 flex-1 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white disabled:opacity-50"
+							variant="dark" size="lg" className="flex-1"
 						>
 							{busy ? "Resetting..." : "Reset password"}
-						</button>
+						</Button>
 					</div>
 				</div>
 			)}
 
 			{user && tempPassword !== null && (
 				<div className="flex flex-col gap-5">
-					<p className="text-[15px] text-ink">
+					<p className="text-md text-ink">
 						Temporary password for <span className="font-semibold">{name}</span>:
 					</p>
 					<div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-4">
@@ -104,13 +105,13 @@ export default function ResetPasswordModal({ user, onClose }: Props) {
 						This is only shown once. Send it to the student and ask them to change it from Profile → Reset
 						Password.
 					</p>
-					<button
+					<Button
 						type="button"
 						onClick={close}
-						className="h-12 rounded-xl bg-brand-blue-dark text-[15px] font-bold text-white"
+						variant="dark" size="lg"
 					>
 						Done
-					</button>
+					</Button>
 				</div>
 			)}
 		</Modal>

@@ -4,7 +4,8 @@ import PageHeader from "@/components/ui/PageHeader";
 type ModuleHeaderProps = {
 	title: string;
 	durationMinutes: number;
-	description: string;
+	/** Shown above the title, e.g. "Week 1". */
+	eyebrow?: string;
 	embedded?: boolean;
 	viewed?: boolean;
 };
@@ -12,12 +13,12 @@ type ModuleHeaderProps = {
 export default function ModuleHeader({
 	title,
 	durationMinutes,
-	description,
+	eyebrow,
 	embedded = false,
 	viewed = false,
 }: ModuleHeaderProps) {
 	return (
-		<PageHeader title={title} description={description} embedded={embedded}>
+		<PageHeader title={title} eyebrow={eyebrow} embedded={embedded}>
 			<div className="mt-2 flex flex-wrap items-center gap-3">
 				<div className="inline-flex items-center gap-2 text-sm font-semibold text-ink">
 					<ClockIcon className="size-4" />

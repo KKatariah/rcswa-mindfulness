@@ -5,11 +5,11 @@ import AdminLayout from "@/components/admin/AdminLayout";
 import AdminPageHeader from "@/components/admin/AdminPageHeader";
 import AdminTable from "@/components/admin/AdminTable";
 import ResetPasswordModal from "@/components/admin/ResetPasswordModal";
-import { EnrollmentStatusBadge, RoleBadge } from "@/components/admin/Badges";
+import { EnrollmentStatusBadge, NotEnrolledBadge, RoleBadge } from "@/components/admin/Badges";
 import EditUserModal from "@/components/admin/EditUserModal";
 import Card from "@/components/ui/Card";
 import { LoadingState } from "@/components/ui/feedback";
-import { PencilIcon } from "@/components/ui/icons";
+import { LockIcon, PencilIcon } from "@/components/ui/icons";
 import { Pager } from "@/components/ui/paging";
 import Select from "@/components/ui/Select";
 import { useAsync } from "@/hooks/useAsync";
@@ -17,11 +17,12 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { listCohorts, listUsers, type Page } from "@/lib/api";
 import type { AdminUser, Cohort, Enrollment } from "@/types/admin";
 import { adminPageTitle } from "@/lib/pageTitle";
+import { formatDate } from "@/lib/dates";
 
 const PAGE_SIZE = 25;
 
 function EnrollmentStatus({ enrollment }: { enrollment: AdminUser["enrollment"] }) {
-	if (!enrollment) return <span className="text-xs text-muted">Not enrolled</span>;
+	if (!enrollment) return <NotEnrolledBadge />;
 	return <EnrollmentStatusBadge status={enrollment.status} />;
 }
 
@@ -96,7 +97,7 @@ export default function AdminUsersPage() {
 					onChange={(e) => setSearch(e.target.value)}
 					placeholder="Search by name or email"
 					aria-label="Search users by name or email"
-					className="h-11 min-w-[220px] flex-1 rounded-xl border border-gray-200 px-4 text-[14px] text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
+					className="h-11 min-w-[220px] flex-1 rounded-xl border border-gray-200 px-4 text-sm text-ink placeholder-muted outline-none focus:ring-2 focus:ring-brand-blue"
 				/>
 				<Select
 					value={roleFilter}
@@ -111,13 +112,13 @@ export default function AdminUsersPage() {
 			</div>
 
 			{loading ? (
-				<Card variant="admin" className="mt-6">
+				<Card className="mt-6">
 					<LoadingState />
 				</Card>
 			) : error ? (
-				<Card as="p" variant="admin" className="mt-6 p-6 text-sm text-red-600">{error}</Card>
+				<Card as="p" className="mt-6 p-6 text-sm text-red-600">{error}</Card>
 			) : users.length === 0 ? (
-				<Card as="p" variant="admin" className="mt-6 p-6 text-sm text-muted">No users found.</Card>
+				<Card as="p" className="mt-6 p-6 text-sm text-muted">No users found.</Card>
 			) : (
 				<>
 					{/* Mobile: stacked cards */}
@@ -125,20 +126,34 @@ export default function AdminUsersPage() {
 						{users.map((u) => {
 							const enrollment = u.enrollment;
 							return (
-								<Card key={u.id} variant="admin" className="p-4">
+								<Card key={u.id} className="p-4">
 									<div className="flex items-start justify-between gap-3">
 										<Link href={`/admin/users/${u.id}`} className="group min-w-0">
 											<p className="truncate font-semibold text-ink group-hover:text-brand-blue group-hover:underline">{u.full_name || u.display_name || "—"}</p>
 											<p className="truncate text-sm text-ink-soft">{u.email}</p>
 										</Link>
-										<button
-											type="button"
-											onClick={() => setEditingUser(u)}
-											aria-label="Edit user"
-											className="shrink-0 rounded-lg p-1.5 hover:bg-surface-muted"
-										>
-											<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
-										</button>
+										{/* Same icons as the desktop table: reset password beside the edit pencil. */}
+										<div className="flex shrink-0 items-center">
+											{canReset(u) && (
+												<button
+													type="button"
+													onClick={() => setResettingUser(u)}
+													aria-label={`Reset password for ${u.full_name || u.email}`}
+													title="Reset password"
+													className="rounded-lg p-1.5 hover:bg-surface-muted"
+												>
+													<LockIcon className="size-4 text-muted hover:text-brand-blue" />
+												</button>
+											)}
+											<button
+												type="button"
+												onClick={() => setEditingUser(u)}
+												aria-label="Edit user"
+												className="rounded-lg p-1.5 hover:bg-surface-muted"
+											>
+												<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
+											</button>
+										</div>
 									</div>
 
 									<div className="mt-3 flex flex-wrap items-center gap-2">
@@ -150,18 +165,9 @@ export default function AdminUsersPage() {
 										<dt className="text-muted">Cohort</dt>
 										<dd className="text-right text-ink-soft">{enrollment ? cohortName(enrollment.cohort) : "—"}</dd>
 										<dt className="text-muted">Joined</dt>
-										<dd className="text-right text-ink-soft">{new Date(u.created_at).toLocaleDateString()}</dd>
+										<dd className="text-right text-ink-soft">{formatDate(u.created_at)}</dd>
 									</dl>
 
-									{canReset(u) && (
-										<button
-											type="button"
-											onClick={() => setResettingUser(u)}
-											className="mt-3 text-sm font-semibold text-brand-blue hover:underline"
-										>
-											Reset password
-										</button>
-									)}
 								</Card>
 							);
 						})}
@@ -182,17 +188,22 @@ export default function AdminUsersPage() {
 									<td className="px-5 py-3"><RoleBadge role={u.role} /></td>
 									<td className="px-5 py-3 text-ink-soft">{enrollment ? cohortName(enrollment.cohort) : "—"}</td>
 									<td className="px-5 py-3"><EnrollmentStatus enrollment={enrollment} /></td>
-									<td className="px-5 py-3 text-ink-soft">{new Date(u.created_at).toLocaleDateString()}</td>
+									<td className="px-5 py-3 text-ink-soft">{formatDate(u.created_at)}</td>
 									<td className="px-5 py-3">
 										<div className="flex items-center justify-end gap-4">
-											{canReset(u) && (
+											{/* An icon beside the edit pencil, so the column isn't a repeated text link; admins
+											    can't be reset here, and the empty slot keeps the pencils lined up. */}
+											{canReset(u) ? (
 												<button
 													type="button"
 													onClick={() => setResettingUser(u)}
-													className="whitespace-nowrap text-sm font-semibold text-brand-blue hover:underline"
+													aria-label={`Reset password for ${u.full_name || u.email}`}
+													title="Reset password"
 												>
-													Reset password
+													<LockIcon className="size-4 text-muted hover:text-brand-blue" />
 												</button>
+											) : (
+												<span className="size-4" aria-hidden="true" />
 											)}
 											<button type="button" onClick={() => setEditingUser(u)} aria-label="Edit user">
 												<PencilIcon className="size-4 text-muted hover:text-brand-blue" />

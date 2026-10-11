@@ -57,6 +57,8 @@ test("home page shows the programme and a logged-out visitor sees no profile lin
 });
 
 test("with nothing left to unlock, Next Session points at the first unfinished week", async ({ page, request }) => {
+	// The right-hand column (and its Next Session card) only shows on screens 1280px and wider.
+	test.skip((page.viewportSize()?.width ?? 0) < 1280, "Next Session is hidden on phones and tablets");
 	// The admin has no cohort schedule and hasn't completed anything.
 	await loginAs(page, request, ADMIN);
 	for (const path of ["/modules", "/surveys"]) {

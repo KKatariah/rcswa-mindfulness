@@ -20,6 +20,7 @@ import { deleteModuleMessage } from "@/lib/modules";
 import { weekLabel } from "@/lib/weeks";
 import type { AdminModule } from "@/types/admin";
 import { adminPageTitle } from "@/lib/pageTitle";
+import Button from "@/components/ui/Button";
 
 type ModuleFormState = { week_number: string; title: string; description: string; is_published: boolean };
 
@@ -114,7 +115,8 @@ export default function AdminModulesPage() {
 
 			{deleteError && <ErrorBanner className="mt-4">{deleteError}</ErrorBanner>}
 
-			{pendingOrder && (
+			{/* Only once the drag ends: toggling mid-drag (each time the row passes its old spot) resized the page and made the sticky sidebar jump. */}
+			{pendingOrder && draggingId === null && (
 				<div
 					role="status"
 					className="mt-4 flex flex-col gap-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 sm:flex-row sm:items-center sm:justify-between"
@@ -132,14 +134,14 @@ export default function AdminModulesPage() {
 						>
 							Discard
 						</button>
-						<button
+						<Button
 							type="button"
 							onClick={saveOrder}
 							disabled={savingOrder}
-							className="h-10 rounded-xl bg-brand-blue px-4 font-bold text-white disabled:opacity-50"
+							variant="primary" size={null} className="h-10 rounded-xl px-4 font-bold disabled:opacity-50"
 						>
 							{savingOrder ? "Saving…" : "Save order"}
-						</button>
+						</Button>
 					</div>
 				</div>
 			)}

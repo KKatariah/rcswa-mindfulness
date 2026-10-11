@@ -24,7 +24,11 @@ class HasAcceptedForumRules(BasePermission):
 
     def has_permission(self, request, view):
         # Admins moderate the forum and aren't asked to accept the rules.
-        return is_admin(request.user) or request.user.forum_rules_accepted_at is not None
+        if is_admin(request.user):
+            return True
+        if request.user.forum_rules_outdated:
+            self.message = "The forum rules have changed. Please agree to the new rules to keep using the forum."
+        return request.user.has_accepted_forum_rules
 
 
 class IsAuthorOrAdmin(BasePermission):

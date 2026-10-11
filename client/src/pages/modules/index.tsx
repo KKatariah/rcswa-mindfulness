@@ -1,7 +1,6 @@
 import Head from "next/head";
 import Link from "next/link";
 import AppShell from "@/components/main/AppShell";
-import Footer from "@/components/main/Footer";
 import UpcomingSession from "@/components/modules/UpcomingSession";
 import NotificationsPanel from "@/components/notifications/NotificationsPanel";
 import Card from "@/components/ui/Card";
@@ -60,7 +59,7 @@ function ProgressRing({ percent }: { percent: number }) {
 				/>
 			</svg>
 			<div className="absolute inset-0 flex flex-col items-center justify-center">
-				<span className="text-[10px] font-semibold uppercase tracking-wide text-muted">Overall</span>
+				<span className="text-2xs font-semibold uppercase tracking-wide text-muted">Overall</span>
 				<span className="text-xl font-extrabold text-ink">{percent}%</span>
 			</div>
 		</div>
@@ -178,7 +177,6 @@ export default function ModulesIndexPage() {
 				</div>
 			</AppShell>
 
-			<Footer />
 		</>
 	);
 }
