@@ -64,7 +64,7 @@ All times are Perth time (`TIME_ZONE = 'Australia/Perth'`, UTC+8, no daylight sa
 │   ├── exports.py          Survey response CSV export
 │   ├── moderation.py       Forum reports, removals and bans
 │   ├── admin.py            Django admin (/django-admin/) customisations
-│   ├── content/            rcswa_modules.json — the program's module content
+│   ├── content/            rcswa_modules.json (module content) and covers/ (Resources page seed images)
 │   ├── fixtures/           dev_seed.json, weekly_survey.json (development data)
 │   ├── management/commands/  Cron jobs, content import and dev seeding commands
 │   ├── migrations/         Database migrations (some also seed default data)
