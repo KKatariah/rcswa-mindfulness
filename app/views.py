@@ -570,8 +570,11 @@ class _ForumWriteMixin:
     output_serializer_class = None
 
     def get_throttles(self):
-        # Only creating threads/posts is rate limited; reads and edits are not.
-        return [ScopedRateThrottle()] if self.action == "create" else []
+        # Only creating threads/posts is rate limited; reads and edits are not. Admins aren't
+        # limited at all, matching the client, which shows them no posting cooldown.
+        if self.action == "create" and not is_admin(self.request.user):
+            return [ScopedRateThrottle()]
+        return []
 
     def get_permissions(self):
         if self.action in ["partial_update", "destroy"]:

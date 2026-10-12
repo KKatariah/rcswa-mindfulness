@@ -30,7 +30,7 @@ export function LoadMore({
 	);
 }
 
-/** "26–50 of 132" with Previous / Next, for a table shown one page at a time. */
+/** "Previous · Page 2 of 6 · Next", for a table shown one page at a time. */
 export function Pager({
 	offset,
 	pageSize,
@@ -45,22 +45,21 @@ export function Pager({
 	className?: string;
 }) {
 	if (count <= pageSize) return null;
-	const last = Math.min(offset + pageSize, count);
+	const page = Math.floor(offset / pageSize) + 1;
+	const pages = Math.ceil(count / pageSize);
 	const button =
 		"h-9 rounded-lg border border-gray-200 bg-white px-3 text-sm font-semibold text-ink-soft hover:border-brand-blue hover:text-brand-blue disabled:opacity-40 disabled:hover:border-gray-200 disabled:hover:text-ink-soft";
 	return (
-		<nav aria-label="Pages" className={`flex items-center justify-between gap-3 ${className}`}>
-			<span className="text-sm text-muted">
-				{offset + 1}–{last} of {count}
+		<nav aria-label="Pages" className={`flex items-center justify-center gap-4 ${className}`}>
+			<button type="button" className={button} disabled={page <= 1} onClick={() => onChange(Math.max(0, offset - pageSize))}>
+				Previous
+			</button>
+			<span className="flex h-9 items-center rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-ink-soft">
+				Page {page} of {pages}
 			</span>
-			<div className="flex gap-2">
-				<button type="button" className={button} disabled={offset === 0} onClick={() => onChange(Math.max(0, offset - pageSize))}>
-					Previous
-				</button>
-				<button type="button" className={button} disabled={last >= count} onClick={() => onChange(offset + pageSize)}>
-					Next
-				</button>
-			</div>
+			<button type="button" className={button} disabled={page >= pages} onClick={() => onChange(offset + pageSize)}>
+				Next
+			</button>
 		</nav>
 	);
 }

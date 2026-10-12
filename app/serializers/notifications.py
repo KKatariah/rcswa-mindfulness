@@ -1,5 +1,6 @@
 """Push subscriptions, notification preferences and the in-app inbox."""
 
+from urllib.parse import urlsplit
 
 from rest_framework import serializers
 
@@ -10,14 +11,50 @@ from ..models import (
 )
 
 
+# The server POSTs to every stored endpoint, so only the browsers' push services are
+# accepted (Chrome, Firefox, Safari, Edge); any other URL would let a user point the
+# server at arbitrary hosts, internal ones included.
+PUSH_SERVICE_HOSTS = (
+    "fcm.googleapis.com",
+    "android.googleapis.com",
+    "push.services.mozilla.com",
+    "push.apple.com",
+    "notify.windows.com",
+)
+# Real values are far shorter (p256dh 87 chars, auth 22, endpoints a few hundred).
+PUSH_ENDPOINT_MAX_CHARS = 1000
+PUSH_KEY_MAX_CHARS = 200
+
+
+def is_push_service_host(host):
+    return any(host == h or host.endswith("." + h) for h in PUSH_SERVICE_HOSTS)
+
+
 class PushSubscriptionSerializer(serializers.ModelSerializer):
     class Meta:
         model = PushSubscription
         fields = ["id", "endpoint", "p256dh", "auth", "created_at", "last_seen"]
         read_only_fields = ["id", "created_at", "last_seen"]
         extra_kwargs = {
-            "endpoint": {"validators": []},
+            "endpoint": {"validators": [], "max_length": PUSH_ENDPOINT_MAX_CHARS},
+            "p256dh": {"max_length": PUSH_KEY_MAX_CHARS},
+            "auth": {"max_length": PUSH_KEY_MAX_CHARS},
         }
+
+    def validate_endpoint(self, value):
+        try:
+            url = urlsplit(value)
+            port = url.port
+        except ValueError:
+            port = -1
+        if (
+            url.scheme != "https"
+            or port not in (None, 443)
+            or url.username is not None
+            or not is_push_service_host(url.hostname or "")
+        ):
+            raise serializers.ValidationError("Not a browser push service endpoint.")
+        return value
 
 
 class NotificationPreferenceSerializer(serializers.ModelSerializer):

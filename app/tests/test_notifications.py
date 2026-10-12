@@ -48,7 +48,7 @@ class PushSubscriptionEndpointReuseTests(APITestCase):
         _enroll(self.user_a, self.user_b)
 
     def test_endpoint_reassigned_to_new_user(self):
-        payload = {"endpoint": "https://push.example.com/sub/123", "p256dh": "key", "auth": "auth"}
+        payload = {"endpoint": "https://fcm.googleapis.com/fcm/send/123", "p256dh": "key", "auth": "auth"}
 
         self.client.force_authenticate(user=self.user_a)
         resp_a = self.client.post("/api/notifications/subscriptions/", payload)
@@ -65,6 +65,54 @@ class PushSubscriptionEndpointReuseTests(APITestCase):
         self.assertEqual(PushSubscription.objects.filter(endpoint=payload["endpoint"]).count(), 1)
         sub = PushSubscription.objects.get(endpoint=payload["endpoint"])
         self.assertEqual(sub.user_id, self.user_b.pk)
+
+
+class PushSubscriptionValidationTests(APITestCase):
+    """The server POSTs to stored endpoints, so only real browser push services are accepted."""
+
+    def setUp(self):
+        self.user = _make_user("v@test.local")
+        _enroll(self.user)
+        self.client.force_authenticate(user=self.user)
+
+    def _post(self, endpoint, p256dh="key", auth="auth"):
+        return self.client.post(
+            "/api/notifications/subscriptions/", {"endpoint": endpoint, "p256dh": p256dh, "auth": auth},
+        )
+
+    def test_browser_push_services_accepted(self):
+        for endpoint in [
+            "https://fcm.googleapis.com/fcm/send/abc",
+            "https://updates.push.services.mozilla.com/wpush/v2/abc",
+            "https://web.push.apple.com/abc",
+            "https://wns2-par02p.notify.windows.com/w/?token=abc",
+        ]:
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(self._post(endpoint).status_code, status.HTTP_201_CREATED)
+
+    def test_other_urls_rejected(self):
+        for endpoint in [
+            "http://fcm.googleapis.com/fcm/send/abc",
+            "https://localhost/abc",
+            "https://169.254.169.254/latest/meta-data",
+            "https://evil.example/fcm.googleapis.com",
+            "https://fcm.googleapis.com.evil.example/abc",
+            "https://evilnotify.windows.com/abc",
+            "https://fcm.googleapis.com:8080/abc",
+            "https://user@fcm.googleapis.com/abc",
+            "not a url",
+        ]:
+            with self.subTest(endpoint=endpoint):
+                self.assertEqual(self._post(endpoint).status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(PushSubscription.objects.exists())
+
+    def test_oversized_fields_rejected(self):
+        base = "https://fcm.googleapis.com/fcm/send/"
+        for kwargs in [{"endpoint": base + "x" * 1000}, {"p256dh": "k" * 201}, {"auth": "a" * 201}]:
+            with self.subTest(field=next(iter(kwargs))):
+                args = {"endpoint": base + "abc", **kwargs}
+                self.assertEqual(self._post(**args).status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(PushSubscription.objects.exists())
 
 
 @override_settings(VAPID_PRIVATE_KEY="test-key")
