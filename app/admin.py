@@ -81,12 +81,12 @@ class ForumThreadAdminForm(forms.ModelForm):
 
     class Meta:
         model = ForumThread
-        fields = ("module", "content_item", "created_by", "title", "is_pinned", "pin_order", "opened_by")
+        fields = ("module", "content_item", "cohort", "created_by", "title", "is_pinned", "pin_order", "opened_by")
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         max_pinned = settings.FORUM_MAX_PINNED_THREADS
-        pinned_threads = ForumThread.objects.filter(is_pinned=True)
+        pinned_threads = ForumThread.pinned_in_cohort(self.instance.cohort_id)
         if self.instance.pk:
             pinned_threads = pinned_threads.exclude(pk=self.instance.pk)
         max_position = min(pinned_threads.count() + 1, max_pinned)
@@ -108,9 +108,11 @@ class ForumThreadAdminForm(forms.ModelForm):
             elif "pin_order" in cleaned_data:
                 cleaned_data["pin_order"] = 0
         else:
-            if not self.instance.is_pinned and ForumThread.objects.filter(
-                is_pinned=True
-            ).count() >= settings.FORUM_MAX_PINNED_THREADS:
+            cohort = cleaned_data.get("cohort")
+            pinned_threads = ForumThread.pinned_in_cohort(cohort.pk if cohort else None)
+            if self.instance.pk:
+                pinned_threads = pinned_threads.exclude(pk=self.instance.pk)
+            if pinned_threads.count() >= settings.FORUM_MAX_PINNED_THREADS:
                 self.add_error(
                     "is_pinned",
                     f"You have already reached the maximum of "
@@ -124,6 +126,9 @@ class ForumThreadAdminForm(forms.ModelForm):
 @admin.register(ForumThread)
 class ForumThreadAdmin(admin.ModelAdmin):
     form = ForumThreadAdminForm
+    list_display = ("title", "cohort", "created_by", "is_pinned", "created_at")
+    list_filter = ("cohort", "is_pinned")
+    list_select_related = ("cohort", "created_by")
 
     @transaction.atomic
     def save_model(self, request, obj, form, change):

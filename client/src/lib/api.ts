@@ -257,7 +257,8 @@ export function markModuleViewed(moduleId: number): Promise<ApiModuleView> {
 // ── Forum ──────────────────────────────────────────────────────────────────────
 
 /** Threads matching `search` (opening post or author name), pinned first. */
-export function listForumThreads(params: { search?: string } & PageParams = {}): Promise<Page<ForumThread>> {
+// cohort: admins only; narrows the list to one cohort's threads.
+export function listForumThreads(params: { search?: string; cohort?: number } & PageParams = {}): Promise<Page<ForumThread>> {
 	return request(`/forum/threads/${query(params)}`);
 }
 
@@ -265,7 +266,8 @@ export function getForumThread(id: number): Promise<ForumThreadDetail> {
 	return request(`/forum/threads/${id}/`);
 }
 
-export function createForumThread(data: { body: string; module?: number; content_item?: number }): Promise<ForumThread> {
+// cohort: admins only; which cohort sees the thread (students always post to their own).
+export function createForumThread(data: { body: string; module?: number; content_item?: number; cohort?: number }): Promise<ForumThread> {
 	return request("/forum/threads/", { method: "POST", body: data });
 }
 
@@ -326,7 +328,18 @@ export function liftForumBan(userId: number): Promise<AdminUser> {
 	return request(`/users/${userId}/forum-ban/`, { method: "DELETE" });
 }
 
-export function getProgramStatus(): Promise<{ is_active: boolean }> {
+/**
+ * is_active: whether the viewer can post. opens_on: their cohort's start date while it hasn't started yet.
+ * thread_cohorts / default_thread_cohort: admins' choices for which cohort a new thread goes to (empty for students).
+ */
+export type ProgramStatus = {
+	is_active: boolean;
+	opens_on: string | null;
+	thread_cohorts: Cohort[];
+	default_thread_cohort: number | null;
+};
+
+export function getProgramStatus(): Promise<ProgramStatus> {
 	return request("/program-status/");
 }
 

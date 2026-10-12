@@ -269,11 +269,12 @@ def user_overview(user):
         {
             "id": p.id,
             "thread_title": p.thread.title,
+            "cohort_name": f"{p.thread.cohort.name} ({p.thread.cohort.year})" if p.thread.cohort else None,
             "body": p.body[:200],
             "is_head_post": p.is_head_post,
             "created_at": p.created_at.isoformat(),
         }
-        for p in posts.select_related("thread").order_by("-created_at")[:5]
+        for p in posts.select_related("thread__cohort").order_by("-created_at")[:5]
     ]
 
     pref = NotificationPreference.objects.filter(user=user).first()

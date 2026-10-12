@@ -762,12 +762,17 @@ class ForumArchiveTests(APITestCase):
         )
         self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_thread_create_allowed_when_cohort_active(self):
-        Cohort.objects.create(
+    def _join_active_cohort(self):
+        cohort = Cohort.objects.create(
             name="Active Cohort", year=2026,
             start_date=date.today() - timedelta(days=7),
             end_date=date.today() + timedelta(days=49),
         )
+        Enrollment.objects.create(user=self.student, cohort=cohort, status=Enrollment.Status.ACTIVE)
+        return cohort
+
+    def test_thread_create_allowed_when_cohort_active(self):
+        self._join_active_cohort()
         self.client.force_login(self.student)
         resp = self.client.post(
             "/api/forum/threads/", {"body": "New thread"}, content_type="application/json",
@@ -797,12 +802,23 @@ class ForumArchiveTests(APITestCase):
         # The student's own cohort has ended, so the program starts out inactive.
         self.assertFalse(self.client.get("/api/program-status/").data["is_active"])
 
+        self._join_active_cohort()
+        self.assertTrue(self.client.get("/api/program-status/").data["is_active"])
+
+    def test_another_cohort_running_does_not_reopen_an_ended_cohort(self):
         Cohort.objects.create(
-            name="Active Cohort", year=2026,
+            name="Someone Else's Cohort", year=2026,
             start_date=date.today() - timedelta(days=7),
             end_date=date.today() + timedelta(days=49),
         )
-        self.assertTrue(self.client.get("/api/program-status/").data["is_active"])
+        self.client.force_login(self.student)
+        self.assertFalse(self.client.get("/api/program-status/").data["is_active"])
+        resp = self.client.post("/api/forum/threads/", {"body": "New"}, content_type="application/json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        resp = self.client.post(
+            "/api/forum/posts/", {"thread": self.thread.pk, "body": "A reply"}, content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
 
 
 class ForumRulesTests(APITestCase):
@@ -1429,3 +1445,574 @@ class ForumModerationTests(APITestCase):
         self.opening.soft_delete(self.admin)
         forum = self.client.get("/api/dashboard/stats/").data["forum_activity"]
         self.assertEqual((forum["thread_count"], forum["post_count"]), (0, 0))
+
+
+class ForumCohortScopingTests(APITestCase):
+    """Students only see (and reply to) threads from their own cohort; admins see them all."""
+
+    def setUp(self):
+        today = date.today()
+        self.cohort_a = Cohort.objects.create(
+            name="A", year=today.year, start_date=today - timedelta(days=30), end_date=today + timedelta(days=30),
+        )
+        self.cohort_b = Cohort.objects.create(
+            name="B", year=today.year, start_date=today - timedelta(days=10), end_date=today + timedelta(days=50),
+        )
+        self.student_a = self._student("a@test.local", self.cohort_a)
+        self.student_b = self._student("b@test.local", self.cohort_b)
+        self.admin = User.objects.create_user(email="admin@test.local", password="pw", role=User.Role.ADMIN)
+        self.thread_a = self._thread(self.student_a, self.cohort_a)
+        self.thread_b = self._thread(self.student_b, self.cohort_b)
+
+    def _student(self, email, cohort):
+        user = User.objects.create_user(email=email, password="pw")
+        User.objects.filter(pk=user.pk).update(forum_rules_accepted_at=timezone.now())
+        user.refresh_from_db()
+        Enrollment.objects.create(user=user, cohort=cohort, status=Enrollment.Status.ACTIVE)
+        return user
+
+    def _thread(self, author, cohort):
+        thread = ForumThread.objects.create(created_by=author, title="T", cohort=cohort)
+        head = ForumPost.objects.create(thread=thread, author=author, body="Hello", is_head_post=True)
+        thread.opened_by = head
+        thread.save(update_fields=["opened_by"])
+        return thread
+
+    def _listed_ids(self, query=""):
+        return {t["id"] for t in self.client.get(f"/api/forum/threads/{query}").data["results"]}
+
+    def test_student_lists_only_own_cohort(self):
+        self.client.force_authenticate(self.student_a)
+        self.assertEqual(self._listed_ids(), {self.thread_a.pk})
+
+    def test_student_cannot_open_or_reply_to_other_cohort_thread(self):
+        self.client.force_authenticate(self.student_a)
+        resp = self.client.get(f"/api/forum/threads/{self.thread_b.pk}/")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+        resp = self.client.post("/api/forum/posts/", {"thread": self.thread_b.pk, "body": "hi"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(ForumPost.objects.filter(thread=self.thread_b, author=self.student_a).exists())
+
+    def test_student_cannot_flag_post_in_other_cohort(self):
+        self.client.force_authenticate(self.student_a)
+        resp = self.client.post(
+            f"/api/forum/posts/{self.thread_b.opened_by_id}/flag/", {"reason": "x"}, format="json",
+        )
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_threads_without_cohort_are_visible_to_everyone(self):
+        legacy = self._thread(self.student_b, None)
+        self.client.force_authenticate(self.student_a)
+        self.assertEqual(self._listed_ids(), {self.thread_a.pk, legacy.pk})
+
+    def test_new_student_thread_goes_to_their_cohort(self):
+        self.client.force_authenticate(self.student_b)
+        resp = self.client.post("/api/forum/threads/", {"body": "New"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertEqual(ForumThread.objects.get(pk=resp.data["id"]).cohort, self.cohort_b)
+
+    def test_admin_thread_goes_to_running_cohort(self):
+        # Both cohorts are running; the more recently started one is "the" active cohort.
+        self.client.force_authenticate(self.admin)
+        resp = self.client.post("/api/forum/threads/", {"body": "Announcement"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertEqual(ForumThread.objects.get(pk=resp.data["id"]).cohort, self.cohort_b)
+
+    def test_admin_sees_all_cohorts_and_can_filter(self):
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self._listed_ids(), {self.thread_a.pk, self.thread_b.pk})
+        self.assertEqual(self._listed_ids(f"?cohort={self.cohort_a.pk}"), {self.thread_a.pk})
+
+    def test_student_cohort_filter_param_is_ignored(self):
+        self.client.force_authenticate(self.student_a)
+        self.assertEqual(self._listed_ids(f"?cohort={self.cohort_b.pk}"), {self.thread_a.pk})
+
+    def _reply(self, thread, body="hi"):
+        return self.client.post("/api/forum/posts/", {"thread": thread.pk, "body": body}, format="json")
+
+    def test_student_can_reply_in_own_cohort_and_to_threads_without_cohort(self):
+        legacy = self._thread(self.student_b, None)
+        self.client.force_authenticate(self.student_a)
+        self.assertEqual(self._reply(self.thread_a).status_code, status.HTTP_201_CREATED)
+        self.assertEqual(self._reply(legacy).status_code, status.HTTP_201_CREATED)
+
+    def test_search_does_not_reach_other_cohorts(self):
+        self._thread(self.student_b, self.cohort_b).posts.update(body="unique-needle")
+        self.client.force_authenticate(self.student_a)
+        self.assertEqual(self._listed_ids("?search=unique-needle"), set())
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(len(self._listed_ids("?search=unique-needle")), 1)
+
+    def test_search_by_author_name_does_not_reach_other_cohorts(self):
+        User.objects.filter(pk=self.student_b.pk).update(display_name="Bobby")
+        self.client.force_authenticate(self.student_a)
+        self.assertEqual(self._listed_ids("?search=Bobby"), set())
+
+    def test_student_cannot_edit_or_delete_other_cohort_content(self):
+        reply = ForumPost.objects.create(thread=self.thread_b, author=self.student_b, body="reply")
+        self.client.force_authenticate(self.student_a)
+        resp = self.client.patch(f"/api/forum/threads/{self.thread_b.pk}/", {"title": "x"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+        resp = self.client.delete(f"/api/forum/threads/{self.thread_b.pk}/")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+        resp = self.client.patch(f"/api/forum/posts/{reply.pk}/", {"body": "x"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(ForumPost.objects.get(pk=reply.pk).body, "reply")
+
+    def test_reply_to_other_cohort_thread_does_not_reveal_it_was_removed(self):
+        # The same answer whether or not the hidden thread's opening post was deleted.
+        self.thread_b.opened_by.soft_delete(self.admin)
+        self.client.force_authenticate(self.student_a)
+        resp = self._reply(self.thread_b)
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        missing = self.client.post("/api/forum/posts/", {"thread": 999999, "body": "hi"}, format="json")
+        self.assertEqual(str(resp.data["thread"]).replace(str(self.thread_b.pk), "N"),
+                         str(missing.data["thread"]).replace("999999", "N"))
+
+    def test_replying_under_a_hidden_post_looks_like_a_missing_post(self):
+        self.client.force_authenticate(self.student_a)
+        hidden = self.client.post("/api/forum/posts/", {
+            "thread": self.thread_a.pk, "parent_post": self.thread_b.opened_by_id, "body": "x",
+        }, format="json")
+        missing = self.client.post("/api/forum/posts/", {
+            "thread": self.thread_a.pk, "parent_post": 999999, "body": "x",
+        }, format="json")
+        self.assertEqual(hidden.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(str(hidden.data["parent_post"]).replace(str(self.thread_b.opened_by_id), "N"),
+                         str(missing.data["parent_post"]).replace("999999", "N"))
+
+    def test_admin_can_reply_in_any_cohort(self):
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self._reply(self.thread_a).status_code, status.HTTP_201_CREATED)
+        self.assertEqual(self._reply(self.thread_b).status_code, status.HTTP_201_CREATED)
+
+    def test_student_who_moves_cohort_sees_the_new_cohort(self):
+        Enrollment.objects.create(user=self.student_a, cohort=self.cohort_b, status=Enrollment.Status.ACTIVE)
+        Enrollment.objects.filter(user=self.student_a, cohort=self.cohort_a).update(
+            status=Enrollment.Status.COMPLETED,
+        )
+        self.client.force_authenticate(self.student_a)
+        self.assertEqual(self._listed_ids(), {self.thread_b.pk})
+
+    def test_admin_thread_without_running_cohort_has_none(self):
+        Cohort.objects.all().delete()  # with no cohorts at all the forum stays open
+        self.client.force_authenticate(self.admin)
+        resp = self.client.post("/api/forum/threads/", {"body": "Hello"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertIsNone(ForumThread.objects.get(pk=resp.data["id"]).cohort)
+
+    def test_deleting_a_cohort_keeps_its_threads(self):
+        self.cohort_b.delete()
+        self.thread_b.refresh_from_db()
+        self.assertIsNone(self.thread_b.cohort)
+
+    def test_bad_cohort_filter_is_a_400(self):
+        self.client.force_authenticate(self.admin)
+        resp = self.client.get("/api/forum/threads/?cohort=abc")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_pin_limit_is_per_cohort(self):
+        from django.conf import settings
+        self.client.force_authenticate(self.admin)
+        for _ in range(settings.FORUM_MAX_PINNED_THREADS):
+            t = self._thread(self.student_a, self.cohort_a)
+            resp = self.client.patch(f"/api/forum/threads/{t.pk}/", {"is_pinned": True}, format="json")
+            self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        resp = self.client.patch(f"/api/forum/threads/{self.thread_a.pk}/", {"is_pinned": True}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        # Cohort A being full doesn't stop pinning in cohort B, which starts at position 1.
+        resp = self.client.patch(f"/api/forum/threads/{self.thread_b.pk}/", {"is_pinned": True}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK, resp.data)
+        self.assertEqual(resp.data["pin_order"], 1)
+
+    def test_unpinning_reorders_only_its_own_cohort(self):
+        self.client.force_authenticate(self.admin)
+        a2 = self._thread(self.student_a, self.cohort_a)
+        for t in (self.thread_a, a2, self.thread_b):
+            self.client.patch(f"/api/forum/threads/{t.pk}/", {"is_pinned": True}, format="json")
+        # A newly pinned thread goes to the top of its own cohort's pins.
+        orders = dict(ForumThread.objects.filter(is_pinned=True).values_list("pk", "pin_order"))
+        self.assertEqual(orders, {a2.pk: 1, self.thread_a.pk: 2, self.thread_b.pk: 1})
+        self.client.patch(f"/api/forum/threads/{a2.pk}/", {"is_pinned": False}, format="json")
+        orders = dict(ForumThread.objects.filter(is_pinned=True).values_list("pk", "pin_order"))
+        self.assertEqual(orders, {self.thread_a.pk: 1, self.thread_b.pk: 1})
+
+    def test_django_admin_pin_limit_is_per_cohort(self):
+        from django.conf import settings
+        from ..admin import ForumThreadAdminForm
+        for _ in range(settings.FORUM_MAX_PINNED_THREADS):
+            self._thread(self.student_a, self.cohort_a)
+        ForumThread.objects.filter(cohort=self.cohort_a).exclude(pk=self.thread_a.pk).update(is_pinned=True)
+
+        def form(thread, cohort):
+            return ForumThreadAdminForm(instance=thread, data={
+                "cohort": cohort.pk, "created_by": thread.created_by_id, "title": thread.title,
+                "is_pinned": "on", "pin_order": "1", "opened_by": thread.opened_by_id,
+            })
+
+        full = form(self.thread_a, self.cohort_a)
+        self.assertFalse(full.is_valid())
+        self.assertIn("is_pinned", full.errors)
+        self.assertTrue(form(self.thread_b, self.cohort_b).is_valid())
+        # Moving a thread into the full cohort while pinning it is also refused.
+        self.assertFalse(form(self.thread_b, self.cohort_a).is_valid())
+
+    def _end(self, cohort):
+        Cohort.objects.filter(pk=cohort.pk).update(end_date=date.today() - timedelta(days=1))
+
+    def _archived(self, thread):
+        return self.client.get(f"/api/forum/threads/{thread.pk}/").data["is_archived"]
+
+    def test_ended_cohort_is_read_only_while_another_runs(self):
+        self._end(self.cohort_a)
+        self.client.force_authenticate(self.student_a)
+        self.assertFalse(self.client.get("/api/program-status/").data["is_active"])
+        self.assertEqual(self._listed_ids(), {self.thread_a.pk})  # still readable
+        self.assertTrue(self._archived(self.thread_a))
+        resp = self.client.post("/api/forum/threads/", {"body": "New"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._reply(self.thread_a).status_code, status.HTTP_403_FORBIDDEN)
+
+        # Cohort B is unaffected.
+        self.client.force_authenticate(self.student_b)
+        self.assertTrue(self.client.get("/api/program-status/").data["is_active"])
+        self.assertFalse(self._archived(self.thread_b))
+        self.assertEqual(self._reply(self.thread_b).status_code, status.HTTP_201_CREATED)
+
+    def test_cohort_is_open_on_its_last_day(self):
+        Cohort.objects.filter(pk=self.cohort_a.pk).update(end_date=date.today())
+        self.client.force_authenticate(self.student_a)
+        self.assertTrue(self.client.get("/api/program-status/").data["is_active"])
+        self.assertEqual(self._reply(self.thread_a).status_code, status.HTTP_201_CREATED)
+
+    def test_admin_cannot_reply_in_ended_cohort_but_can_in_running_one(self):
+        self._end(self.cohort_a)
+        self.client.force_authenticate(self.admin)
+        self.assertTrue(self.client.get("/api/program-status/").data["is_active"])
+        self.assertTrue(self._archived(self.thread_a))
+        self.assertEqual(self._reply(self.thread_a).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._reply(self.thread_b).status_code, status.HTTP_201_CREATED)
+
+    def test_admin_thread_never_lands_in_an_ended_cohort(self):
+        # B started more recently but has ended; the new thread goes to A, which is still running.
+        self._end(self.cohort_b)
+        self.client.force_authenticate(self.admin)
+        resp = self.client.post("/api/forum/threads/", {"body": "Announcement"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertEqual(ForumThread.objects.get(pk=resp.data["id"]).cohort, self.cohort_a)
+        self.assertFalse(resp.data["is_archived"])
+
+    def test_admin_cannot_start_threads_once_every_cohort_has_ended(self):
+        self._end(self.cohort_a)
+        self._end(self.cohort_b)
+        self.client.force_authenticate(self.admin)
+        self.assertFalse(self.client.get("/api/program-status/").data["is_active"])
+        resp = self.client.post("/api/forum/threads/", {"body": "Hello"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_thread_without_cohort_follows_the_repliers_cohort(self):
+        legacy = self._thread(self.student_b, None)
+        self._end(self.cohort_a)
+        self.client.force_authenticate(self.student_a)
+        self.assertFalse(self._archived(legacy))
+        self.assertEqual(self._reply(legacy).status_code, status.HTTP_403_FORBIDDEN)
+        self.client.force_authenticate(self.student_b)
+        self.assertEqual(self._reply(legacy).status_code, status.HTTP_201_CREATED)
+
+    def _not_started(self, cohort, days=3):
+        Cohort.objects.filter(pk=cohort.pk).update(
+            start_date=date.today() + timedelta(days=days), end_date=date.today() + timedelta(days=60),
+        )
+        cohort.refresh_from_db()
+
+    def test_student_cannot_post_before_their_cohort_starts(self):
+        self._not_started(self.cohort_a)
+        legacy = self._thread(self.student_b, None)
+        self.client.force_authenticate(self.student_a)
+        status_data = self.client.get("/api/program-status/").data
+        self.assertFalse(status_data["is_active"])
+        self.assertEqual(status_data["opens_on"], self.cohort_a.start_date.isoformat())
+        resp = self.client.post("/api/forum/threads/", {"body": "Hi all"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._reply(self.thread_a).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._reply(legacy).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._listed_ids(), {self.thread_a.pk, legacy.pk})  # can still read
+
+    def test_student_can_post_on_the_day_their_cohort_starts(self):
+        Cohort.objects.filter(pk=self.cohort_a.pk).update(start_date=date.today())
+        self.client.force_authenticate(self.student_a)
+        status_data = self.client.get("/api/program-status/").data
+        self.assertTrue(status_data["is_active"])
+        self.assertIsNone(status_data["opens_on"])
+        resp = self.client.post("/api/forum/threads/", {"body": "Hi all"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+
+    def test_ended_cohort_has_no_opens_on(self):
+        self._end(self.cohort_a)
+        self.client.force_authenticate(self.student_a)
+        self.assertIsNone(self.client.get("/api/program-status/").data["opens_on"])
+
+    def test_students_get_no_cohort_choices(self):
+        self.client.force_authenticate(self.student_a)
+        data = self.client.get("/api/program-status/").data
+        self.assertEqual((data["thread_cohorts"], data["default_thread_cohort"]), ([], None))
+
+    def test_admin_cohort_choices_skip_ended_and_default_to_latest_running(self):
+        upcoming = Cohort.objects.create(
+            name="C", year=2027, start_date=date.today() + timedelta(days=20), end_date=date.today() + timedelta(days=80),
+        )
+        ended = Cohort.objects.create(
+            name="Old", year=2025, start_date=date.today() - timedelta(days=90), end_date=date.today() - timedelta(days=1),
+        )
+        self.client.force_authenticate(self.admin)
+        data = self.client.get("/api/program-status/").data
+        ids = [c["id"] for c in data["thread_cohorts"]]
+        self.assertEqual(set(ids), {self.cohort_a.pk, self.cohort_b.pk, upcoming.pk})
+        self.assertNotIn(ended.pk, ids)
+        self.assertEqual(data["default_thread_cohort"], self.cohort_b.pk)
+
+    def test_admin_can_post_to_a_chosen_cohort(self):
+        self.client.force_authenticate(self.admin)
+        resp = self.client.post("/api/forum/threads/", {"body": "For A", "cohort": self.cohort_a.pk}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        thread_id = resp.data["id"]
+        self.assertEqual(ForumThread.objects.get(pk=thread_id).cohort, self.cohort_a)
+        self.client.force_authenticate(self.student_a)
+        self.assertIn(thread_id, self._listed_ids())
+        self.client.force_authenticate(self.student_b)
+        self.assertNotIn(thread_id, self._listed_ids())
+
+    def test_admin_can_welcome_an_upcoming_cohort_but_students_reply_only_once_it_starts(self):
+        self._not_started(self.cohort_a)
+        self.client.force_authenticate(self.admin)
+        resp = self.client.post("/api/forum/threads/", {"body": "Welcome", "cohort": self.cohort_a.pk}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        welcome = ForumThread.objects.get(pk=resp.data["id"])
+        self.client.force_authenticate(self.student_a)
+        self.assertIn(welcome.pk, self._listed_ids())
+        self.assertEqual(self._reply(welcome).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_with_only_an_upcoming_cohort_defaults_to_it(self):
+        self._end(self.cohort_b)
+        self._not_started(self.cohort_a)
+        self.client.force_authenticate(self.admin)
+        data = self.client.get("/api/program-status/").data
+        self.assertTrue(data["is_active"])
+        self.assertEqual(data["default_thread_cohort"], self.cohort_a.pk)
+        resp = self.client.post("/api/forum/threads/", {"body": "Welcome"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_201_CREATED, resp.data)
+        self.assertEqual(ForumThread.objects.get(pk=resp.data["id"]).cohort, self.cohort_a)
+
+    def test_admin_cannot_post_to_an_ended_cohort(self):
+        self._end(self.cohort_a)
+        self.client.force_authenticate(self.admin)
+        resp = self.client.post("/api/forum/threads/", {"body": "Late", "cohort": self.cohort_a.pk}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("cohort", resp.data)
+
+    def test_admin_bad_cohort_values_are_rejected(self):
+        self.client.force_authenticate(self.admin)
+        for value in (999999, "abc", None):
+            resp = self.client.post("/api/forum/threads/", {"body": "x", "cohort": value}, format="json")
+            self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST, value)
+        self.assertFalse(ForumThread.objects.filter(created_by=self.admin).exists())
+
+    def test_student_cannot_choose_a_cohort(self):
+        self.client.force_authenticate(self.student_a)
+        for cohort in (self.cohort_b, self.cohort_a):
+            resp = self.client.post("/api/forum/threads/", {"body": "x", "cohort": cohort.pk}, format="json")
+            self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(ForumThread.objects.filter(created_by=self.student_a).exclude(pk=self.thread_a.pk).exists())
+
+    def _edit_post(self, post, body="edited"):
+        return self.client.patch(f"/api/forum/posts/{post.pk}/", {"body": body}, format="json")
+
+    def test_student_cannot_edit_after_cohort_ends(self):
+        reply = ForumPost.objects.create(thread=self.thread_a, author=self.student_a, body="reply")
+        self._end(self.cohort_a)
+        self.client.force_authenticate(self.student_a)
+        self.assertEqual(self._edit_post(reply).status_code, status.HTTP_403_FORBIDDEN)
+        self.assertEqual(self._edit_post(self.thread_a.opened_by).status_code, status.HTTP_403_FORBIDDEN)
+        resp = self.client.patch(f"/api/forum/threads/{self.thread_a.pk}/", {"title": "New"}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        reply.refresh_from_db()
+        self.thread_a.refresh_from_db()
+        self.assertEqual((reply.body, self.thread_a.title), ("reply", "T"))
+
+    def test_student_can_still_delete_own_content_after_cohort_ends(self):
+        reply = ForumPost.objects.create(thread=self.thread_a, author=self.student_a, body="reply")
+        self._end(self.cohort_a)
+        self.client.force_authenticate(self.student_a)
+        resp = self.client.delete(f"/api/forum/posts/{reply.pk}/")
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+        resp = self.client.delete(f"/api/forum/threads/{self.thread_a.pk}/")
+        self.assertEqual(resp.status_code, status.HTTP_204_NO_CONTENT)
+
+    def test_student_can_edit_while_cohort_runs(self):
+        self.client.force_authenticate(self.student_a)
+        self.assertEqual(self._edit_post(self.thread_a.opened_by).status_code, status.HTTP_200_OK)
+
+    def test_admin_can_still_edit_and_pin_in_ended_cohort(self):
+        reply = ForumPost.objects.create(thread=self.thread_a, author=self.student_a, body="reply")
+        self._end(self.cohort_a)
+        self.client.force_authenticate(self.admin)
+        self.assertEqual(self._edit_post(reply, "moderated").status_code, status.HTTP_200_OK)
+        resp = self.client.patch(f"/api/forum/threads/{self.thread_a.pk}/", {"is_pinned": True}, format="json")
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+
+    def test_edit_in_thread_without_cohort_follows_editors_cohort(self):
+        legacy = self._thread(self.student_a, None)
+        self._end(self.cohort_a)
+        self.client.force_authenticate(self.student_a)
+        self.assertEqual(self._edit_post(legacy.opened_by).status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_banned_check_still_comes_first(self):
+        # A banned student in an ended cohort keeps getting the ban message, not the read-only one.
+        self._end(self.cohort_a)
+        User.objects.filter(pk=self.student_a.pk).update(forum_banned_at=timezone.now())
+        self.student_a.refresh_from_db()
+        self.client.force_authenticate(self.student_a)
+        resp = self._edit_post(self.thread_a.opened_by)
+        self.assertEqual(resp.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("banned", str(resp.data).lower())
+
+    def test_admins_see_each_threads_cohort_and_students_do_not(self):
+        self.client.force_authenticate(self.admin)
+        names = {t["id"]: t["cohort_name"] for t in self.client.get("/api/forum/threads/").data["results"]}
+        self.assertEqual(names, {self.thread_a.pk: f"A ({self.cohort_a.year})",
+                                 self.thread_b.pk: f"B ({self.cohort_b.year})"})
+        detail = self.client.get(f"/api/forum/threads/{self.thread_a.pk}/").data
+        self.assertEqual(detail["cohort_name"], f"A ({self.cohort_a.year})")
+        self.client.force_authenticate(self.student_a)
+        listed = self.client.get("/api/forum/threads/").data["results"]
+        self.assertEqual([t["cohort_name"] for t in listed], [None])
+
+    def test_moderation_and_user_overview_show_the_cohort(self):
+        from ..models import ForumFlag
+        reply = ForumPost.objects.create(thread=self.thread_b, author=self.student_b, body="rude")
+        ForumFlag.objects.create(post=reply, flagged_by=self.student_a, reason="x")
+        self.client.force_authenticate(self.admin)
+        reported = self.client.get("/api/forum/posts/reported/").data["results"]
+        self.assertEqual([p["cohort_name"] for p in reported], [f"B ({self.cohort_b.year})"])
+        overview = self.client.get(f"/api/users/{self.student_b.pk}/overview/").data
+        self.assertEqual({p["cohort_name"] for p in overview["forum"]["recent_posts"]}, {f"B ({self.cohort_b.year})"})
+
+    def test_django_admin_thread_list_filters_by_cohort(self):
+        from django.urls import reverse
+        superuser = User.objects.create_superuser(email="su@test.local", password="pw")
+        self.client.force_login(superuser)
+        resp = self.client.get(reverse("admin:app_forumthread_changelist"), {"cohort__id__exact": self.cohort_a.pk})
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertEqual(list(resp.context["cl"].result_list), [self.thread_a])
+
+    def test_thread_list_does_not_query_per_thread_for_is_archived(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+        self.client.force_authenticate(self.admin)
+        self.client.get("/api/forum/threads/")
+        with CaptureQueriesContext(connection) as few:
+            self.client.get("/api/forum/threads/")
+        for _ in range(5):
+            self._thread(self.student_a, self.cohort_a)
+        with CaptureQueriesContext(connection) as many:
+            self.client.get("/api/forum/threads/")
+        self.assertEqual(len(few), len(many))
+
+
+class ForumThreadCohortMigrationTests(APITestCase):
+    def test_backfill_uses_authors_cohort_then_running_cohort(self):
+        import importlib
+        from django.apps import apps as django_apps
+        migration = importlib.import_module("app.migrations.0031_forumthread_cohort")
+        today = date.today()
+        old = Cohort.objects.create(
+            name="Old", year=2025, start_date=today - timedelta(days=400), end_date=today - timedelta(days=300),
+        )
+        current = Cohort.objects.create(
+            name="Now", year=today.year, start_date=today - timedelta(days=5), end_date=today + timedelta(days=50),
+        )
+        student = User.objects.create_user(email="s@test.local", password="pw")
+        Enrollment.objects.create(user=student, cohort=old, status=Enrollment.Status.COMPLETED)
+        admin = User.objects.create_user(email="ad@test.local", password="pw", role=User.Role.ADMIN)
+        by_student = ForumThread.objects.create(created_by=student, title="S")
+        by_admin = ForumThread.objects.create(created_by=admin, title="A")
+        by_deleted = ForumThread.objects.create(created_by=None, title="D")
+
+        migration.backfill_thread_cohorts(django_apps, None)
+
+        for thread, expected in ((by_student, old), (by_admin, current), (by_deleted, current)):
+            thread.refresh_from_db()
+            self.assertEqual(thread.cohort, expected)
+
+    def _backfill(self):
+        import importlib
+        from django.apps import apps as django_apps
+        importlib.import_module("app.migrations.0031_forumthread_cohort").backfill_thread_cohorts(django_apps, None)
+
+    def _cohort(self, name, start_offset, end_offset):
+        today = date.today()
+        return Cohort.objects.create(
+            name=name, year=today.year,
+            start_date=today + timedelta(days=start_offset), end_date=today + timedelta(days=end_offset),
+        )
+
+    def test_prefers_cohort_author_was_in_on_the_day_over_newer_one(self):
+        posted_in = self._cohort("Then", -100, -40)
+        newer = self._cohort("Now", -10, 50)
+        student = User.objects.create_user(email="s@test.local", password="pw")
+        Enrollment.objects.create(user=student, cohort=posted_in, status=Enrollment.Status.COMPLETED)
+        Enrollment.objects.create(user=student, cohort=newer, status=Enrollment.Status.ACTIVE)
+        thread = ForumThread.objects.create(created_by=student, title="T")
+        ForumThread.objects.filter(pk=thread.pk).update(created_at=timezone.now() - timedelta(days=60))
+        self._backfill()
+        thread.refresh_from_db()
+        self.assertEqual(thread.cohort, posted_in)
+
+    def test_withdrawn_student_keeps_their_cohort(self):
+        theirs = self._cohort("Theirs", -100, -40)
+        self._cohort("Running", -5, 50)
+        student = User.objects.create_user(email="w@test.local", password="pw")
+        Enrollment.objects.create(user=student, cohort=theirs, status=Enrollment.Status.WITHDRAWN)
+        thread = ForumThread.objects.create(created_by=student, title="T")
+        self._backfill()
+        thread.refresh_from_db()
+        self.assertEqual(thread.cohort, theirs)
+
+    def test_admin_with_an_enrollment_still_uses_running_cohort(self):
+        enrolled = self._cohort("Enrolled", -100, -40)
+        running = self._cohort("Running", -5, 50)
+        admin = User.objects.create_user(email="ad@test.local", password="pw", role=User.Role.ADMIN)
+        Enrollment.objects.create(user=admin, cohort=enrolled, status=Enrollment.Status.ACTIVE)
+        thread = ForumThread.objects.create(created_by=admin, title="A")
+        self._backfill()
+        thread.refresh_from_db()
+        self.assertEqual(thread.cohort, running)
+
+    def test_pending_enrollment_is_ignored_and_no_match_stays_empty(self):
+        future = self._cohort("Future", 10, 60)
+        student = User.objects.create_user(email="p@test.local", password="pw")
+        Enrollment.objects.create(user=student, cohort=future, status=Enrollment.Status.PENDING)
+        thread = ForumThread.objects.create(created_by=student, title="T")
+        self._backfill()
+        thread.refresh_from_db()
+        self.assertIsNone(thread.cohort)
+
+    def test_threads_already_in_a_cohort_are_left_alone(self):
+        chosen = self._cohort("Chosen", -100, -40)
+        self._cohort("Running", -5, 50)
+        thread = ForumThread.objects.create(created_by=None, title="T", cohort=chosen)
+        self._backfill()
+        thread.refresh_from_db()
+        self.assertEqual(thread.cohort, chosen)
+
+    def test_uses_perth_date_not_utc_date(self):
+        # 23:30 UTC on the 1st is the 2nd in Perth, when only the second cohort was running.
+        from datetime import datetime, timezone as dt_tz
+        first = Cohort.objects.create(name="1st", year=2026, start_date=date(2026, 3, 1), end_date=date(2026, 3, 1))
+        second = Cohort.objects.create(name="2nd", year=2026, start_date=date(2026, 3, 2), end_date=date(2026, 3, 2))
+        thread = ForumThread.objects.create(created_by=None, title="T")
+        ForumThread.objects.filter(pk=thread.pk).update(created_at=datetime(2026, 3, 1, 23, 30, tzinfo=dt_tz.utc))
+        self._backfill()
+        thread.refresh_from_db()
+        self.assertEqual(thread.cohort, second)
+        self.assertNotEqual(thread.cohort, first)

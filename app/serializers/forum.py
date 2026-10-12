@@ -8,7 +8,9 @@ from rest_framework.exceptions import PermissionDenied
 
 from ..access import (
     can_edit_forum_item,
+    cohort_has_ended,
     is_admin,
+    visible_forum_threads,
 )
 from ..models import (
     ForumFlag,
@@ -73,6 +75,10 @@ class _ForumAuthorFieldsMixin(serializers.Serializer):
 FORUM_POST_MAX_CHARS = 5000
 
 
+def _cohort_label(cohort):
+    return f"{cohort.name} ({cohort.year})" if cohort else None
+
+
 def _request_is_admin(serializer):
     request = serializer.context.get("request")
     return bool(request) and is_admin(request.user)
@@ -83,6 +89,16 @@ class ForumPostCreateSerializer(serializers.ModelSerializer):
         model = ForumPost
         fields = ["id", "thread", "parent_post", "body"]
         extra_kwargs = {"body": {"max_length": FORUM_POST_MAX_CHARS}}
+
+    def get_fields(self):
+        fields = super().get_fields()
+        request = self.context.get("request")
+        if request is not None:
+            # Another cohort's thread or post gets the same "does not exist" error as a missing one.
+            visible = visible_forum_threads(ForumThread.objects.all(), request.user)
+            fields["thread"].queryset = visible
+            fields["parent_post"].queryset = ForumPost.objects.filter(thread__in=visible)
+        return fields
 
     def validate(self, attrs):
         if ForumPost.objects.filter(thread=attrs["thread"], is_head_post=True, is_deleted=True).exists():
@@ -136,6 +152,8 @@ class ForumThreadSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer
     reply_count = serializers.SerializerMethodField()
     edited_at = serializers.SerializerMethodField()
     can_pin = serializers.SerializerMethodField()
+    is_archived = serializers.SerializerMethodField()
+    cohort_name = serializers.SerializerMethodField()
 
     class Meta:
         model = ForumThread
@@ -144,6 +162,7 @@ class ForumThreadSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer
             "author_name", "author_avatar_url",
             "created_at", "updated_at", "edited_at",
             "body", "reply_count", "can_edit", "is_own", "is_pinned", "pin_order", "can_pin",
+            "is_archived", "cohort_name",
         ]
         read_only_fields = ["module", "content_item", "created_at", "updated_at", "edited_at", "pin_order"]
 
@@ -162,6 +181,14 @@ class ForumThreadSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer
     def get_can_pin(self, obj):
         return _request_is_admin(self)
 
+    def get_cohort_name(self, obj):
+        """Which cohort the thread belongs to, for admins (who see every cohort); null for students."""
+        return _cohort_label(obj.cohort) if _request_is_admin(self) else None
+
+    def get_is_archived(self, obj):
+        """True once the thread's cohort has ended: it can be read but not replied to."""
+        return obj.cohort is not None and cohort_has_ended(obj.cohort)
+
     def validate(self, attrs):
         if "is_pinned" in attrs and not _request_is_admin(self):
             raise PermissionDenied("Only admins can pin or unpin threads.")
@@ -171,7 +198,8 @@ class ForumThreadSerializer(_ForumAuthorFieldsMixin, serializers.ModelSerializer
             instance = getattr(self, "instance", None)
             if instance is None or not instance.is_pinned:
                 max_pinned = settings.FORUM_MAX_PINNED_THREADS
-                current = ForumThread.objects.filter(is_pinned=True).exclude(pk=getattr(instance, "pk", None)).count()
+                cohort_id = getattr(instance, "cohort_id", None)
+                current = ForumThread.pinned_in_cohort(cohort_id).exclude(pk=getattr(instance, "pk", None)).count()
                 if current >= max_pinned:
                     raise serializers.ValidationError(
                         {"is_pinned": f"You have already reached the maximum of {max_pinned} pinned threads."}
@@ -201,13 +229,21 @@ class ForumThreadCreateSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = ForumThread
-        fields = ["body", "module", "content_item"]
+        # cohort: admins choose which cohort sees the thread; students always post to their own.
+        fields = ["body", "module", "content_item", "cohort"]
+        extra_kwargs = {"cohort": {"required": False, "allow_null": False}}
 
     def validate(self, data):
         if data.get("module") and data.get("content_item"):
             raise serializers.ValidationError(
                 "Provide either 'module' or 'content_item', not both."
             )
+        cohort = data.get("cohort")
+        if cohort is not None:
+            if not _request_is_admin(self):
+                raise PermissionDenied("Only admins can choose a cohort.")
+            if cohort_has_ended(cohort):
+                raise serializers.ValidationError({"cohort": "This cohort has ended, so its forum is read-only."})
         return data
 
 
@@ -230,6 +266,7 @@ class ModeratedPostSerializer(serializers.ModelSerializer):
     """A post as the moderation pages show it, with its thread and its author's ban status."""
 
     thread_title = serializers.CharField(source="thread.title")
+    cohort_name = serializers.SerializerMethodField()
     author = _ModeratedAuthorSerializer(allow_null=True)
     deleted_by_name = serializers.SerializerMethodField()
     removed_by_author = serializers.SerializerMethodField()
@@ -237,9 +274,12 @@ class ModeratedPostSerializer(serializers.ModelSerializer):
     class Meta:
         model = ForumPost
         fields = [
-            "id", "thread", "thread_title", "is_head_post", "body", "created_at", "edited_at",
+            "id", "thread", "thread_title", "cohort_name", "is_head_post", "body", "created_at", "edited_at",
             "author", "is_deleted", "deleted_at", "deleted_by_name", "removed_by_author",
         ]
+
+    def get_cohort_name(self, obj):
+        return _cohort_label(obj.thread.cohort)
 
     def get_deleted_by_name(self, obj):
         if not obj.is_deleted or obj.deleted_by is None:

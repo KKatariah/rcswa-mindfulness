@@ -43,16 +43,19 @@ import {
   getForumRules,
   getForumThread,
   getProgramStatus,
+  listCohorts,
   listForumThreads,
   pinForumThread,
   type Page,
+  type ProgramStatus,
   updateForumPost,
 } from "@/lib/api";
 import { pageTitle } from "@/lib/pageTitle";
 import { errorMessage } from "@/lib/errors";
 import type { ForumPost, ForumRule, ForumThread, ForumThreadDetail } from "@/types/forum";
+import type { Cohort } from "@/types/admin";
 import type { AuthUser } from "@/types/user";
-import { formatDateTime } from "@/lib/dates";
+import { formatDate, formatDateTime } from "@/lib/dates";
 
 // ── Utilities ──────────────────────────────────────────────────────────────────
 
@@ -69,6 +72,9 @@ function formatRelativeTime(iso: string) {
     month: "short",
   });
 }
+
+// Until the real status loads, assume the forum is open (so the composer doesn't flash a notice).
+const NO_STATUS: ProgramStatus = { is_active: true, opens_on: null, thread_cohorts: [], default_thread_cohort: null };
 
 function isAdminUser(user: AuthUser | null) {
   return user?.role === "admin";
@@ -153,7 +159,19 @@ function Avatar({ name, avatarUrl, size = 36 }: { name: string; avatarUrl?: stri
 const TAG_TONES = {
   author: "bg-brand-blue/10 text-brand-blue-dark",
   you: "bg-gray-100 text-gray-600",
+  cohort: "bg-amber-50 text-amber-700",
 } as const;
+
+/** The author's tags on a thread: "You", and for admins the cohort it belongs to. */
+function threadTags(thread: ForumThread) {
+  if (!thread.is_own && !thread.cohort_name) return null;
+  return (
+    <>
+      {thread.is_own && <AuthorTag tone="you">You</AuthorTag>}
+      {thread.cohort_name && <AuthorTag tone="cohort">{thread.cohort_name}</AuthorTag>}
+    </>
+  );
+}
 
 /** Small pill after an author's name, e.g. "Author" or "You". */
 function AuthorTag({ tone, children }: { tone: keyof typeof TAG_TONES; children: ReactNode }) {
@@ -413,6 +431,7 @@ function Composer({
   onSubmit,
   user,
   bare = false,
+  extra,
 }: {
   heading: ReactNode;
   label: string;
@@ -422,6 +441,8 @@ function Composer({
   user: AuthUser | null;
   /** Leave off the card, for a composer that sits inside another card. */
   bare?: boolean;
+  /** Extra fields shown under the text box. */
+  extra?: ReactNode;
 }) {
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -465,6 +486,7 @@ function Composer({
         maxLength={POST_MAX_CHARS}
         className={`mt-3 max-h-96 w-full resize-none rounded-xl border border-gray-200 p-3 text-sm text-ink placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-brand-blue ${bare ? "bg-white" : "bg-surface-muted"}`}
       />
+      {extra}
       {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
       <div className="mt-3 flex items-center justify-between gap-3">
         <p className="text-xs text-muted" aria-live="polite">
@@ -508,7 +530,7 @@ function ReplyItem({
   post,
   highlighted,
   canReport,
-  banned,
+  canEditText,
   onEdit,
   onDelete,
   onReport,
@@ -516,7 +538,7 @@ function ReplyItem({
   post: ForumPost;
   highlighted: boolean;
   canReport: boolean;
-  banned: boolean;
+  canEditText: boolean;
   onEdit: (id: number, body: string) => Promise<void>;
   onDelete: (id: number) => void;
   onReport: (post: ForumPost) => void;
@@ -526,7 +548,7 @@ function ReplyItem({
 
   const actions: MenuAction[] = [];
   if (post.can_edit) {
-    if (!banned) actions.push(editAction(() => setEditing(true)));
+    if (canEditText) actions.push(editAction(() => setEditing(true)));
     actions.push(deleteAction("Delete reply", () => onDelete(post.id)));
   }
   if (canReport && !post.is_own) actions.push(reportAction(post.has_flagged, () => onReport(post)));
@@ -646,6 +668,8 @@ function ThreadDetailView({
   const banned = !!user?.forum_banned;
   // Admins act on posts directly rather than reporting them.
   const canReport = !isAdminUser(user) && !banned;
+  // Once the forum is read-only, only admins can still edit (to moderate); deleting stays open.
+  const canEditText = !banned && (isActive || isAdminUser(user));
   const notice = banNotice(user);
 
   // Deleting the only reply on the last page leaves it empty: go back to the page before.
@@ -683,7 +707,7 @@ function ThreadDetailView({
   if (thread.can_pin) {
     threadActions.push(pinAction(thread.is_pinned, handlePinToggle));
   }
-  if (openingPost?.can_edit && !banned) threadActions.push(editAction(() => setEditingOpening(true)));
+  if (openingPost?.can_edit && canEditText) threadActions.push(editAction(() => setEditingOpening(true)));
   if (thread.can_edit) threadActions.push(deleteAction("Delete thread", onDeleteThread));
   if (canReport && openingPost && !openingPost.is_own) {
     threadActions.push(reportAction(openingPost.has_flagged, () => onReport(openingPost, "thread")));
@@ -710,7 +734,7 @@ function ThreadDetailView({
                   name={thread.author_name}
                   createdAt={thread.created_at}
                   editedAt={thread.edited_at ?? openingPost?.edited_at ?? null}
-                  tags={thread.is_own && <AuthorTag tone="you">You</AuthorTag>}
+                  tags={threadTags(thread)}
                 />
                 {!editingOpening && (
                   <PostMenu className="-my-1.5 -mr-2" label="Thread actions" actions={threadActions} />
@@ -769,7 +793,7 @@ function ThreadDetailView({
                   post={post}
                   highlighted={post.id === highlightPostId}
                   canReport={canReport}
-                  banned={banned}
+                  canEditText={canEditText}
                   onEdit={onEditPost}
                   onDelete={onDeletePost}
                   onReport={(p) => onReport(p, "reply")}
@@ -859,7 +883,7 @@ function ThreadRow({ thread, isFirst, isLast, isOnly, isAdmin, onSelect, onEdit,
               name={thread.author_name}
               createdAt={thread.created_at}
               editedAt={thread.edited_at}
-              tags={thread.is_own && <AuthorTag tone="you">You</AuthorTag>}
+              tags={threadTags(thread)}
             />
 
             {editing ? (
@@ -902,11 +926,14 @@ type FeedViewProps = {
   searching: boolean;
   more: ReactNode;
   onSelect: (id: number) => void;
-  onCreateThread: (body: string) => Promise<void>;
+  onCreateThread: (body: string, cohort?: number) => Promise<void>;
   onEditThread: (id: number, body: string) => Promise<void>;
   onDeleteThread: (id: number) => void;
   onPinThread: (id: number, is_pinned: boolean) => Promise<void>;
   isActive: boolean;
+  /** Admins only: the cohorts a new thread can go to, and which one is picked to begin with. */
+  threadCohorts: Cohort[];
+  defaultThreadCohort: number | null;
   user: AuthUser | null;
 };
 
@@ -920,10 +947,36 @@ function FeedView({
   onDeleteThread,
   onPinThread,
   isActive,
+  threadCohorts,
+  defaultThreadCohort,
   user,
 }: FeedViewProps) {
   const isAdmin = isAdminUser(user);
   const notice = banNotice(user);
+  const cohortSelectId = useId();
+  // The admin's pick; until they choose, follow the server's default (the most recent running cohort).
+  const [pickedCohort, setPickedCohort] = useState<number | null>(null);
+  const threadCohort = threadCohorts.some((c) => c.id === pickedCohort) ? pickedCohort : defaultThreadCohort;
+  const cohortPicker =
+    isAdmin && threadCohorts.length > 0 ? (
+      <div className="mt-3 flex items-center gap-2">
+        <label htmlFor={cohortSelectId} className="text-xs font-semibold text-muted">
+          Post to cohort
+        </label>
+        <select
+          id={cohortSelectId}
+          value={threadCohort ?? ""}
+          onChange={(e) => setPickedCohort(Number(e.target.value))}
+          className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+        >
+          {threadCohorts.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name} ({c.year}) · {formatDate(c.start_date)} – {formatDate(c.end_date)}
+            </option>
+          ))}
+        </select>
+      </div>
+    ) : null;
 
   return (
     <div className="flex flex-col gap-4">
@@ -940,8 +993,9 @@ function FeedView({
           label="Start a new thread"
           placeholder="Share your thoughts, ask a question, or start a discussion..."
           submitLabel="Post"
-          onSubmit={onCreateThread}
+          onSubmit={(body) => onCreateThread(body, isAdmin ? threadCohort ?? undefined : undefined)}
           user={user}
+          extra={cohortPicker}
         />
       ) : (
         <ReadOnlyNotice>The forum is read-only — new threads can&apos;t be started right now.</ReadOnlyNotice>
@@ -993,6 +1047,39 @@ function ForumSearchField({ query, onQueryChange, className = "" }: SearchProps 
   );
 }
 
+/** Admins only: show one cohort's threads, or every cohort's. */
+function CohortFilter({
+  cohorts,
+  value,
+  onChange,
+}: {
+  cohorts: Cohort[];
+  value: number | null;
+  onChange: (id: number | null) => void;
+}) {
+  const id = useId();
+  return (
+    <div className="mt-3 flex items-center gap-2">
+      <label htmlFor={id} className="text-xs font-semibold text-muted">
+        Cohort
+      </label>
+      <select
+        id={id}
+        value={value ?? ""}
+        onChange={(e) => onChange(e.target.value === "" ? null : Number(e.target.value))}
+        className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue"
+      >
+        <option value="">All cohorts</option>
+        {cohorts.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name} ({c.year})
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
 /** Same order as every other page's rail (Next Session, Notifications), then the forum's own extras. */
 function ForumSidebar({ rules }: { rules: ForumRule[] | null }) {
   return (
@@ -1040,10 +1127,15 @@ export default function ForumPage() {
   const search = useDebouncedValue(query.trim());
   const canLoad = !authLoading && !!user && !needsRules;
   const [offset, setOffset] = useState(0);
+  // Admins can narrow the list to one cohort; null shows every cohort.
+  const [cohortFilter, setCohortFilter] = useState<number | null>(null);
+  const isAdmin = isAdminUser(user);
+  const filterCohort = isAdmin && cohortFilter !== null ? cohortFilter : undefined;
+  const allCohorts = useAsync(listCohorts, [user], [] as Cohort[], { enabled: canLoad && isAdmin });
   // Threads come a page at a time, and the search runs on the server so it covers every thread.
   const threadList = useAsync(
-    () => listForumThreads({ search, limit: THREADS_PER_PAGE, offset }),
-    [user, attempt, needsRules, search, offset],
+    () => listForumThreads({ search, cohort: filterCohort, limit: THREADS_PER_PAGE, offset }),
+    [user, attempt, needsRules, search, filterCohort, offset],
     { count: 0, results: [] } as Page<ForumThread>,
     { enabled: canLoad, errorFallback: "Failed to load forum" },
   );
@@ -1053,7 +1145,7 @@ export default function ForumPage() {
     setShownSearch(search);
     setOffset(0);
   }
-  const programStatus = useAsync(getProgramStatus, [user, attempt, needsRules], { is_active: true }, {
+  const programStatus = useAsync(getProgramStatus, [user, attempt, needsRules], NO_STATUS, {
     enabled: canLoad,
     errorFallback: "Failed to load forum",
   });
@@ -1063,6 +1155,7 @@ export default function ForumPage() {
     setOffset(Math.floor((threadCount - 1) / THREADS_PER_PAGE) * THREADS_PER_PAGE);
   }
   const isActive = programStatus.data.is_active;
+  const opensOn = programStatus.data.opens_on;
   // The open thread lives in the URL (/forum?thread=12), so back, refresh and links work.
   const threadId = parseThreadId(router.query.thread);
   const threadDetail = useAsync<ForumThreadDetail | null>(
@@ -1102,7 +1195,7 @@ export default function ForumPage() {
   // Re-fetch rather than patching the list locally: the server sorts threads
   // (pinned ones first) and owns each thread's reply_count.
   async function refreshThreads() {
-    threadList.setData(await listForumThreads({ search, limit: THREADS_PER_PAGE, offset }));
+    threadList.setData(await listForumThreads({ search, cohort: filterCohort, limit: THREADS_PER_PAGE, offset }));
   }
 
   function changePage(next: number) {
@@ -1133,8 +1226,8 @@ export default function ForumPage() {
     }
   }
 
-  async function handleCreateThread(body: string) {
-    await createForumThread({ body });
+  async function handleCreateThread(body: string, cohort?: number) {
+    await createForumThread(cohort === undefined ? { body } : { body, cohort });
     await refreshThreads();
   }
 
@@ -1251,7 +1344,9 @@ export default function ForumPage() {
               <div className="min-w-0 flex-1">
                 {!isActive && (
                   <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-center text-sm font-semibold text-amber-700">
-                    The program has ended — the forum is now read-only.
+                    {opensOn
+                      ? `The forum opens on ${formatDate(opensOn)}, when your cohort starts.`
+                      : "The program has ended — the forum is now read-only."}
                   </div>
                 )}
                 {threadId === null && (
@@ -1262,6 +1357,16 @@ export default function ForumPage() {
                     />
                     {/* Directly above the threads it filters, on every screen size. */}
                     <ForumSearchField query={query} onQueryChange={setQuery} className="mt-4" />
+                    {isAdmin && allCohorts.data.length > 0 && (
+                      <CohortFilter
+                        cohorts={allCohorts.data}
+                        value={cohortFilter}
+                        onChange={(id) => {
+                          setCohortFilter(id);
+                          setOffset(0);
+                        }}
+                      />
+                    )}
                   </div>
                 )}
 
@@ -1282,7 +1387,7 @@ export default function ForumPage() {
                     onDeleteThread={() => setPendingDelete({ kind: "thread", id: selectedThread.id })}
                     onPinThread={handlePinThread}
                     onReport={(post, kind) => setPendingReport({ post, kind })}
-                    isActive={isActive}
+                    isActive={isActive && !selectedThread.is_archived}
                     user={user}
                   />
                 ) : (
@@ -1298,6 +1403,8 @@ export default function ForumPage() {
                     onDeleteThread={(id) => setPendingDelete({ kind: "thread", id })}
                     onPinThread={handlePinThread}
                     isActive={isActive}
+                    threadCohorts={programStatus.data.thread_cohorts}
+                    defaultThreadCohort={programStatus.data.default_thread_cohort}
                     user={user}
                   />
                 )}

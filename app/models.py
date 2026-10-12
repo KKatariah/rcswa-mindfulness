@@ -653,6 +653,15 @@ class ForumThread(models.Model):
         related_name="threads_created",
         null=True,
     )
+    # Students only see threads from their own cohort. SET_NULL: deleting a cohort
+    # leaves its threads visible to everyone rather than destroying them.
+    cohort = models.ForeignKey(
+        Cohort,
+        on_delete=models.SET_NULL,
+        related_name="forum_threads",
+        null=True,
+        blank=True,
+    )
     title = models.CharField(max_length=200)
     is_pinned = models.BooleanField(default=False)
     pin_order = models.PositiveIntegerField(default=0, db_index=True)
@@ -675,12 +684,17 @@ class ForumThread(models.Model):
             ),
         ]
 
+    @classmethod
+    def pinned_in_cohort(cls, cohort_id):
+        """Pinned threads sharing a cohort. Each cohort has its own pins (limit and order),
+        since students only see their own cohort's threads."""
+        return cls.objects.filter(is_pinned=True, cohort_id=cohort_id)
+
     def reorder_pinned_threads(self, requested_order=None):
         with transaction.atomic():
             thread = type(self).objects.select_for_update().get(pk=self.pk)
             pinned_threads = list(
-                type(self).objects.select_for_update()
-                .filter(is_pinned=True)
+                type(self).pinned_in_cohort(thread.cohort_id).select_for_update()
                 .exclude(pk=thread.pk)
                 .order_by("pin_order", "created_at", "pk")
             )
