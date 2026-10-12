@@ -77,9 +77,13 @@ All times are Perth time (`TIME_ZONE = 'Australia/Perth'`, UTC+8, no daylight sa
 │   ├── public/             Static assets, PWA manifest, icons and the push service worker (sw.js)
 │   ├── e2e/                Playwright end-to-end tests and their seed script
 │   └── scripts/            generate-icons.mjs (rebuilds PWA icons from a logo)
-├── documentation/          Notifications Maintenance Guide (.docx / .pdf)
-├── admin/                  Project management records: plans, sprint reports, schema, minutes, timesheets
-└── .github/workflows/      CI checks and issue/branch automation
+├── documentation/          Non-technical handover and Notifications Maintenance Guide (.docx / .pdf)
+├── Dockerfile              API image (also runs the scheduled commands); client/Dockerfile is the frontend's
+├── docker-compose.yml      Production stack; docker-compose.build.yml builds from this checkout instead
+├── deploy/                 Container entrypoint and crontab
+├── .env.example            Every variable the Docker setup reads
+├── DEPLOYMENT.md           Docker deployment, updates, rollback and backups
+└── .github/workflows/      CI checks, Docker image publishing, and issue/branch automation
 ```
 
 Do not put anything except pages in `client/src/pages/`. Next.js treats every file in that folder as a page, so a test file there breaks the production build. Put tests next to the code they test in `src/lib/`, `src/hooks/` or `src/components/` instead.
@@ -155,6 +159,7 @@ Set these in a `.env` file at the repo root (loaded by `python-dotenv`) or in th
 | Variable                 | Default                                       | Purpose                                                                         |
 | ------------------------ | --------------------------------------------- | ------------------------------------------------------------------------------- |
 | `DJANGO_DEBUG`           | `True`                                        | Set `False` in production                                                       |
+| `DJANGO_SECRET_KEY`      | `django-insecure-dev-only` while debug is on  | Required when `DJANGO_DEBUG=False`: the API refuses to start without it         |
 | `ALLOWED_HOSTS`          | `localhost,127.0.0.1,[::1]`                   | Comma-separated hostnames the API answers to                                    |
 | `CORS_ALLOWED_ORIGINS`   | `http://localhost:3000,http://127.0.0.1:3000` | Comma-separated frontend origins, with protocol                                 |
 | `CSRF_TRUSTED_ORIGINS`   | _(empty)_                                     | Comma-separated HTTPS origins, needed for the Django admin behind HTTPS         |
@@ -173,7 +178,9 @@ Set these in a `.env` file at the repo root (loaded by `python-dotenv`) or in th
 
 Setting `ALLOWED_HOSTS`, `CORS_ALLOWED_ORIGINS` or `CSRF_TRUSTED_ORIGINS` **replaces** its default, so include `localhost` too if you still need it.
 
-`SECRET_KEY` is **not** read from the environment yet. See [Known limitations and open items](#12-known-limitations-and-open-items): this must be fixed before going live.
+Generate a production `DJANGO_SECRET_KEY` with `python -c "import secrets; print(secrets.token_urlsafe(50))"`. It signs sessions and hashes the login lockout records, so changing it later only resets lockouts and Django admin sessions.
+
+The Docker setup also uses `BEHIND_PROXY` (trust the proxy's `X-Forwarded-*` headers; `docker-compose.yml` sets it) and `SECURE_COOKIES` (`True` once the site is served over HTTPS). Both default to `False`.
 
 `GOOGLE_CLIENT_SECRET` is read by `settings.py` but nothing uses it. Google sign-in only needs the client ID.
 
@@ -201,8 +208,6 @@ Set these in `client/.env.local` (git-ignored) or the build environment.
 Then change the URLS from the current localhost url to production url
 
 <img width="495" height="318" alt="image" src="https://github.com/user-attachments/assets/54ad5bfa-ec74-4460-8d16-89cc4e386e46" />
-
-
 
 A Google sign-in for an email that already has a password account is refused (sign-up doesn't verify emails, so Google must not take over that account). New Google users are enrolled pending approval, like password sign-ups.
 
@@ -336,7 +341,9 @@ python manage.py push_adoption --csv    # machine-readable
 
 ## 8. Deploying to production
 
-The repo doesn't include deployment configuration (no Dockerfile or server config), so these are the steps any host needs. The app is two processes behind one HTTPS domain or two subdomains: the Django API and the Next.js frontend.
+**The recommended deployment is Docker Compose: see [DEPLOYMENT.md](DEPLOYMENT.md).** It runs the API, the frontend, the scheduled notification commands and a proxy from `docker-compose.yml` plus one `.env` file (`.env.example` lists every variable). The cron jobs, `collectstatic` and migrations are all handled by the containers.
+
+The rest of this section is for deploying without Docker. The app is two processes behind one HTTPS domain or two subdomains: the Django API and the Next.js frontend.
 
 ### Deploying the backend
 
@@ -354,7 +361,7 @@ These variables need production values. The rest keep their defaults from [Envir
 | Variable               | Production value                                                             |
 | ---------------------- | ---------------------------------------------------------------------------- |
 | `DJANGO_DEBUG`         | `False`                                                                      |
-| `DJANGO_SECRET_KEY`    | A newly generated secret, once the open item in section 12 is fixed          |
+| `DJANGO_SECRET_KEY`    | A newly generated secret (required; see [4](#4-environment-variables))       |
 | `ALLOWED_HOSTS`        | The API's hostname                                                           |
 | `CORS_ALLOWED_ORIGINS` | The frontend's origin, e.g. `https://wellbeing.example.org`                  |
 | `CSRF_TRUSTED_ORIGINS` | The API's HTTPS origin, so the Django admin's forms work                     |
@@ -431,6 +438,8 @@ Every pull request and push to `main` runs:
 - **Backend code checks** (`.github/workflows/ci-backend.yml`): flake8, missing-migration check, migrations, the test suite, and `pip-audit` on `requirements.txt`.
 - **Frontend code checks** (`.github/workflows/ci-frontend.yml`): ESLint, `tsc`, `next build`, Vitest, and `npm audit` (production dependencies, high severity).
 
+On a push to `main`, `.github/workflows/docker-publish.yml` runs both sets of checks and, if they pass, publishes the Docker images to GHCR (see [DEPLOYMENT.md](DEPLOYMENT.md)).
+
 `main` requires an approving review and passing required checks before merging. Two more workflows automate the team's process: `create-branch.yml` creates a branch for each new issue, and `issue-autolink.yml` links a new pull request to the issue its branch came from.
 
 Keep `requirements.txt` UTF-8. On Windows, PowerShell's `>` writes UTF-16LE, which breaks pip on Linux CI, so regenerate it with:
@@ -506,8 +515,6 @@ How it works:
 - Students can report posts. Admins review reports, remove posts (removed posts stay visible to admins only) and ban users from posting in **Admin → Moderation**. A banned user can still read the forum.
 - Read-only mode is driven by `getProgramStatus` / the `is_active` flag, tied to cohort start and end dates. If no cohort has ever been configured, the forum stays open (fails open, not closed).
 
-The repo doesn't include deployment configuration (no Dockerfile or server config), so these are the steps any host needs. The app is two processes behind one HTTPS domain or two subdomains: the Django API and the Next.js frontend.
-
 ## 11. Troubleshooting
 
 | Symptom                                                        | Cause and fix                                                                                                                                                                                                                                                                  |
@@ -537,6 +544,6 @@ The repo doesn't include deployment configuration (no Dockerfile or server confi
 
 ## 13. Other project documents
 
+- [`DEPLOYMENT.md`](DEPLOYMENT.md): deploying and running the app with Docker Compose.
 - `documentation/Notifications Maintenance Guide.pdf` (and `.docx`): maintaining push notifications.
-- `admin/`: the project plan and user stories, sprint reports, the database schema (`mindfulness_database_schema.pdf`), meeting minutes and timesheets.
-- The non-technical handover document (separate Word document for the client) covers using the site day to day: modules, surveys, notifications, resources, the forum and the admin portal.
+- `documentation/RCSWA_Wellbeing_Non-Technical_Handover.pdf` (and `.docx`): using the site day to day: modules, surveys, notifications, resources, the forum and the admin portal.
