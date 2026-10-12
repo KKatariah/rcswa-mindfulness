@@ -28,12 +28,18 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'REMOVED'
-
 # SECURITY WARNING: don't run with debug turned on in production!
 # Set DJANGO_DEBUG=False there.
 DEBUG = os.environ.get("DJANGO_DEBUG", "True") == "True"
+
+# SECURITY WARNING: keep the secret key used in production secret!
+# Production must set DJANGO_SECRET_KEY; the insecure fallback is for development only.
+# Generate one: python -c "import secrets; print(secrets.token_urlsafe(50))"
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or ("django-insecure-dev-only" if DEBUG else None)
+if not SECRET_KEY:
+    from django.core.exceptions import ImproperlyConfigured
+
+    raise ImproperlyConfigured("DJANGO_SECRET_KEY must be set when DJANGO_DEBUG=False.")
 
 
 def _env_list(name, default=""):
