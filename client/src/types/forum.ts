@@ -35,6 +35,10 @@ export type ForumThread = {
   // Position among pinned threads (1 = top); 0 when not pinned.
   pin_order: number;
   can_pin: boolean;
+  // The thread's cohort has ended, so it can be read but not replied to.
+  is_archived: boolean;
+  // Which cohort the thread belongs to, e.g. "Spring (2026)". Admins only; null for students.
+  cohort_name: string | null;
 };
 
 export type ForumThreadDetail = ForumThread & {

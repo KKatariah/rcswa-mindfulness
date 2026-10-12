@@ -252,7 +252,7 @@ To change program content later, edit it in **Admin → Modules** rather than th
 - **Cohorts.** A cohort is one run of the program with a start and end date. Create the next cohort **before** students sign up: each new sign-up is automatically enrolled, as _pending_, in the current cohort, or the soonest upcoming one if none is running. If no cohort exists, the sign-up gets no enrollment.
 - **Approval.** Students can't use the site until an admin approves their enrollment in **Admin → Approvals** (enrollment status `pending` → `active`). Until then the API answers "Your account is awaiting admin approval." Admins never need approval.
 - **Unlocking.** Week N opens (N − 1) weeks after the cohort's start date; the Week 0 introduction opens with Week 1. A weekly survey unlocks once all content items in its module are complete. Students may work ahead within unlocked weeks. These rules live in `app/access.py`.
-- **Forum.** Read-only once the program is over, based on cohort dates. If no cohort has ever been set up, the forum stays open.
+- **Forum.** Each cohort has its own forum: students only see their cohort's threads, and admins see every cohort. Students can post from the day their cohort starts; before that the forum says when it opens. A cohort's forum becomes read-only the day after its end date, even while other cohorts are still running: no new threads, replies or edits, though students can still delete their own posts and admins can still moderate. Admins choose which cohort a new thread goes to (defaulting to the most recently started running cohort, and allowing an upcoming one for a welcome post), see each thread's cohort as a tag, can filter the forum by cohort, and see the cohort on the Moderation and user pages. If no cohort has ever been set up, the forum stays open.
 - **Survey data.** Responses are exported as CSV from **Admin → Surveys** (one survey or all of them) or the admin dashboard. Column headers use each question's permanent ID (`q1`, `q2`, …), which doesn't change when questions are reordered. Answers to questions that were edited or deleted after they were answered are flagged in the export.
 - **Sign-in security.** Login tokens are per device and expire after 7 days unused. Five wrong passwords in a row lock an account for 5 minutes.
 
@@ -513,7 +513,7 @@ How it works:
 #### Moderation and read-only mode
 
 - Students can report posts. Admins review reports, remove posts (removed posts stay visible to admins only) and ban users from posting in **Admin → Moderation**. A banned user can still read the forum.
-- Read-only mode is driven by `getProgramStatus` / the `is_active` flag, tied to cohort start and end dates. If no cohort has ever been configured, the forum stays open (fails open, not closed).
+- Read-only mode is driven by `getProgramStatus` / the `is_active` flag, which is true only while the viewer's own cohort is running (for admins, while any cohort hasn't ended); `opens_on` gives the start date before it has started, and admins also get `thread_cohorts` / `default_thread_cohort` for the new-thread cohort picker. Each thread also carries `is_archived`, so the reply box is hidden on threads from an ended cohort. If no cohort has ever been configured, the forum stays open (fails open, not closed).
 
 ## 11. Troubleshooting
 

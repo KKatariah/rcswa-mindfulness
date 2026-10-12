@@ -88,7 +88,14 @@ export type UserOverview = {
 	forum: {
 		thread_count: number;
 		post_count: number;
-		recent_posts: { id: number; thread_title: string; body: string; is_head_post: boolean; created_at: string }[];
+		recent_posts: {
+			id: number;
+			thread_title: string;
+			cohort_name: string | null;
+			body: string;
+			is_head_post: boolean;
+			created_at: string;
+		}[];
 	};
 	notifications: {
 		push_devices: number;
@@ -121,6 +128,8 @@ export type ModeratedPost = {
 	id: number;
 	thread: number;
 	thread_title: string;
+	/** The cohort whose forum the thread is in; null for a thread from before cohorts were tracked. */
+	cohort_name: string | null;
 	/** The thread's opening post: removing it removes the whole thread. */
 	is_head_post: boolean;
 	body: string;

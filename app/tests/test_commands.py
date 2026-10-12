@@ -201,6 +201,8 @@ class SeedModerationCommandTests(TestCase):
         self.assertEqual(client.get("/api/forum/posts/reported/").data["count"], 5)
         self.assertEqual(client.get("/api/forum/posts/removed/").data["count"], 4)
         self.assertEqual(client.get("/api/users/?forum_banned=true").data["count"], 2)
+        from ..models import ForumThread
+        self.assertFalse(ForumThread.objects.filter(cohort__isnull=True).exists())
 
     def test_rerunning_resets_and_clear_removes_it(self):
         _run("seed_moderation")

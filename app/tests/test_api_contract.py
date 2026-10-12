@@ -105,6 +105,11 @@ class ApiContractTests(APITestCase):
             "ForumPost",
         )
 
+    def test_program_status(self, _fire):
+        for user in (self.student, self.admin):
+            self.client.force_authenticate(user)
+            self.assertMatches(self.client.get("/api/program-status/"), "ProgramStatus")
+
     def test_forum_rules(self, _fire):
         self.client.force_authenticate(self.student)
         self.assertMatches(self.client.get("/api/forum/rules/"), "ForumRules")

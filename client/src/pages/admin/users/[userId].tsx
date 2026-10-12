@@ -279,7 +279,8 @@ export default function AdminUserProfilePage() {
 								{forum.recent_posts.map((p) => (
 									<li key={p.id} className="py-2">
 										<p className="text-xs text-muted">
-											{p.is_head_post ? "Started" : "Replied in"} <span className="font-semibold text-ink-soft">{p.thread_title}</span> · {formatDate(p.created_at)}
+											{p.is_head_post ? "Started" : "Replied in"} <span className="font-semibold text-ink-soft">{p.thread_title}</span>
+											{p.cohort_name && ` · ${p.cohort_name}`} · {formatDate(p.created_at)}
 										</p>
 										<p className="mt-1 line-clamp-2 wrap-anywhere text-ink-soft">{p.body}</p>
 									</li>

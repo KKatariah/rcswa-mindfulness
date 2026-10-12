@@ -64,6 +64,7 @@ function PostSummary({ post, children }: { post: ModeratedPost; children?: React
 						</Link>
 					)}
 				</span>
+				{post.cohort_name && <span>· {post.cohort_name}</span>}
 				<span>· {formatDateTime(post.created_at)}</span>
 			</div>
 			<div className="flex flex-wrap items-center gap-2 text-sm">

@@ -20,12 +20,17 @@ from rest_framework.throttling import ScopedRateThrottle
 
 from .access import (
     active_cohort_start_date,
+    admin_thread_cohorts,
+    can_reply_to_forum_thread,
+    can_start_forum_thread,
+    cohort_for_new_thread,
+    forum_opens_on,
     is_admin,
     is_participant,
-    is_program_active,
     module_is_unlocked,
     pick_signup_cohort,
     survey_is_unlocked,
+    visible_forum_threads,
 )
 from .exports import cohort_names, survey_responses_csv
 from .lockout import lock_minutes_left, unknown_email_entry
@@ -591,12 +596,17 @@ class _ForumWriteMixin:
 
     def partial_update(self, request, *args, **kwargs):
         require_not_forum_banned(request.user)
+        # Once a cohort ends its forum is read-only, edits included. Admins can still edit to moderate.
+        if not is_admin(request.user):
+            item = self.get_object()
+            thread = item if isinstance(item, ForumThread) else item.thread
+            self._require_forum_open(can_reply_to_forum_thread(request.user, thread))
         return super().partial_update(request, *args, **kwargs)
 
     @staticmethod
-    def _require_program_active():
-        if not is_program_active():
-            raise PermissionDenied("The program has ended; the forum is read-only.")
+    def _require_forum_open(is_open):
+        if not is_open:
+            raise PermissionDenied("The forum is read-only outside your cohort's dates.")
 
 
 def _live_posts():
@@ -628,9 +638,13 @@ class ForumThreadViewSet(_ForumWriteMixin, viewsets.ModelViewSet):
             # A thread whose opening post was deleted is gone from the forum (admins see it under Moderation).
             .exclude(opened_by__is_deleted=True)
             .prefetch_related(Prefetch("posts", queryset=posts))
-            .select_related("created_by")
+            .select_related("created_by", "cohort")
             .order_by("-is_pinned", "pin_order", "-updated_at", "-pk")
         )
+        qs = visible_forum_threads(qs, self.request.user)
+        cohort_id = _id_param(self.request, "cohort")
+        if self.action == "list" and cohort_id and is_admin(self.request.user):
+            qs = qs.filter(cohort_id=cohort_id)
         search = self.request.query_params.get("search", "").strip()
         if self.action == "list" and search:
             qs = qs.filter(_thread_search(search, is_admin(self.request.user)))
@@ -656,11 +670,17 @@ class ForumThreadViewSet(_ForumWriteMixin, viewsets.ModelViewSet):
             return response
 
     def perform_create(self, serializer):
-        self._require_program_active()
+        self._require_forum_open(can_start_forum_thread(self.request.user))
+        # Only admins get this far with a cohort (the serializer rejects it from students).
+        chosen = serializer.validated_data.pop("cohort", None)
+        cohort_id = chosen.pk if chosen else cohort_for_new_thread(self.request.user)
         body = serializer.validated_data.pop("body")
         title = _derive_title(body)
         with transaction.atomic():
-            thread = serializer.save(created_by=self.request.user, title=title)
+            thread = serializer.save(
+                created_by=self.request.user, title=title,
+                cohort_id=cohort_id,
+            )
             head_post = ForumPost.objects.create(
                 thread=thread,
                 author=self.request.user,
@@ -732,8 +752,9 @@ class ForumPostViewSet(
 
     def get_queryset(self):
         if self.action in self._ADMIN_ACTIONS:
-            return ForumPost.objects.select_related("author", "thread", "deleted_by")
-        return _live_posts().select_related("author")
+            return ForumPost.objects.select_related("author", "thread__cohort", "deleted_by")
+        visible = visible_forum_threads(ForumThread.objects.all(), self.request.user)
+        return _live_posts().filter(thread__in=visible).select_related("author")
 
     def get_serializer_class(self):
         if self.action == "create":
@@ -741,7 +762,8 @@ class ForumPostViewSet(
         return ForumPostSerializer
 
     def perform_create(self, serializer):
-        self._require_program_active()
+        thread = serializer.validated_data["thread"]
+        self._require_forum_open(can_reply_to_forum_thread(self.request.user, thread))
         serializer.save(author=self.request.user)
 
     def perform_update(self, serializer):
@@ -1358,4 +1380,18 @@ def health_view(request):
 @api_view(["GET"])
 @permission_classes([IsApproved])
 def program_status_view(request):
-    return Response({"is_active": is_program_active()})
+    # Whether this user can post: only while their own cohort is running. opens_on is set
+    # while it hasn't started yet, so the forum can say when it opens rather than "ended".
+    opens_on = forum_opens_on(request.user)
+    data = {
+        "is_active": can_start_forum_thread(request.user),
+        "opens_on": opens_on.isoformat() if opens_on else None,
+        "thread_cohorts": [],
+        "default_thread_cohort": None,
+    }
+    if is_admin(request.user):
+        # Choices for the admin's cohort picker on a new thread.
+        cohorts = list(admin_thread_cohorts())
+        data["thread_cohorts"] = CohortSerializer(cohorts, many=True).data
+        data["default_thread_cohort"] = cohort_for_new_thread(request.user)
+    return Response(data)

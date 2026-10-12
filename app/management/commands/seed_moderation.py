@@ -88,7 +88,7 @@ class Command(BaseCommand):
             return now - timedelta(**kwargs)
 
         def thread(author, body, when):
-            t = ForumThread.objects.create(created_by=author, title=body[:60].rsplit(" ", 1)[0])
+            t = ForumThread.objects.create(created_by=author, title=body[:60].rsplit(" ", 1)[0], cohort=cohort)
             head = post(t, author, body, when, head=True)
             t.opened_by = head
             t.save(update_fields=["opened_by"])

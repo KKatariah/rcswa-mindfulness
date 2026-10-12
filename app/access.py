@@ -6,6 +6,7 @@ unlocks are each decided here, so every caller applies the same rule.
 
 from datetime import timedelta
 
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import Cohort, ContentCompletion, Enrollment, ForumThread, Survey, SurveyResponse
@@ -138,6 +139,101 @@ def is_program_active(today=None):
         return True
     today = today or timezone.localdate()
     return Cohort.objects.filter(start_date__lte=today, end_date__gte=today).exists()
+
+
+def running_cohort(today=None):
+    """The cohort running today (the most recently started, if they overlap), or None."""
+    today = today or timezone.localdate()
+    return (
+        Cohort.objects.filter(start_date__lte=today, end_date__gte=today)
+        .order_by("-start_date", "-pk")
+        .first()
+    )
+
+
+# ── Forum cohorts ─────────────────────────────────────────────────────────────
+
+def forum_cohort(user):
+    """The cohort whose forum the user belongs to: their most recent active enrollment.
+    Cached on the user object for the rest of the request."""
+    if not hasattr(user, "_forum_cohort"):
+        enrollment = (
+            Enrollment.objects
+            .filter(user=user, status=Enrollment.Status.ACTIVE)
+            .select_related("cohort")
+            .order_by("-enrolled_at", "-pk")
+            .first()
+        )
+        user._forum_cohort = enrollment.cohort if enrollment else None
+    return user._forum_cohort
+
+
+def forum_cohort_id(user):
+    cohort = forum_cohort(user)
+    return cohort.pk if cohort else None
+
+
+def cohort_has_ended(cohort, today=None):
+    return cohort.end_date < (today or timezone.localdate())
+
+
+def cohort_is_running(cohort, today=None):
+    today = today or timezone.localdate()
+    return cohort.start_date <= today <= cohort.end_date
+
+
+def forum_opens_on(user, today=None):
+    """The start date of the user's cohort while it hasn't started yet, else None."""
+    cohort = None if is_admin(user) else forum_cohort(user)
+    if cohort is not None and cohort.start_date > (today or timezone.localdate()):
+        return cohort.start_date
+    return None
+
+
+def admin_thread_cohorts(today=None):
+    """Cohorts an admin can start a thread in: any that hasn't ended, running ones first."""
+    today = today or timezone.localdate()
+    return Cohort.objects.filter(end_date__gte=today).order_by("-start_date", "-pk")
+
+
+def can_start_forum_thread(user, today=None):
+    """Students can post from the day their cohort starts until the day it ends; outside
+    that its forum is read-only. Admins can post while any cohort hasn't ended yet."""
+    if is_admin(user):
+        return not Cohort.objects.exists() or admin_thread_cohorts(today).exists()
+    cohort = forum_cohort(user)
+    if cohort is None:
+        return is_program_active(today)
+    return cohort_is_running(cohort, today)
+
+
+def can_reply_to_forum_thread(user, thread, today=None):
+    """A thread can only be replied to (or edited) while its cohort is running, for admins
+    too. A thread with no cohort follows the replier's own cohort."""
+    if thread.cohort_id is None:
+        return can_start_forum_thread(user, today)
+    return cohort_is_running(thread.cohort, today)
+
+
+def cohort_for_new_thread(user):
+    """Students post to their own cohort. An admin who doesn't pick one posts to the
+    cohort running right now, else the next one to start."""
+    if is_admin(user):
+        cohort = running_cohort() or admin_thread_cohorts().order_by("start_date", "pk").first()
+        return cohort.pk if cohort else None
+    return forum_cohort_id(user)
+
+
+def visible_forum_threads(qs, user):
+    """Narrow a ForumThread queryset to what the user may see. Admins see every cohort;
+    students see their own cohort's threads plus any that have no cohort (posted
+    before any cohort existed)."""
+    if is_admin(user):
+        return qs
+    cohort_id = forum_cohort_id(user)
+    if cohort_id is None:
+        return qs.filter(cohort__isnull=True)
+    return qs.filter(Q(cohort__isnull=True) | Q(cohort_id=cohort_id))
 
 
 def pick_signup_cohort(today=None):
