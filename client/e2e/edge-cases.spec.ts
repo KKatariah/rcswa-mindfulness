@@ -81,9 +81,13 @@ test("the forum shows threads a page at a time and searches on the server", asyn
 
 	await expect(page.getByText("Fake thread 25", { exact: true })).toBeVisible();
 	await expect(page.getByText("Fake thread 26", { exact: true })).toHaveCount(0);
-	await page.getByRole("button", { name: "Load more" }).click();
+	await expect(page.getByText("Page 1 of 2")).toBeVisible();
+	await page.getByRole("button", { name: "Next", exact: true }).click();
 	await expect(page.getByText("Fake thread 30", { exact: true })).toBeVisible();
-	await expect(page.getByRole("button", { name: "Load more" })).toHaveCount(0);
+	await expect(page.getByText("Fake thread 25", { exact: true })).toHaveCount(0);
+	await expect(page.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+	await page.getByRole("button", { name: "Previous" }).click();
+	await expect(page.getByText("Fake thread 1", { exact: true })).toBeVisible();
 
 	await page.getByRole("searchbox", { name: "Search forum threads" }).fill("7");
 	await expect(page.getByText("Fake thread 7", { exact: true })).toBeVisible();
