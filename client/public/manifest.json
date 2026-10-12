@@ -1,7 +1,7 @@
 {
   "name": "RCSWA Wellbeing",
   "short_name": "Wellbeing",
-  "description": "An online mindfulness training programme for medical students and junior doctors, created by Dr Sarah Moore at the Rural Clinical School of Western Australia.",
+  "description": "An online mindfulness training program for medical students and junior doctors, created by Dr Sarah Moore at the Rural Clinical School of Western Australia.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

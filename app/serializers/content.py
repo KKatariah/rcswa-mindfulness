@@ -1,4 +1,4 @@
-"""Programme content: modules, content items, resources and student progress."""
+"""Program content: modules, content items, resources and student progress."""
 
 
 from django.db.models import Max

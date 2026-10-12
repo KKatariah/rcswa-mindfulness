@@ -229,7 +229,7 @@ export function getModule(id: number | string): Promise<ApiModuleDetail> {
 	return request(`/modules/${id}/`);
 }
 
-/** Public programme overview for the home page. */
+/** Public program overview for the home page. */
 export function listModuleSummaries(): Promise<ApiModuleSummary[]> {
 	return request("/modules/summary/", { auth: false });
 }

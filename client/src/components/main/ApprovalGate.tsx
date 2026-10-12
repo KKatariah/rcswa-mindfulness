@@ -15,7 +15,7 @@ const APPROVED_ONLY_PATHS = [
   "/profile",
 ];
 
-/** Where to go after logging in: the programme, or home while the account awaits approval. */
+/** Where to go after logging in: the program, or home while the account awaits approval. */
 export function landingPathFor(user: Pick<AuthUser, "is_approved">) {
   return user.is_approved === true ? MODULES_PATH : HOME_PATH;
 }

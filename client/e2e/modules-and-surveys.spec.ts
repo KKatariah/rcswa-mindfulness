@@ -49,10 +49,10 @@ test("resources page lists resources for a logged-in user", async ({ page, reque
 	await expect(page.getByRole("region", { name: "Books" })).toContainText("My Year of Living Mindfully");
 });
 
-test("home page shows the programme and a logged-out visitor sees no profile link", async ({ page }) => {
+test("home page shows the program and a logged-out visitor sees no profile link", async ({ page }) => {
 	await page.goto("/");
-	await expect(page.getByText("Unable to load the programme right now.")).toHaveCount(0);
-	await expect(page.getByRole("heading", { name: "The 8-Week Programme" })).toBeVisible();
+	await expect(page.getByText("Unable to load the program right now.")).toHaveCount(0);
+	await expect(page.getByRole("heading", { name: "The 8-Week Program" })).toBeVisible();
 	await expect(page.getByRole("link", { name: /profile picture/ })).toHaveCount(0);
 });
 

@@ -65,27 +65,41 @@ export default function Home() {
 	const weeksRef = useRef<HTMLDivElement>(null);
 	const [signUpOpen, setSignUpOpen] = useState(false);
 	const {
-		data: programmeWeeks,
+		data: programWeeks,
 		loading: weeksLoading,
 		error: weeksError,
 	} = useAsync(
 		() =>
 			listModuleSummaries().then(
-				// Week 0 is the introduction module, not one of the 8 programme weeks.
+				// Week 0 is the introduction module, not one of the numbered program weeks.
 				(modules) => modules.filter((m) => m.week_number > 0),
 				() => {
-					throw new Error("Unable to load the programme right now.");
+					throw new Error("Unable to load the program right now.");
 				},
 			),
 		[],
 		[] as ApiModuleSummary[],
 	);
 
+	// Program length comes from the highest published week number, so adding a
+	// new module (e.g. week 9) updates every mention below automatically.
+	const weekCount =
+		programWeeks.length > 0 ? Math.max(...programWeeks.map((m) => m.week_number)) : null;
+
+	// "An 8-week", "An 11-week", "An 18-week", "An 80-week", but "A 9-week", "A 12-week".
+	const article =
+		weekCount !== null && (weekCount === 11 || weekCount === 18 || String(weekCount).startsWith("8"))
+			? "An"
+			: "A";
+	const journeyText = weekCount
+		? `${article} ${weekCount}-week guided meditation journey`
+		: "A guided meditation journey";
+
 	function scrollWeeks(direction: number) {
 		weeksRef.current?.scrollBy({ left: direction * CARD_SCROLL_DISTANCE, behavior: "smooth" });
 	}
 
-	function goToProgramme() {
+	function goToProgram() {
 		if (!user) return; // logged out: these buttons aren't rendered anyway
 		if (user.is_approved !== true) {
 			openApprovalModal(); // logged in but not approved: popup, stay on home
@@ -98,19 +112,16 @@ export default function Home() {
 		<>
 			<Head>
 				<title>{pageTitle()}</title>
-				<meta
-					name="description"
-					content="An 8-week guided meditation journey"
-				/>
+				<meta name="description" content={journeyText} />
 			</Head>
 
 			<Hero
 				title="Find Your Calm"
-				subtitle="An 8-week guided meditation journey for lasting wellbeing"
+				subtitle={`${journeyText} for lasting wellbeing`}
 				heightClass="min-h-[560px] sm:min-h-[640px]"
 			>
 				{user ? (
-					<button type="button" onClick={goToProgramme} className={`mt-8 flex h-14 ${CTA_CLASS}`}>
+					<button type="button" onClick={goToProgram} className={`mt-8 flex h-14 ${CTA_CLASS}`}>
 						Continue Your Journey
 					</button>
 				) : (
@@ -152,7 +163,7 @@ export default function Home() {
 			<section className="bg-surface-muted px-6 py-20 sm:px-10 lg:px-30">
 				<div className="mx-auto flex max-w-6xl items-center justify-between gap-4">
 					<h2 className="text-3xl font-extrabold text-ink sm:text-4xl">
-						The 8-Week Programme
+						{weekCount ? `The ${weekCount}-Week Program` : "The Program"}
 					</h2>
 
 					<ScrollButtons onScroll={scrollWeeks} className="hidden shrink-0 sm:flex" />
@@ -164,7 +175,7 @@ export default function Home() {
 					<div
 						ref={weeksRef}
 						role="region"
-						aria-label="Programme weeks"
+						aria-label="Program weeks"
 						tabIndex={0}
 						className="mx-auto mt-12 flex max-w-6xl snap-x snap-mandatory gap-6 overflow-x-auto scrollbar-none pb-4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-brand-blue"
 					>
@@ -175,7 +186,7 @@ export default function Home() {
 										className="h-44 w-72 shrink-0 animate-pulse rounded-2xl bg-white p-6 sm:w-80"
 									/>
 								))
-							: programmeWeeks.map(({ id, week_number, title, summary }) => (
+							: programWeeks.map(({ id, week_number, title, summary }) => (
 									<div
 										key={id}
 										className="flex w-72 shrink-0 flex-col snap-start rounded-2xl bg-white p-6 sm:w-80"
@@ -199,13 +210,13 @@ export default function Home() {
 				{user ? (
 					<>
 						<h2 className="text-3xl font-extrabold text-ink sm:text-4xl">Ready for Your Next Session?</h2>
-						<p className="mt-4 text-md text-muted">Pick up where you left off in the programme.</p>
+						<p className="mt-4 text-md text-muted">Pick up where you left off in the program.</p>
 						<button
 							type="button"
-							onClick={goToProgramme}
+							onClick={goToProgram}
 							className={`mt-8 inline-flex h-14 ${CTA_CLASS}`}
 						>
-							Go to Programme
+							Go to Program
 						</button>
 					</>
 				) : (

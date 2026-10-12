@@ -18,7 +18,7 @@ describe("weekLabel", () => {
 		expect(weekLabel(0)).toBe("Introduction");
 	});
 
-	it("numbers the programme weeks", () => {
+	it("numbers the program weeks", () => {
 		expect(weekLabel(1)).toBe("Week 1");
 		expect(weekLabel(8)).toBe("Week 8");
 	});
