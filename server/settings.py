@@ -95,6 +95,16 @@ CORS_EXPOSE_HEADERS = ["Content-Disposition"]
 # Needed for HTTPS requests from tunnels, staging or production.
 CSRF_TRUSTED_ORIGINS = _env_list("CSRF_TRUSTED_ORIGINS")
 
+# Behind a reverse proxy (the Docker setup): trust its X-Forwarded-Proto/Host headers so
+# HTTPS is detected and absolute URLs (cover images) use the public host. Only enable
+# this when every request comes through that proxy, or clients could spoof the headers.
+if os.environ.get("BEHIND_PROXY", "False") == "True":
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    USE_X_FORWARDED_HOST = True
+
+# Over HTTPS, keep the session and CSRF cookies off plain HTTP. Leave unset for a plain-HTTP test server.
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = os.environ.get("SECURE_COOKIES", "False") == "True"
+
 ROOT_URLCONF = 'server.urls'
 
 TEMPLATES = [

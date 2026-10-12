@@ -1,0 +1,13 @@
+# Build context for client/Dockerfile: source only, no local builds, env files or test output.
+node_modules
+.next
+.next-e2e
+coverage
+test-results
+playwright-report
+e2e
+client
+*.tsbuildinfo
+.env*
+Dockerfile
+.dockerignore

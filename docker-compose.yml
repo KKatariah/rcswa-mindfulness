@@ -1,0 +1,122 @@
+# Mindfulness program web app. Everything the server needs is this file plus a .env
+# beside it (copy .env.example). See DEPLOYMENT.md.
+#
+#   proxy       the one published port; sends /api, /admin, /static, /media to `api`, the rest to `web`
+#   api         Django REST API (gunicorn); applies new migrations on start
+#   web         Next.js frontend
+#   cron        the hourly notification commands (deploy/crontab)
+#   watchtower  pulls new images from GHCR after each merge to main and restarts api/web/cron
+#
+# Images are built and published by .github/workflows/docker-publish.yml.
+
+x-image: &api-image ${IMAGE_PREFIX:-ghcr.io/kkatariah/cits3200-professional-computing}-api:${IMAGE_TAG:-latest}
+
+x-api-env: &api-env
+  env_file: .env
+  environment:
+    # Forced here so a missing or wrong line in .env can't turn on debug mode.
+    DJANGO_DEBUG: "False"
+    BEHIND_PROXY: "True"
+    DJANGO_DB_PATH: /data/db.sqlite3
+    MEDIA_ROOT: /data/media
+
+x-auto-update: &auto-update
+  com.centurylinklabs.watchtower.enable: "true"
+
+services:
+  proxy:
+    image: caddy:2.11-alpine
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:8080"
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    depends_on:
+      - api
+      - web
+
+  api:
+    image: *api-image
+    <<: *api-env
+    command: web
+    restart: unless-stopped
+    volumes:
+      - appdata:/data
+    labels: *auto-update
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health/')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+
+  web:
+    image: ${IMAGE_PREFIX:-ghcr.io/kkatariah/cits3200-professional-computing}-web:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    labels: *auto-update
+
+  cron:
+    image: *api-image
+    <<: *api-env
+    command: cron
+    restart: unless-stopped
+    volumes:
+      - appdata:/data
+    labels: *auto-update
+    depends_on:
+      api:
+        # The api container applies migrations; jobs wait until it is up.
+        condition: service_healthy
+
+  watchtower:
+    image: nickfedor/watchtower:1.23.0
+    restart: unless-stopped
+    environment:
+      # Only touch containers labelled above, never anything else on the server.
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_POLL_INTERVAL: "${UPDATE_POLL_SECONDS:-300}"
+      WATCHTOWER_CLEANUP: "true"
+      # Reads the GHCR login from `docker login ghcr.io` (DEPLOYMENT.md).
+      DOCKER_CONFIG: /docker-config
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DOCKER_CONFIG_DIR:-${HOME}/.docker}:/docker-config:ro
+    # SELinux (RHEL) otherwise blocks access to the Docker socket.
+    security_opt:
+      - label:disable
+
+volumes:
+  # The SQLite database (/data/db.sqlite3) and uploaded images (/data/media). Back this up.
+  appdata:
+
+configs:
+  caddyfile:
+    content: |
+      {
+        auto_https off
+        admin off
+        # Trust X-Forwarded-* from the server's own HTTPS proxy in front of this one.
+        servers {
+          trusted_proxies static private_ranges
+        }
+      }
+
+      # Plain HTTP; the server's own reverse proxy terminates HTTPS and forwards here.
+      :8080 {
+        encode gzip
+
+        # Django: the API, its admin site, the admin's static files and uploaded images.
+        @django path /api/* /admin /admin/* /static/* /media/*
+        handle @django {
+          request_body {
+            max_size 20MB
+          }
+          reverse_proxy api:8000
+        }
+
+        # Everything else is the Next.js frontend.
+        handle {
+          reverse_proxy web:3000
+        }
+      }

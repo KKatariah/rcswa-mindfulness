@@ -1,6 +1,7 @@
-"""Management commands not covered elsewhere: push_adoption, import_rcswa_modules and seed_moderation."""
+"""Management commands not covered elsewhere: push_adoption, import_rcswa_modules, seed_site and seed_moderation."""
 
 import json
+import os
 from datetime import date, timedelta
 from io import StringIO
 from pathlib import Path
@@ -8,7 +9,7 @@ from unittest.mock import patch
 
 from django.core.management import CommandError, call_command
 
-from ..models import Cohort, ContentCompletion, ContentItem, Enrollment, Module, PushSubscription
+from ..models import Cohort, ContentCompletion, ContentItem, Enrollment, Module, PushSubscription, Survey, User
 from .base import TestCase, _make_user
 
 RCSWA_CONTENT = Path(__file__).resolve().parents[1] / "content" / "rcswa_modules.json"
@@ -31,7 +32,8 @@ class PushAdoptionCommandTests(TestCase):
         user = _make_user(email)
         Enrollment.objects.create(user=user, cohort=cohort or self.cohort, status=status)
         for n in range(devices):
-            PushSubscription.objects.create(user=user, endpoint=f"https://push.example/{email}/{n}", p256dh="k", auth="a")
+            PushSubscription.objects.create(
+                user=user, endpoint=f"https://push.example/{email}/{n}", p256dh="k", auth="a")
         return user
 
     def test_says_so_when_no_cohort_is_running(self):
@@ -85,7 +87,8 @@ class ImportRcswaModulesCommandTests(TestCase):
     def test_imports_the_introduction_and_eight_weeks(self, _fire):
         out = _run("import_rcswa_modules")
 
-        self.assertEqual(list(Module.objects.order_by("week_number").values_list("week_number", flat=True)), list(range(9)))
+        self.assertEqual(list(Module.objects.order_by("week_number").values_list(
+            "week_number", flat=True)), list(range(9)))
         self.assertEqual(ContentItem.objects.count(), self.media_count)
         self.assertFalse(Module.objects.filter(is_published=True).exists())
         self.assertIn(f"Imported 9 modules and {self.media_count} media items.", out)
@@ -211,3 +214,62 @@ class SeedModerationCommandTests(TestCase):
         self.assertFalse(ForumFlag.objects.exists())
         self.assertFalse(Cohort.objects.filter(name="Moderation demo").exists())
         self.assertTrue(User.objects.filter(pk=self.admin.pk).exists())
+
+
+ADMIN_ENV = {
+    "DJANGO_SUPERUSER_EMAIL": "admin@example.org",
+    "DJANGO_SUPERUSER_FULL_NAME": "Site Admin",
+    "DJANGO_SUPERUSER_PASSWORD": "a-long-test-password",
+}
+
+
+@patch("app.signals._fire_async")
+@patch("sys.stdin.isatty", return_value=False)
+@patch.dict(os.environ, ADMIN_ENV)
+class SeedSiteCommandTests(TestCase):
+    """First-time server setup: modules, one weekly survey per week 1-8, one admin."""
+
+    def test_seeds_modules_surveys_and_an_admin(self, _tty, _fire):
+        out = _run("seed_site")
+
+        self.assertEqual(Module.objects.count(), 9)
+        self.assertEqual(
+            list(Survey.objects.filter(type="weekly").values_list("module__week_number", flat=True)),
+            list(range(1, 9)),
+        )
+        admin = User.objects.get(email="admin@example.org")
+        self.assertTrue(admin.is_superuser)
+        self.assertEqual(admin.role, User.Role.ADMIN)
+        self.assertTrue(admin.check_password("a-long-test-password"))
+        self.assertIn("Some modules are unpublished", out)
+
+    def test_running_it_again_changes_nothing(self, _tty, _fire):
+        _run("seed_site")
+        out = _run("seed_site")
+
+        self.assertEqual(Module.objects.count(), 9)
+        self.assertEqual(Survey.objects.count(), 8)
+        self.assertEqual(User.objects.count(), 1)
+        self.assertIn("An admin already exists (admin@example.org)", out)
+
+    def test_leaves_existing_modules_alone(self, _tty, _fire):
+        _run("seed_site")
+        Module.objects.filter(week_number=1).update(title="Edited by an admin")
+
+        out = _run("seed_site")
+
+        self.assertEqual(Module.objects.get(week_number=1).title, "Edited by an admin")
+        self.assertIn("Modules already exist; not re-imported.", out)
+
+    def test_keeps_an_existing_admin(self, _tty, _fire):
+        User.objects.create_superuser(email="first@example.org", password="pw", full_name="First")
+
+        _run("seed_site")
+
+        self.assertEqual(list(User.objects.values_list("email", flat=True)), ["first@example.org"])
+
+    def test_publish_flag_publishes_the_modules(self, _tty, _fire):
+        out = _run("seed_site", "--publish")
+
+        self.assertFalse(Module.objects.filter(is_published=False).exists())
+        self.assertNotIn("unpublished", out)

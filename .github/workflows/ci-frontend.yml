@@ -1,8 +1,8 @@
 name: Frontend code checks
 
 on:
-  push:
-    branches: [main]
+  # Pushes to main run these via docker-publish.yml, which publishes the images only if they pass.
+  workflow_call:
   pull_request:
     types: ["opened", "synchronize", "reopened", "edited"]
   workflow_dispatch:

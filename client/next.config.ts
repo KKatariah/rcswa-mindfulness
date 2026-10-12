@@ -9,8 +9,10 @@ const devAllowedOrigins = process.env.DEV_ALLOWED_ORIGINS
 
 const isDev = process.env.NODE_ENV === "development";
 
-// The Django API, which also serves uploaded cover images.
-const apiOrigin = new URL(process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api").origin;
+// The Django API, which also serves uploaded cover images. A relative URL (the Docker
+// setup's "/api") is this site's own origin, which 'self' already allows.
+const apiUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://127.0.0.1:8000/api";
+const apiOrigin = apiUrl.startsWith("/") ? "" : new URL(apiUrl).origin;
 
 // Google sign-in (@react-oauth/google loads Google's script, styles and an iframe).
 const GOOGLE_SIGN_IN = "https://accounts.google.com/gsi/";
@@ -38,6 +40,8 @@ const contentSecurityPolicy = [
 ].join("; ");
 
 const nextConfig: NextConfig = {
+  // Builds a self-contained server in .next/standalone for the Docker image (client/Dockerfile).
+  output: "standalone",
   // Lets the Playwright run use its own build folder alongside a normal dev server.
   distDir: process.env.NEXT_DIST_DIR ?? ".next",
   allowedDevOrigins: devAllowedOrigins,

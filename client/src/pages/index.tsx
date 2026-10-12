@@ -138,7 +138,15 @@ export default function Home() {
       </Head>
 
       <Hero
-        title="Presence · Compassion · Connection"
+        title={
+          <>
+            <span className="block md:inline">Presence</span>
+            <span className="hidden md:inline"> · </span>
+            <span className="block md:inline">Compassion</span>
+            <span className="hidden md:inline"> · </span>
+            <span className="block md:inline">Connection</span>
+          </>
+          }
         subtitle={`${journeyText} for lasting wellbeing`}
         heightClass="min-h-[560px] sm:min-h-[640px]"
       >

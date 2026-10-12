@@ -9,7 +9,7 @@ export default function Hero({
 	heightClass,
 	children,
 }: {
-	title: string;
+	title: ReactNode;
 	subtitle: string;
 	/** min-height classes, applied to both the photo and the content so they match. */
 	heightClass: string;

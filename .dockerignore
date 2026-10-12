@@ -1,0 +1,13 @@
+# Build context for the API image (Dockerfile). Only requirements.txt, manage.py,
+# server/, app/ and deploy/ are copied in; this keeps everything else (and every
+# local secret, database and upload) out of the context entirely.
+*
+!requirements.txt
+!manage.py
+!server/
+!app/
+!deploy/
+**/__pycache__
+**/*.py[cod]
+**/*.sqlite3
+**/.env*

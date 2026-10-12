@@ -1,0 +1,8 @@
+# Scheduled jobs for the `cron` service (README §4 explains both commands).
+# Times are UTC; Australia/Perth is UTC+8 with no DST. Output goes to `docker compose logs cron`.
+
+# Every hour; the command filters by each user's preferred reminder hour.
+0 * * * * python /app/manage.py send_due_reminders
+
+# Hourly from 7 am to 8 pm Perth (23:00–12:00 UTC).
+5 23,0-12 * * * python /app/manage.py send_module_unlock_notifications
