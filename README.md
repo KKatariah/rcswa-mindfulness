@@ -63,8 +63,8 @@ All times are Perth time (`TIME_ZONE = 'Australia/Perth'`, UTC+8, no daylight sa
 │   ├── survey_template.py  Standard weekly survey questions (MAQ q1–q12 + reflection q13)
 │   ├── exports.py          Survey response CSV export
 │   ├── moderation.py       Forum reports, removals and bans
-│   ├── admin.py            Django admin (/admin/) customisations
-│   ├── content/            rcswa_modules.json — the program's module content
+│   ├── admin.py            Django admin (/django-admin/) customisations
+│   ├── content/            rcswa_modules.json (module content) and covers/ (Resources page seed images)
 │   ├── fixtures/           dev_seed.json, weekly_survey.json (development data)
 │   ├── management/commands/  Cron jobs, content import and dev seeding commands
 │   ├── migrations/         Database migrations (some also seed default data)
@@ -113,7 +113,7 @@ python manage.py runserver           # http://127.0.0.1:8000
 
 Use `.venv` at the repo root as the name: the Playwright end-to-end tests look for `.venv/bin/python` there. Use `python -m pip` rather than plain `pip` so packages always go into the same Python that runs Django (see [Troubleshooting](#11-troubleshooting)).
 
-The account from `createsuperuser` is an app admin: it can open the admin portal (`/admin` on the frontend) and the Django admin (`http://127.0.0.1:8000/admin/`).
+The account from `createsuperuser` is an app admin: it can open the admin portal (`/admin` on the frontend) and the Django admin (`http://127.0.0.1:8000/django-admin/`).
 
 ### Frontend (terminal 2)
 

@@ -41,7 +41,8 @@ router.register("enrollments", EnrollmentViewSet, basename="enrollment")
 router.register("additional-resources", AdditionalResourceViewSet, basename="additional-resource")
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
+    # Not /admin/: that path is the frontend's admin portal (client/src/pages/admin).
+    path('django-admin/', admin.site.urls),
     path('api/', include('app.api_urls')),
     path('api/', include(router.urls)),
     path('api/notifications/vapid-public-key/', vapid_public_key_view, name='vapid-public-key'),

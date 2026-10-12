@@ -1,4 +1,4 @@
-"""The Django admin site (/admin/): every page loads, and its custom warnings and validation work."""
+"""The Django admin site (/django-admin/): every page loads, and its custom warnings and validation work."""
 
 import json
 from unittest.mock import Mock, patch

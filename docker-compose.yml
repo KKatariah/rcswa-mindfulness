@@ -1,7 +1,7 @@
 # Mindfulness program web app. Everything the server needs is this file plus a .env
 # beside it (copy .env.example). See DEPLOYMENT.md.
 #
-#   proxy       the one published port; sends /api, /admin, /static, /media to `api`, the rest to `web`
+#   proxy       the one published port; sends /api, /django-admin, /static, /media to `api`, the rest to `web`
 #   api         Django REST API (gunicorn); applies new migrations on start
 #   web         Next.js frontend
 #   cron        the hourly notification commands (deploy/crontab)
@@ -107,7 +107,7 @@ configs:
         encode gzip
 
         # Django: the API, its admin site, the admin's static files and uploaded images.
-        @django path /api/* /admin /admin/* /static/* /media/*
+        @django path /api/* /django-admin /django-admin/* /static/* /media/*
         handle @django {
           request_body {
             max_size 20MB

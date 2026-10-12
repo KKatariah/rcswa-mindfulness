@@ -13,7 +13,8 @@ from django.conf import settings
 from django.core.files import File
 from django.db import migrations
 
-COVERS_DIR = Path(settings.BASE_DIR) / "client" / "public" / "images" / "covers"
+# Inside app/ so the files are in the API image (.dockerignore leaves out client/).
+COVERS_DIR = Path(settings.BASE_DIR) / "app" / "content" / "covers"
 
 RESOURCES = [
     # ── Books ──

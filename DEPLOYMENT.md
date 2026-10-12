@@ -3,7 +3,7 @@
 The server needs only [`docker-compose.yml`](docker-compose.yml) and a `.env`. GitHub Actions builds the images and publishes them as public images on GHCR, so no registry login is needed.
 
 ```
-TLS proxy ── proxy :8080 (Caddy) ─┬─ /api /admin /static /media ── api  (Django + gunicorn, :8000)
+TLS proxy ── proxy :8080 (Caddy) ─┬─ /api /django-admin /static /media ── api  (Django + gunicorn, :8000)
                                   └─ everything else            ── web  (Next.js standalone, :3000)
 cron        same image as api; supercronic runs the two hourly notification commands
 watchtower  polls GHCR, redeploys api/web/cron on a new :latest

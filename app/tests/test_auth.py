@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 from django.core.cache import cache
 from django.test import override_settings
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
 
@@ -301,8 +302,8 @@ class LoginLockoutTests(APITestCase):
     def test_django_admin_login_is_locked_too(self):
         admin = User.objects.create_user(email="boss@test.local", password="Calm-River-42", role=User.Role.ADMIN)
         for _ in range(5):
-            self.client.post("/admin/login/", {"username": admin.email, "password": "wrong"})
-        resp = self.client.post("/admin/login/", {"username": admin.email, "password": "Calm-River-42"})
+            self.client.post(reverse("admin:login"), {"username": admin.email, "password": "wrong"})
+        resp = self.client.post(reverse("admin:login"), {"username": admin.email, "password": "Calm-River-42"})
         self.assertEqual(resp.status_code, 200)  # the login form again, not a redirect into the admin
         self.assertNotIn("_auth_user_id", self.client.session)
 
