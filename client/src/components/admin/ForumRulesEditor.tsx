@@ -108,7 +108,7 @@ function RulesForm({ saved, onSaved }: { saved: ForumRules; onSaved: (rules: For
 							title={draft.length === 1 ? "The forum needs at least one rule" : "Remove rule"}
 							className="ml-auto flex size-8 items-center justify-center rounded-lg text-muted hover:bg-red-50 hover:text-red-600 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted"
 						>
-							<TrashIcon className="size-4" />
+							<TrashIcon className="size-4 cursor-pointer" />
 						</button>
 					</div>
 					<div className="mt-4 space-y-4">
@@ -144,7 +144,7 @@ function RulesForm({ saved, onSaved }: { saved: ForumRules; onSaved: (rules: For
 				type="button"
 				onClick={addRule}
 				disabled={draft.length >= MAX_RULES || submitting}
-				className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-200 text-sm font-semibold text-muted hover:border-brand-blue hover:text-brand-blue disabled:opacity-50 disabled:hover:border-gray-200 disabled:hover:text-muted"
+				className="flex h-11 w-full items-center justify-center gap-2 rounded-xl border-2 border-dashed border-gray-200 text-sm font-semibold text-muted hover:border-brand-blue hover:text-brand-blue disabled:opacity-50 disabled:hover:border-gray-200 disabled:hover:text-muted enabled:cursor-pointer"
 			>
 				<PlusIcon className="size-4" />
 				{draft.length >= MAX_RULES ? `At most ${MAX_RULES} rules` : "Add rule"}
@@ -158,7 +158,7 @@ function RulesForm({ saved, onSaved }: { saved: ForumRules; onSaved: (rules: For
 						type="checkbox"
 						checked={requireReaccept}
 						onChange={(e) => setRequireReaccept(e.target.checked)}
-						className="mt-0.5 size-4 shrink-0 accent-brand-blue-dark"
+						className="mt-0.5 size-4 shrink-0 accent-brand-blue-dark cursor-pointer"
 					/>
 					<span>
 						<span className="font-semibold">Ask students to agree to the rules again</span>
@@ -179,7 +179,7 @@ function RulesForm({ saved, onSaved }: { saved: ForumRules; onSaved: (rules: For
 								setError(null);
 								setAddedKey(null);
 							}}
-							className="h-11 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-ink"
+							className="h-11 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-ink cursor-pointer hover:bg-surface-muted"
 						>
 							Discard
 						</button>

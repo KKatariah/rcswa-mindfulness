@@ -58,7 +58,7 @@ export default function ConfirmDialog({
 						ref={cancelRef}
 						type="button"
 						onClick={onCancel}
-						className="h-11 flex-1 rounded-xl border border-gray-200 text-sm font-semibold text-ink"
+						className="h-11 flex-1 rounded-xl border border-gray-200 text-sm font-semibold text-ink cursor-pointer hover:bg-surface-muted"
 					>
 						Cancel
 					</button>

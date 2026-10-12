@@ -22,7 +22,7 @@ export default function DangerZone({
 				type="button"
 				onClick={onAction}
 				disabled={disabled}
-				className="h-10 shrink-0 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-700 hover:bg-red-100 disabled:opacity-50"
+				className="h-10 shrink-0 rounded-xl border border-red-300 px-4 text-sm font-bold text-red-700 hover:bg-red-100 disabled:opacity-50 cursor-pointer"
 			>
 				{actionLabel}
 			</button>

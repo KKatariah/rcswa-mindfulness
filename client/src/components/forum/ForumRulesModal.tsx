@@ -54,7 +54,7 @@ export function ForumRulesSummary({ rules }: { rules: ForumRule[] }) {
 			<button
 				type="button"
 				onClick={() => setOpen(true)}
-				className="mt-4 text-sm font-bold text-brand-blue-dark hover:underline"
+				className="mt-4 text-sm font-bold text-brand-blue-dark hover:underline cursor-pointer"
 			>
 				Read full rules
 			</button>
@@ -114,7 +114,7 @@ export default function ForumRulesModal({ rules, isOpen, onClose, onAccept, upda
 								type="checkbox"
 								checked={agreed}
 								onChange={(e) => setAgreed(e.target.checked)}
-								className="size-5 shrink-0 accent-brand-blue-dark"
+								className="size-5 shrink-0 accent-brand-blue-dark cursor-pointer"
 							/>
 							I agree to follow the forum rules
 						</label>
@@ -125,7 +125,7 @@ export default function ForumRulesModal({ rules, isOpen, onClose, onAccept, upda
 							<button
 								type="button"
 								onClick={onClose}
-								className="h-12 rounded-xl border border-gray-200 px-5 text-md font-bold text-ink hover:bg-surface-muted"
+								className="h-12 rounded-xl border border-gray-200 px-5 text-md font-bold text-ink cursor-pointer hover:bg-surface-muted"
 							>
 								Not now
 							</button>

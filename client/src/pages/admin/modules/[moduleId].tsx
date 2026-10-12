@@ -369,11 +369,12 @@ export default function AdminModuleEditorPage() {
 						</div>
 					)}
 				</div>
-				<label className="mt-4 flex items-center gap-2 text-sm font-semibold text-ink">
+				<label className="mt-4 flex items-center gap-2 text-sm font-semibold text-ink cursor-pointer">
 					<input
 						type="checkbox"
 						checked={module.is_published}
 						onChange={(e) => patch({ is_published: e.target.checked })}
+						className="cursor-pointer"
 					/>
 					Published
 				</label>
@@ -448,10 +449,10 @@ export default function AdminModuleEditorPage() {
 							</div>
 							<div className="flex items-center gap-3">
 								<button type="button" onClick={() => setEditingItem(item)} aria-label="Edit content item">
-									<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
+									<PencilIcon className="size-4 text-muted hover:text-brand-blue cursor-pointer" />
 								</button>
 								<button type="button" onClick={() => setDeletingItem(item)} aria-label="Delete content item">
-									<TrashIcon className="size-4 text-muted hover:text-red-500" />
+									<TrashIcon className="size-4 text-muted hover:text-red-500 cursor-pointer" />
 								</button>
 							</div>
 						</Card>

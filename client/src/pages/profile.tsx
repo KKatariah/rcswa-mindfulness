@@ -55,7 +55,7 @@ const DISPLAY_NAME_MAX_LENGTH = 20;
 const FIELD_CLASS =
   "rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-brand-blue";
 const OUTLINE_BUTTON_CLASS =
-  "rounded-lg border border-brand-blue px-4 py-2 text-sm font-medium text-brand-blue transition-colors hover:bg-brand-blue/5";
+  "rounded-lg border border-brand-blue px-4 py-2 text-sm font-medium text-brand-blue transition-colors cursor-pointer hover:bg-brand-blue/5";
 const ADMIN_EMAIL = "sarah.j.moore@rcswa.edu.au";
 
 function sanitizeDisplayName(value: string) {
@@ -104,7 +104,7 @@ function ToggleSwitch({
         aria-label={label}
         aria-pressed={checked}
         onClick={() => onChange(!checked)}
-        className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors duration-200 ${
+        className={`relative inline-flex h-6 w-11 shrink-0 items-center cursor-pointer rounded-full transition-colors duration-200 ${
           checked ? "bg-brand-blue" : "bg-gray-300"
         }`}
       >

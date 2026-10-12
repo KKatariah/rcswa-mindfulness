@@ -101,7 +101,7 @@ function RemovedNote({ post }: { post: ModeratedPost }) {
 	);
 }
 
-const BUTTON = "h-9 rounded-lg px-3 text-xs font-bold disabled:opacity-50";
+const BUTTON = "h-9 rounded-lg px-3 text-xs font-bold disabled:opacity-50 enabled:cursor-pointer";
 const SECONDARY = `${BUTTON} border border-gray-200 bg-white text-ink-soft hover:border-brand-blue hover:text-brand-blue`;
 const DANGER = `${BUTTON} border border-red-200 bg-white text-red-600 hover:bg-red-50`;
 

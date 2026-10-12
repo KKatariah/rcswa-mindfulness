@@ -142,10 +142,10 @@ export default function ModuleProgress({ moduleId, items }: { moduleId: number; 
 									type="button"
 									aria-pressed={statusFilter === value}
 									onClick={() => setStatusFilter(value)}
-									className={`h-9 rounded-full border px-3.5 text-sm font-semibold ${
+									className={`h-9 rounded-full border px-3.5 text-sm font-semibold cursor-pointer ${
 										statusFilter === value
-											? "border-brand-blue-dark bg-brand-blue-dark text-white"
-											: "border-gray-200 bg-white text-ink-soft hover:border-brand-blue"
+											? "border-brand-blue-dark bg-brand-blue-dark text-white hover:bg-brand-blue-dark/90"
+											: "border-gray-200 bg-white text-ink-soft hover:bg-surface-muted hover:border-brand-blue"
 									}`}
 								>
 									{label} <span className="opacity-70">{count}</span>
@@ -175,7 +175,7 @@ export default function ModuleProgress({ moduleId, items }: { moduleId: number; 
 							type="button"
 							onClick={copyEmails}
 							disabled={shown.length === 0}
-							className="h-11 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-ink disabled:opacity-50"
+							className="h-11 rounded-xl border border-gray-200 bg-white px-4 text-sm font-semibold text-ink disabled:opacity-50 enabled:cursor-pointer enabled:hover:bg-surface-muted enabled:hover:border-brand-blue"
 						>
 							{copied ? "Copied!" : `Copy ${shown.length} email${shown.length === 1 ? "" : "s"}`}
 						</button>

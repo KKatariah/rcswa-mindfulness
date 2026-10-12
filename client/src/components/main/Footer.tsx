@@ -79,7 +79,7 @@ export default function Footer() {
           © {new Date().getFullYear()} RCSWA Wellbeing. All rights reserved.
         </p>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
           <a
             href="mailto:sara.j.moore@rcswa.edu.au"
             className="text-sm text-white/50 transition-colors hover:text-white/80"
@@ -87,18 +87,20 @@ export default function Footer() {
             sara.j.moore@rcswa.edu.au
           </a>
 
-          {SOCIAL_LINKS.map(({ label, href, icon: Icon }) => (
-            <a
-              key={label}
-              href={href}
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label={label}
-              className="flex size-9 items-center justify-center rounded-full bg-white/10 text-white"
-            >
-              <Icon className="size-4" />
-            </a>
-          ))}
+          <div className="flex items-center gap-3">
+            {SOCIAL_LINKS.map(({ label, href, icon: Icon }) => (
+              <a
+                key={label}
+                href={href}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label={label}
+                className="flex size-9 items-center justify-center rounded-full bg-white/10 text-white"
+              >
+                <Icon className="size-4" />
+              </a>
+            ))}
+          </div>
         </div>
       </div>
     </footer>
