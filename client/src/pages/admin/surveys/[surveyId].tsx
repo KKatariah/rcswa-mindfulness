@@ -19,6 +19,7 @@ import { useFormSubmit } from "@/hooks/useFormSubmit";
 import { deleteSurvey, getSurveyAdmin, listSurveyResponses, updateSurvey } from "@/lib/api";
 import { errorMessage } from "@/lib/errors";
 import { SURVEY_TYPE_LABELS, describeAnswerFormat } from "@/lib/surveys";
+import { hasMisplacedSkipRule } from "@/lib/surveyEditor";
 import type { AdminSurvey, AdminSurveyResponse, SurveyQuestion } from "@/types/admin";
 import { adminPageTitle } from "@/lib/pageTitle";
 import Button from "@/components/ui/Button";
@@ -108,17 +109,6 @@ function tidyQuestions(questions: SurveyQuestion[]) {
 		if (!tidy.section?.trim()) delete tidy.section;
 		if (!tidy.unit?.trim()) delete tidy.unit;
 		return tidy;
-	});
-}
-
-/**
- * Returns true if any question's skip_if target comes at or after that question in the list.
- * Exported so it can be unit-tested without rendering the full page.
- */
-export function hasMisplacedSkipRule(questions: SurveyQuestion[]): boolean {
-	return questions.some((q, index) => {
-		if (!q.skip_if) return false;
-		return !questions.slice(0, index).some(e => e.id === q.skip_if!.question_id);
 	});
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hasMisplacedSkipRule } from "./[surveyId]";
+import { hasMisplacedSkipRule } from "./surveyEditor";
 import type { SurveyQuestion } from "@/types/admin";
 
 const q1: SurveyQuestion = { id: "q1", type: "integer", text: "How many?" };
