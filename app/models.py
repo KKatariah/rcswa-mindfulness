@@ -267,7 +267,7 @@ class Module(models.Model):
 
     @property
     def week_label(self):
-        """Display label for the week; week 0 is the programme introduction."""
+        """Display label for the week; week 0 is the program introduction."""
         return "Introduction" if self.week_number == 0 else f"Week {self.week_number}"
 
     def __str__(self):

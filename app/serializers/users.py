@@ -9,6 +9,11 @@ from ..models import (
     User,
 )
 
+DISPOSABLE_EMAIL_DOMAINS = {
+    "mailinator.com", "10minutemail.com", "guerrillamail.com",
+    "tempmail.com", "yopmail.com", "trashmail.com",
+}
+
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True)
@@ -19,6 +24,13 @@ class RegisterSerializer(serializers.ModelSerializer):
 
     def validate_email(self, value):
         value = value.strip().lower()
+
+        domain = value.rsplit("@", 1)[-1]
+        if "." not in domain:
+            raise serializers.ValidationError("Enter a valid email address.")
+        if domain in DISPOSABLE_EMAIL_DOMAINS:
+            raise serializers.ValidationError("Please use a permanent email address.")
+
         if User.objects.filter(email__iexact=value).exists():
             raise serializers.ValidationError("An account with this email already exists.")
         return value

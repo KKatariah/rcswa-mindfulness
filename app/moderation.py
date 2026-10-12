@@ -1,7 +1,7 @@
 """Forum moderation: acting on reported posts and banning people from posting.
 
 A ban stops someone posting, replying, editing or reporting in the forum; they can
-still read it, and the rest of the programme (modules, surveys) is unaffected.
+still read it, and the rest of the program (modules, surveys) is unaffected.
 """
 
 from datetime import timedelta

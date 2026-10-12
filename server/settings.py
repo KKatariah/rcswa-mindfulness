@@ -196,6 +196,7 @@ REST_FRAMEWORK = {
         "forum_flag": "10/hour",
         # Logins/sign-ups per IP. Only the e2e test servers override this (they log in many test users).
         "auth": os.environ.get("AUTH_THROTTLE_RATE", "10/min"),
+        "register": os.environ.get("REGISTER_THROTTLE_RATE", "5/5m"),
     },
 }
 

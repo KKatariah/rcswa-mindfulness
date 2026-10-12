@@ -3,6 +3,7 @@
 from datetime import date, timedelta
 from unittest.mock import patch
 
+from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework import status
@@ -101,6 +102,20 @@ class AuthRoleTests(APITestCase):
             {"email": "student@test.local", "password": "testpass"},
             content_type="application/json",
         )
+        self.assertEqual(resp.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
+
+    def test_register_rate_limited_after_5_signups(self):
+        # Assumes the default "5/5m" register rate (REGISTER_THROTTLE_RATE unset).
+        cache.clear()
+        self.addCleanup(cache.clear)  # don't leak the count into other tests
+
+        def payload(i):
+            return {"email": f"bulk{i}@test.local", "full_name": "Bulk", "password": "Calm-River-42"}
+
+        for i in range(5):
+            resp = self.client.post("/api/register/", payload(i), content_type="application/json")
+            self.assertEqual(resp.status_code, status.HTTP_201_CREATED)
+        resp = self.client.post("/api/register/", payload(5), content_type="application/json")
         self.assertEqual(resp.status_code, status.HTTP_429_TOO_MANY_REQUESTS)
 
     def test_current_user_returns_role(self):
@@ -222,7 +237,7 @@ class LoginLockoutTests(APITestCase):
         self.assertEqual(codes, [401] * 4)
         fifth = self._login("wrong", ip="10.0.0.9")
         self.assertEqual(fifth.status_code, status.HTTP_403_FORBIDDEN)
-        self.assertEqual(fifth.data["error"], "Too many failed attempts. Try again in 15 minutes.")
+        self.assertEqual(fifth.data["error"], "Too many failed attempts. Try again in 5 minutes.")
         # Even the right password is refused while locked, from any address.
         locked = self._login("Calm-River-42", ip="10.0.0.99")
         self.assertEqual(locked.status_code, status.HTTP_403_FORBIDDEN)
@@ -231,7 +246,7 @@ class LoginLockoutTests(APITestCase):
     def test_lock_expires(self):
         for i in range(5):
             self._login("wrong", ip=f"10.0.1.{i}")
-        later = timezone.now() + timedelta(minutes=16)
+        later = timezone.now() + timedelta(minutes=6)
         with patch("django.utils.timezone.now", return_value=later):
             self.assertEqual(self._login("Calm-River-42", ip="10.0.1.99").status_code, status.HTTP_200_OK)
 
@@ -258,14 +273,14 @@ class LoginLockoutTests(APITestCase):
         unknown = attempts("Nobody@Test.local", "10.0.4")
         self.assertEqual([r.status_code for r in real], [r.status_code for r in unknown])
         self.assertEqual([r.data for r in real], [r.data for r in unknown])
-        self.assertEqual(unknown[-1].data["error"], "Too many failed attempts. Try again in 15 minutes.")
+        self.assertEqual(unknown[-1].data["error"], "Too many failed attempts. Try again in 5 minutes.")
 
     def test_unknown_email_lock_ignores_case_and_expires(self):
         from ..models import UnknownEmailLockout
         for i in range(5):
             self._login_as("ghost@test.local", ip=f"10.0.5.{i}")
         self.assertEqual(self._login_as("GHOST@test.local", ip="10.0.5.50").status_code, status.HTTP_403_FORBIDDEN)
-        later = timezone.now() + timedelta(minutes=16)
+        later = timezone.now() + timedelta(minutes=6)
         with patch("django.utils.timezone.now", return_value=later):
             self.assertEqual(self._login_as("ghost@test.local", ip="10.0.5.60").status_code, 401)
         # Only a hash is kept, never the address itself.

@@ -100,7 +100,7 @@ from .serializers import (
     UserDisplayNameSerializer,
 )
 from .stats import dashboard_stats, module_student_progress, user_overview
-from .throttles import AuthRateThrottle, ForumFlagRateThrottle
+from .throttles import AuthRateThrottle, ForumFlagRateThrottle, RegisterRateThrottle
 from .utils import gravatar_url
 
 logger = logging.getLogger(__name__)
@@ -170,7 +170,7 @@ def _auto_enroll_new_user(user):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
-@throttle_classes([AuthRateThrottle])
+@throttle_classes([RegisterRateThrottle])
 def register_view(request):
     serializer = RegisterSerializer(data=request.data)
 
@@ -368,7 +368,7 @@ class ModuleViewSet(viewsets.ModelViewSet):
         return Response(module_student_progress(module, cohort_id=_id_param(request, "cohort")))
 
     def get_permissions(self):
-        # The home page lists the programme for logged-out visitors. This override replaces
+        # The home page lists the program for logged-out visitors. This override replaces
         # the action's own permission_classes, so it has to allow it here.
         if self.action == "summary":
             return [AllowAny()]
@@ -561,7 +561,7 @@ def _attaches_to_previous(ch: str) -> bool:
 
 class _ForumWriteMixin:
     """Shared by threads and posts: only creating is rate limited, authors and admins
-    edit and delete, nothing new can be posted once the programme has ended, and
+    edit and delete, nothing new can be posted once the program has ended, and
     someone banned from the forum can't post or edit."""
 
     throttle_scope = "forum_post"
