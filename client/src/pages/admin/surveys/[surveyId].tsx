@@ -111,6 +111,17 @@ function tidyQuestions(questions: SurveyQuestion[]) {
 	});
 }
 
+/**
+ * Returns true if any question's skip_if target comes at or after that question in the list.
+ * Exported so it can be unit-tested without rendering the full page.
+ */
+export function hasMisplacedSkipRule(questions: SurveyQuestion[]): boolean {
+	return questions.some((q, index) => {
+		if (!q.skip_if) return false;
+		return !questions.slice(0, index).some(e => e.id === q.skip_if!.question_id);
+	});
+}
+
 /** "Skip this question when question N is X". Only number and rating questions can be the trigger. */
 function SkipRuleEditor({
 	question,
@@ -192,9 +203,26 @@ function QuestionsEditor({
 	const [savedAt, setSavedAt] = useState<Date | null>(null);
 	const [confirmingSave, setConfirmingSave] = useState(false);
 	const [addedId, setAddedId] = useState<string | null>(null);
+	const [highlightedId, setHighlightedId] = useState<string | null>(null);
 	const dirty = JSON.stringify(draft) !== JSON.stringify(survey);
 	const { draggingId, startDrag, handleKey } = useDragReorder<string>();
 	const questionIds = draft.questions.map((q) => q.id);
+
+	// Questions whose skip_if target comes after them in the current draft order.
+	const misplacedItems = draft.questions.flatMap((q, i) => {
+		if (!q.skip_if) return [];
+		if (draft.questions.slice(0, i).some(e => e.id === q.skip_if!.question_id)) return [];
+		const targetIdx = draft.questions.findIndex(x => x.id === q.skip_if!.question_id);
+		return [{ q, i, targetIdx }];
+	});
+	const misplacedSkip = misplacedItems.length > 0;
+
+	function scrollToQuestion(id: string) {
+		document.querySelector<HTMLElement>(`[data-reorder-id="${id}"]`)
+			?.scrollIntoView({ behavior: "smooth", block: "center" });
+		setHighlightedId(id);
+		setTimeout(() => setHighlightedId(null), 2000);
+	}
 
 	function reorderTo(ids: string[]) {
 		setDraft((d) => {
@@ -278,6 +306,8 @@ function QuestionsEditor({
 
 	function handleSubmit(e: FormEvent) {
 		e.preventDefault();
+		// Button is disabled when misplacedSkip, but guard in case of keyboard form submission.
+		if (misplacedSkip) return;
 		// Edits reach participants who've already answered, so double-check before changing a live survey.
 		if (responseCount > 0) {
 			setConfirmingSave(true);
@@ -341,7 +371,7 @@ function QuestionsEditor({
 				<Card
 					key={q.id}
 					data-reorder-id={q.id}
-					className={`p-5 ${draggingId === q.id ? "opacity-50" : ""}`}
+					className={`p-5 ${draggingId === q.id ? "opacity-50" : ""} ${highlightedId === q.id ? "ring-2 ring-red-400 ring-offset-1" : ""}`}
 				>
 					<div className="flex flex-wrap items-center gap-2">
 						<DragHandle
@@ -539,12 +569,34 @@ function QuestionsEditor({
 				))}
 			</div>
 
+			{misplacedSkip && (
+				<div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+					<p className="font-semibold">Fix these skip rules before saving:</p>
+					<ul className="mt-1 space-y-0.5">
+						{misplacedItems.map(({ q, i, targetIdx }) => (
+							<li key={q.id}>
+								<button
+									type="button"
+									onClick={() => scrollToQuestion(q.id)}
+									className="underline decoration-dotted hover:decoration-solid cursor-pointer"
+								>
+									Question {i + 1} ({q.id})
+								</button>
+								{targetIdx >= 0
+									? ` skips based on Question ${targetIdx + 1} (${q.skip_if!.question_id}), so it must come after it.`
+									: ` has a skip rule referencing "${q.skip_if!.question_id}", which doesn't exist.`}
+							</li>
+						))}
+					</ul>
+				</div>
+			)}
+
 			{error && <ErrorBanner>{error}</ErrorBanner>}
 
 			<div className="sticky bottom-4 flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-[0_6px_18px_-6px_rgba(0,0,0,0.15)]">
 				<Button
 					type="submit"
-					disabled={saving || !dirty}
+					disabled={saving || !dirty || misplacedSkip}
 					variant="dark" size="md" className="px-6"
 				>
 					{saving ? "Saving…" : "Save changes"}

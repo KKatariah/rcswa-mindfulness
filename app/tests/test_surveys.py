@@ -1085,7 +1085,7 @@ class SurveyQuestionChangeEdgeCaseTests(APITestCase):
         q1, q2, q3 = self.QUESTIONS
         resp = self._patch([q2, q1, q3])
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("skip_if", str(resp.data))
+        self.assertIn("skip rule", str(resp.data))
 
     def test_retype_under_a_new_id_is_accepted_and_old_answers_flagged(self):
         response = self._respond()
