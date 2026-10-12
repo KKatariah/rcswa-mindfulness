@@ -174,8 +174,53 @@ These are separate from the secrets (`SECRET_KEY`, Google and VAPID keys) set up
 
 ---
 
-## Taking minutes
+## User Profile
 
-I have created a template in the `/minutes` folder to use each meeting. Each meeting, copy the template from the file into a new [HedgeDoc](https://hedgedoc.ucc.asn.au/) by pressing the blue "New guest note" button in the top right (you don't need to sign in).
+**Frontend:** client/src/pages/profile.tsx 
+**API client:** changePassword and updateProfile in `client/src/lib/api.ts`
 
-Make sure to record who was at the meeting, what each person has done since the last meeting, and what each person will do next meeting. it can also be helpful to note down any discussion or decisions made during the meeting.
+### Avatars: Gravatar
+- Avatar URLs are computed server-side in `app/utils.py` (`gravatar_url()`), using an SHA-256 hash of the user's lowercased email.
+- Uses only Gravatar's free, unauthenticated avatar endpoint - no API key required (We are currently only fetching profile image, but one is needed if you want to fetch more than that from a user's profile on Gravatar). See Gravatar's [documentation](https://docs.gravatar.com) if you wish to learn more about its features. 
+
+### User payload / serialization
+`GET /api/user/`, and the `login`, `register`, `Google-login`, `profile-update`, and `accept-rules` endpoints, all return a hand-built `_user_payload() dict` from `app/views.py` — not UserSerializer.
+UserSerializer (which separately defines its own avatar_url field) does not appear to be imported or used anywhere in views.py. Worth confirming with the dev team whether it's dead code before relying on it for anything.
+
+---
+
+## Forum Features
+
+**Frontend:** client/src/pages/forum.tsx 
+**Models:** ForumThread, ForumPost in app/models.py 
+**Admin customizations:** app/admin.py
+
+### Pinning Threads
+- `is_pinned` (bool) + `pin_order` (int) on `ForumThread`, governed by a shared, single-source-of-truth maximum-pinned constant (currently 5) - check its definition before changing the limit anywhere.
+- `ForumThreadViewSet.partial_update()` (app/views.py) wraps the change in `transaction.atomic()`, detects `is_pinned` flipping in the incoming request data, and calls `thread.reorder_pinned_threads(1 if thread.is_pinned else None)`. A newly pinned thread is always inserted at `pin-order` position 1, shifting the rest down.
+- **Feed ordering:** `order_by("-is_pinned", "pin_order", "-updated_at")`.
+- **Django admin:** the `pin-order` dropdown is limited to the number of currently pinned threads (+1), capped at the site's max-pinned constant. Admin validation blocks saving `pin_order` on a thread without `is_pinned` ticked.
+
+### Editing
+- `edited_at` is a separate field from `created_at` - the original post time is never overwritten.
+- `ForumPostViewSet.perform_update()` recomputes the thread title via `_derive_title(post.body)` and writes it onto any `ForumThread` this post opens, so a thread's title stays in sync with its opening post.
+  - `_derive_title()` truncates to ≤60 chars at a word boundary, with explicit handling so it never splits an emoji or combining character mid-sequence.
+
+### Deleting
+- `ForumPostViewSet.perform_destroy()` sets `is_deleted=True` - a soft delete, not a database row removal.
+- It explicitly refuses to delete a thread's opening post: `"Cannot delete the opening post. Delete the thread instead."` Replies are not subject to this restriction.
+- This soft-delete behavior and the opening-post restriction are specific to the website's API. Deleting a post directly in the Django admin portal is a hard delete (permanent, with neither safeguard).
+- **Django admin:** deleting a `User` does not cascade-delete their posts; their threads/replies remain, attributed to "Deleted user."
+- **Django admin:** the "Parent post" field on a reply only lists posts that open a thread - a reply can't accidentally be set as the parent of another reply.
+
+### Forum-rules gate
+- `HasAcceptedForumRules` (permission class) blocks posting, replying, and pinning for non-admin users until `forum_rules_accepted_at` is set.
+- Set via `POST /api/forum/accept-rules/`. Admins are exempt.
+
+### Read-only mode
+- Driven by `getProgramStatus` / the `is_active` flag, tied to cohort start/end dates.
+- If no cohort has ever been configured, the forum stays open (fails open, not closed).
+
+---
+
+## 
