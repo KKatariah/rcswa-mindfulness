@@ -529,17 +529,6 @@ The repo doesn't include deployment configuration (no Dockerfile or server confi
 
 ## 12. Known limitations and open items
 
-- **`SECRET_KEY` is hard-coded in `server/settings.py` and committed to the repo.** It must be read from the environment before going live, with a newly generated value (`python -c "import secrets; print(secrets.token_urlsafe(50))"`). Keep a fallback for development so local runs and CI still work without it, but refuse to start in production without one. For example, after `DEBUG` is defined:
-
-  ```python
-  SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY") or ("django-insecure-dev-only" if DEBUG else "")
-  if not SECRET_KEY:
-      raise ImproperlyConfigured("Set DJANGO_SECRET_KEY in production")
-  ```
-
-  It signs sessions and hashes the email lockout records (`app/lockout.py`), so changing it later only resets login lockouts and Django admin sessions.
-
-- **No deployment configuration is in the repo.** Section 8 lists what a host needs.
 - **SQLite** suits the expected scale (50–80 students per intake) on a single server. Running several app servers against one database, or much larger numbers, would mean moving to PostgreSQL (change `DATABASES` in `server/settings.py`).
 - **Content-update notifications are sent from a daemon thread.** A web server restart while a batch is in flight silently drops the remaining sends, with no retry. This is acceptable at the current scale; if reliability requirements increase, replace the thread with a persistent task queue (e.g. Celery + Redis). Daily reminders are not affected: `send_due_reminders` is cron-driven and only `status=SENT` entries prevent re-delivery, so users left with a `status=FAILED` entry after a restart are retried on the next hourly run.
 - **Push notifications depend on the browser.** On iPhone, web push only works after the student adds the site to their Home Screen (iOS 16.4 or later).
