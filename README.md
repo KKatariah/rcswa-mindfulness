@@ -81,43 +81,6 @@ All times are Perth time (`TIME_ZONE = 'Australia/Perth'`, UTC+8, no daylight sa
 ├── admin/                  Project management records: plans, sprint reports, schema, minutes, timesheets
 └── .github/workflows/      CI checks and issue/branch automation
 ```
-.
-├── manage.py               Django entry point (run all manage.py commands from the repo root)
-├── requirements.txt        Python dependencies
-├── server/                 Django project: settings.py, urls.py, wsgi.py, asgi.py
-├── app/                    The Django app with all backend logic
-│   ├── models.py           Database models (User, Cohort, Enrollment, Module, ContentItem,
-│   │                       Survey, SurveyResponse, ForumThread, ForumPost, NotificationLog, ...)
-│   ├── views.py            API views and viewsets
-│   ├── api_urls.py         Non-router API routes (login, register, health, profile, ...)
-│   ├── serializers/        DRF serializers, one file per area (content, surveys, forum, ...)
-│   ├── access.py           Shared rules: who is an admin, when a module/survey unlocks
-│   ├── permissions.py      API permission classes (IsApproved is the default)
-│   ├── authentication.py   Per-device login tokens that expire after 7 days unused
-│   ├── lockout.py          Locks an account for 5 minutes after 5 wrong passwords
-│   ├── notifications.py    Web push sending
-│   ├── signals.py          Auto-creates weekly surveys, sends content-update notifications
-│   ├── survey_template.py  Standard weekly survey questions (MAQ q1–q12 + reflection q13)
-│   ├── exports.py          Survey response CSV export
-│   ├── moderation.py       Forum reports, removals and bans
-│   ├── admin.py            Django admin (/admin/) customisations
-│   ├── content/            rcswa_modules.json — the program's module content
-│   ├── fixtures/           dev_seed.json, weekly_survey.json (development data)
-│   ├── management/commands Cron jobs, content import and dev seeding commands
-│   ├── migrations/         Database migrations (some also seed default data)
-│   └── tests/              Backend tests
-├── client/                 Next.js frontend
-│   ├── src/pages/          One file per page; src/pages/admin/ is the admin portal
-│   ├── src/components/     UI components (main/, admin/, modules/, surveys/, notifications/, ui/)
-│   ├── src/lib/            API client (api.ts) and shared logic, with its unit tests
-│   ├── src/context/        AuthContext (signed-in user and token)
-│   ├── public/             Static assets, PWA manifest, icons and the push service worker (sw.js)
-│   ├── e2e/                Playwright end-to-end tests and their seed script
-│   └── scripts/            generate-icons.mjs (rebuilds PWA icons from a logo)
-├── documentation/          Notifications Maintenance Guide (.docx / .pdf)
-├── admin/                  Project management records: plans, sprint reports, schema, minutes, timesheets
-└── .github/workflows/      CI checks and issue/branch automation
-```
 
 Do not put anything except pages in `client/src/pages/`. Next.js treats every file in that folder as a page, so a test file there breaks the production build. Put tests next to the code they test in `src/lib/`, `src/hooks/` or `src/components/` instead.
 
