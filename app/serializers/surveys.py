@@ -190,21 +190,46 @@ def _likert_errors(q, label):
     return errors
 
 
-def _skip_if_errors(q, label, seen):
-    """skip_if must point at an earlier number or scale question and give a whole-number value."""
+def _skip_if_errors(q, label, seen, all_ids):
+    """skip_if must point at an earlier number or scale question and give a whole-number value.
+
+    Three distinct failure modes are reported separately so the admin knows exactly what to fix:
+    - The referenced question comes *after* this one (ordering violation).
+    - The referenced question is free-text (can't be a skip trigger).
+    - The trigger value is not a whole number.
+    """
     skip_if = q.get("skip_if")
     if skip_if is None:
         return []
-    target_id = skip_if.get("question_id") if isinstance(skip_if, dict) else None
-    target = seen.get(target_id) if isinstance(target_id, str) else None
-    valid = (
-        isinstance(skip_if, dict)
-        and set(skip_if) == {"question_id", "value"}
-        and target is not None
-        and target.get("type") in ("integer", "likert")
-        and _is_int(skip_if.get("value"))
-    )
-    return [] if valid else [f"{label}: skip_if must name an earlier number/scale question and a whole-number value."]
+    if not isinstance(skip_if, dict) or set(skip_if) != {"question_id", "value"}:
+        return [f"{label}: skip_if must have exactly the question_id and value fields."]
+    target_id = skip_if.get("question_id")
+    if not isinstance(target_id, str):
+        return [f"{label}: skip_if question_id must be a text identifier."]
+    value = skip_if.get("value")
+    target = seen.get(target_id)
+    errors = []
+    if target is None:
+        if target_id in all_ids:
+            errors.append(
+                f"{label}: the skip rule references \"{target_id}\", which comes after it — "
+                "move that question above this one, or remove the skip rule."
+            )
+        else:
+            errors.append(
+                f"{label}: the skip rule references \"{target_id}\", which doesn't exist."
+            )
+        return errors
+    if target.get("type") not in ("integer", "likert"):
+        errors.append(
+            f"{label}: the skip rule uses \"{target_id}\", a free-text question — "
+            "only rating scale or number questions can trigger a skip."
+        )
+    if not _is_int(value):
+        errors.append(
+            f"{label}: the skip rule's trigger value must be a whole number."
+        )
+    return errors
 
 
 def validate_survey_questions(questions):
@@ -214,19 +239,21 @@ def validate_survey_questions(questions):
     if len(questions) > SURVEY_MAX_QUESTIONS:
         raise serializers.ValidationError(f"A survey can have at most {SURVEY_MAX_QUESTIONS} questions.")
     errors = []
+    all_ids = {q["id"] for q in questions if isinstance(q, dict) and isinstance(q.get("id"), str)}
     # Questions checked so far, by id, for duplicate ids and skip_if targets.
     seen = {}
     for index, q in enumerate(questions, start=1):
         if not isinstance(q, dict):
             errors.append(f"Question {index}: must be an object.")
             continue
-        label = f"Question {q.get('id', index)!s}"
+        qid = q.get("id")
+        label = f"Question {index} ({qid})" if isinstance(qid, str) else f"Question {index}"
         errors += _shape_errors(q, index, label, seen)
         errors += _text_errors(q, label)
         errors += _likert_errors(q, label)
-        errors += _skip_if_errors(q, label, seen)
-        if isinstance(q.get("id"), str):
-            seen.setdefault(q["id"], q)
+        errors += _skip_if_errors(q, label, seen, all_ids)
+        if isinstance(qid, str):
+            seen.setdefault(qid, q)
     if errors:
         raise serializers.ValidationError(errors)
     return questions
