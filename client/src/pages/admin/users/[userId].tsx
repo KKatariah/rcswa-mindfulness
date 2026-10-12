@@ -123,7 +123,7 @@ export default function AdminUserProfilePage() {
 					<button
 						type="button"
 						onClick={() => setEditing(true)}
-						className="order-last inline-flex h-10 shrink-0 items-center gap-1.5 self-start rounded-xl border border-gray-200 px-4 text-sm font-semibold text-ink hover:border-brand-blue hover:text-brand-blue"
+						className="order-last inline-flex h-10 shrink-0 items-center gap-1.5 self-start rounded-xl border border-gray-200 px-4 text-sm font-semibold text-ink hover:border-brand-blue hover:text-brand-blue cursor-pointer"
 					>
 						<PencilIcon className="size-4" /> Edit
 					</button>

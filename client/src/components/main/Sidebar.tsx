@@ -45,7 +45,7 @@ export function SidebarLink({
       href={href}
       aria-current={active ? "page" : undefined}
       onClick={onClick}
-      className={`flex h-[44px] w-full items-center gap-3 rounded-lg px-3 transition-colors ${
+      className={`flex h-[44px] w-full items-center gap-3 rounded-lg px-3 transition-colors hover:underline ${
         active ? "bg-brand-blue text-white shadow-[0_4px_2px_rgba(0,0,0,0.1)]" : ""
       }`}
     >

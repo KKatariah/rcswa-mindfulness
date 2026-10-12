@@ -147,7 +147,7 @@ function SkipRuleEditor({
 						value={rule?.question_id ?? ""}
 						onChange={(v) => onChange(v)}
 						options={[{ value: "", label: "Never skip" }, ...options]}
-						className="h-11 w-full"
+						className="h-11 w-full cursor-pointer"
 					/>
 				</div>
 				{rule && (
@@ -362,7 +362,7 @@ function QuestionsEditor({
 								<button
 									type="button"
 									onClick={() => updateQuestion(index, { section: "" })}
-									className="h-8 rounded-lg px-2.5 text-xs font-semibold text-muted hover:bg-surface-muted hover:text-ink"
+									className="h-8 rounded-lg px-2.5 text-xs font-semibold text-muted hover:bg-surface-muted hover:text-ink cursor-pointer"
 								>
 									Add section heading
 								</button>
@@ -373,7 +373,7 @@ function QuestionsEditor({
 								disabled={draft.questions.length === 1}
 								aria-label={`Remove question ${q.id}`}
 								title={draft.questions.length === 1 ? "A survey needs at least one question" : "Remove question"}
-								className="flex size-8 items-center justify-center rounded-lg text-muted hover:bg-red-50 hover:text-red-600 disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted"
+								className="flex size-8 items-center justify-center rounded-lg text-muted hover:bg-red-50 hover:text-red-600 enabled:cursor-pointer disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-muted"
 							>
 								<TrashIcon className="size-4" />
 							</button>
@@ -385,7 +385,7 @@ function QuestionsEditor({
 							<button
 								type="button"
 								onClick={() => updateQuestion(index, { section: undefined })}
-								className="absolute right-0 top-0 text-xs font-semibold text-muted hover:text-red-600"
+								className="absolute right-0 top-0 text-xs font-semibold text-muted hover:text-red-600 cursor-pointer"
 							>
 								Remove heading
 							</button>
@@ -429,7 +429,7 @@ function QuestionsEditor({
 								value={q.type}
 								onChange={(v) => changeType(index, v as SurveyQuestion["type"])}
 								options={NEW_QUESTION_TYPES.map(({ type, label }) => ({ value: type, label }))}
-								className="h-11"
+								className="h-11 cursor-pointer"
 							/>
 						</div>
 						{(index > 0 || q.skip_if) && (
@@ -474,7 +474,7 @@ function QuestionsEditor({
 									type="button"
 									aria-pressed={q.min === min && q.max === max}
 									onClick={() => updateScale(index, q, { min, max })}
-									className="h-8 rounded-lg border border-gray-200 px-3 text-xs font-semibold text-ink hover:border-brand-blue hover:text-brand-blue aria-pressed:border-brand-blue aria-pressed:bg-brand-blue/10 aria-pressed:text-brand-blue"
+									className="h-8 rounded-lg border border-gray-200 px-3 text-xs font-semibold text-ink hover:border-brand-blue hover:text-brand-blue aria-pressed:border-brand-blue aria-pressed:bg-brand-blue/10 aria-pressed:text-brand-blue cursor-pointer"
 								>
 									{min}–{max}
 								</button>
@@ -531,7 +531,7 @@ function QuestionsEditor({
 						key={type}
 						type="button"
 						onClick={() => addQuestion(type)}
-						className="flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 px-3 text-sm font-semibold text-ink hover:border-brand-blue hover:text-brand-blue"
+						className="flex h-9 items-center gap-1.5 rounded-xl border border-gray-200 px-3 text-sm font-semibold text-ink hover:border-brand-blue hover:text-brand-blue cursor-pointer"
 					>
 						<PlusIcon className="size-4" />
 						{label}
@@ -553,7 +553,7 @@ function QuestionsEditor({
 					<button
 						type="button"
 						onClick={() => { setDraft(survey); setError(null); setAddedId(null); }}
-						className="h-11 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-ink"
+						className="h-11 rounded-xl border border-gray-200 px-4 text-sm font-semibold text-ink cursor-pointer hover:bg-surface-muted"
 					>
 						Discard
 					</button>

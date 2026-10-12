@@ -97,7 +97,7 @@ function EditUserForm({
 						{ value: "student", label: "Student" },
 						{ value: "admin", label: "Admin" },
 					]}
-					className="h-12 w-full"
+					className="h-12 w-full cursor-pointer"
 				/>
 			</Field>
 
@@ -110,7 +110,7 @@ function EditUserForm({
 						{ value: "", label: "Not enrolled" },
 						...cohorts.map((c) => ({ value: String(c.id), label: c.name })),
 					]}
-					className="h-12 w-full"
+					className="h-12 w-full cursor-pointer"
 				/>
 			</Field>
 

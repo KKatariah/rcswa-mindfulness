@@ -86,7 +86,11 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 					<ul className="hidden items-center justify-self-center gap-7 text-md font-semibold text-white lg:flex">
 						{visibleLinks.map((link) => (
 							<li key={link.href}>
-								<Link href={link.href} onClick={(event) => handleLinkClick(event, link.href)}>
+								<Link
+									href={link.href}
+									onClick={(event) => handleLinkClick(event, link.href)}
+									className="hover:underline"
+								>
 									{link.label}
 								</Link>
 							</li>
@@ -118,7 +122,7 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 								<button
 									type="button"
 									onClick={openLogin}
-									className="text-md font-semibold text-white"
+									className="text-md font-semibold text-white cursor-pointer hover:underline"
 								>
 									Log In
 								</button>
@@ -138,7 +142,7 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 						onClick={() => setIsOpen((open) => !open)}
 						aria-label={isOpen ? "Close menu" : "Open menu"}
 						aria-expanded={isOpen}
-						className="flex size-10 items-center rounded-lg text-white lg:hidden"
+						className="flex size-10 items-center justify-center rounded-lg text-white lg:hidden cursor-pointer hover:bg-white/10 focus-visible:outline-2 focus-visible:outline-white"
 					>
 						{isOpen ? (
 							<XIcon className="size-6" />
@@ -156,7 +160,7 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 								key={link.href}
 								href={link.href}
 								onClick={(event) => handleLinkClick(event, link.href)}
-								className="rounded-lg px-3 py-2.5 text-md font-semibold text-ink"
+								className="rounded-lg px-3 py-2.5 text-md font-semibold text-ink hover:underline"
 							>
 								{link.label}
 							</Link>
@@ -167,14 +171,14 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 								<Link
 									href={PROFILE_HREF}
 									onClick={(event) => handleLinkClick(event, PROFILE_HREF)}
-									className="truncate rounded-lg px-3 py-2.5 text-left text-md font-semibold text-ink"
+									className="truncate rounded-lg px-3 py-2.5 text-left text-md font-semibold text-ink hover:underline"
 								>
 									Hi, {user.full_name}
 								</Link>
 								<Button
 									type="button"
 									onClick={handleLogout}
-									variant="secondary" size={null} className="h-11 rounded-xl text-md font-semibold"
+									variant="secondary" size={null} className="h-11 rounded-xl text-md font-semibold hover:bg-surface-muted"
 								>
 									Log Out
 								</Button>
@@ -184,7 +188,7 @@ export default function Navbar({ actions }: { actions?: ReactNode } = {}) {
 								<button
 									type="button"
 									onClick={openLogin}
-									className="rounded-lg px-3 py-2.5 text-left text-md font-semibold text-ink"
+									className="rounded-lg px-3 py-2.5 text-left text-md font-semibold text-ink cursor-pointer hover:underline"
 								>
 									Log In
 								</button>

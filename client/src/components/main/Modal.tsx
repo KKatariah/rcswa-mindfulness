@@ -102,7 +102,7 @@ function CloseButton({ onClose, compact = false }: { onClose: () => void; compac
 			type="button"
 			onClick={onClose}
 			aria-label="Close"
-			className={`flex items-center justify-center rounded-lg text-ink hover:bg-surface-muted ${compact ? "size-8" : "size-12"}`}
+			className={`flex items-center justify-center rounded-lg text-ink hover:bg-surface-muted cursor-pointer ${compact ? "size-8" : "size-12"}`}
 		>
 			<XIcon className={compact ? "size-5" : "size-6"} strokeWidth={2.5} />
 		</button>

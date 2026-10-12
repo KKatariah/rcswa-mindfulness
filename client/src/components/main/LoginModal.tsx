@@ -100,7 +100,7 @@ export default function LoginModal({ isOpen, onClose }: LoginModalProps) {
 							setError(null);
 							setView("forgot");
 						}}
-						className="w-fit text-sm font-semibold text-brand-blue hover:underline"
+						className="w-fit text-sm font-semibold text-brand-blue hover:underline cursor-pointer"
 					>
 						Forgot password?
 					</button>

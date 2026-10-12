@@ -115,7 +115,7 @@ function ResourceForm({
 						}))
 					}
 					options={CATEGORY_OPTIONS}
-					className="h-12 w-full"
+					className="h-12 w-full cursor-pointer"
 				/>
 			</Field>
 
@@ -155,7 +155,7 @@ function ResourceForm({
 					type="file"
 					accept="image/*"
 					onChange={(e) => setForm((f) => ({ ...f, cover_image: e.target.files?.[0] ?? null }))}
-					className="text-sm text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-surface-muted file:px-3 file:py-2 file:text-sm file:font-semibold"
+					className="file:cursor-pointer text-sm text-ink file:mr-3 file:rounded-lg file:border-0 file:bg-surface-muted file:px-3 file:py-2 file:text-sm file:font-semibold"
 				/>
 			</Field>
 
@@ -298,9 +298,9 @@ export default function AdminResourcesPage() {
 							<button
 								type="button"
 								onClick={() => openCreate(category)}
-								className="flex items-center gap-1 text-sm font-semibold text-brand-blue"
+								className="flex items-center gap-1 text-sm font-semibold text-brand-blue cursor-pointer hover:underline"
 							>
-								<PlusIcon className="size-4" />
+								<PlusIcon className="size-4 cursor-pointer" />
 								Add
 							</button>
 						</div>
@@ -340,10 +340,10 @@ export default function AdminResourcesPage() {
 									<td className="px-5 py-3">
 										<div className="flex justify-end gap-3">
 											<button type="button" onClick={() => openEdit(resource)} aria-label="Edit resource">
-												<PencilIcon className="size-4 text-muted hover:text-brand-blue" />
+												<PencilIcon className="size-4 text-muted hover:text-brand-blue cursor-pointer" />
 											</button>
 											<button type="button" onClick={() => setDeleting(resource)} aria-label="Delete resource">
-												<TrashIcon className="size-4 text-muted hover:text-red-500" />
+												<TrashIcon className="size-4 text-muted hover:text-red-500 cursor-pointer" />
 											</button>
 										</div>
 									</td>
@@ -362,7 +362,7 @@ export default function AdminResourcesPage() {
 										type="button"
 										onClick={() => setPendingOrder(category, null)}
 										disabled={savingOrder === category}
-										className="h-10 rounded-xl border border-amber-300 bg-white px-4 font-semibold text-ink disabled:opacity-50"
+										className="h-10 rounded-xl border border-amber-300 bg-white px-4 font-semibold text-ink disabled:opacity-50 cursor-pointer hover:bg-surface-muted"
 									>
 										Discard
 									</button>

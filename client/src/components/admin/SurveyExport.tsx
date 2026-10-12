@@ -44,15 +44,15 @@ export default function SurveyExport(props: Props) {
 							{ value: "", label: "All surveys" },
 							...props.surveys.map((s) => ({ value: String(s.id), label: s.title })),
 						]}
-						className="h-11 sm:w-64"
+						className="h-11 sm:w-64 cursor-pointer"
 					/>
 				)}
-				<label className="flex items-center gap-2 text-sm text-ink">
+				<label className="flex items-center gap-2 text-sm text-ink cursor-pointer">
 					<input
 						type="checkbox"
 						checked={includeIdentity}
 						onChange={(e) => setIncludeIdentity(e.target.checked)}
-						className="size-4 accent-brand-blue"
+						className="size-4 accent-brand-blue cursor-pointer"
 					/>
 					Include names and emails
 				</label>

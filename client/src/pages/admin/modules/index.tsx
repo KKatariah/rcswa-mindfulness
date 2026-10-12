@@ -190,7 +190,7 @@ export default function AdminModulesPage() {
 								}}
 								aria-label="Delete module"
 							>
-								<TrashIcon className="size-4 text-muted hover:text-red-500" />
+								<TrashIcon className="size-4 text-muted hover:text-red-500 cursor-pointer" />
 							</button>
 						</td>
 					</tr>
@@ -224,11 +224,12 @@ export default function AdminModulesPage() {
 						value={form.description}
 						onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
 					/>
-					<label className="flex items-center gap-2 text-sm font-semibold text-ink">
+					<label className="flex items-center gap-2 text-sm font-semibold text-ink cursor-pointer">
 						<input
 							type="checkbox"
 							checked={form.is_published}
 							onChange={(e) => setForm((f) => ({ ...f, is_published: e.target.checked }))}
+							className="cursor-pointer"
 						/>
 						Published
 					</label>

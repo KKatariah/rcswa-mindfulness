@@ -47,7 +47,7 @@ export default function Tabs<K extends string>({
 						e.currentTarget.scrollIntoView({ block: "nearest", inline: "nearest" });
 						onChange(tab.id);
 					}}
-					className={`${style.tab} ${tab.id === active ? style.active : style.inactive}`}
+					className={`${style.tab} ${tab.id === active ? style.active : style.inactive} cursor-pointer`}
 				>
 					{tab.label}
 				</button>
