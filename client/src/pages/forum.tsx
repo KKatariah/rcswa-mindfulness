@@ -28,11 +28,10 @@ import {
   TrashIcon,
 } from "@/components/ui/icons";
 import PageHeader from "@/components/ui/PageHeader";
-import { LoadMore } from "@/components/ui/paging";
+import { Pager } from "@/components/ui/paging";
 import { UserAvatar } from "@/components/ui/UserAvatar";
 import { useAsync } from "@/hooks/useAsync";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
-import { usePagedList } from "@/hooks/usePagedList";
 import { useRequireAuth } from "@/hooks/useRequireAuth";
 import {
   acceptForumRules,
@@ -46,6 +45,7 @@ import {
   getProgramStatus,
   listForumThreads,
   pinForumThread,
+  type Page,
   updateForumPost,
 } from "@/lib/api";
 import { pageTitle } from "@/lib/pageTitle";
@@ -81,6 +81,10 @@ function banNotice(user: AuthUser | null) {
     ? `You've been banned from posting in the forum until ${formatDateTime(user.forum_banned_until)}.`
     : "You've been banned from posting in the forum.";
 }
+
+// Threads shown per page of the feed, and replies per page of a thread.
+const THREADS_PER_PAGE = 25;
+const REPLIES_PER_PAGE = 25;
 
 // Matches FORUM_POST_MAX_CHARS in app/serializers/forum.py.
 const POST_MAX_CHARS = 5000;
@@ -632,7 +636,9 @@ function ThreadDetailView({
 }: ThreadDetailViewProps) {
   const [editingOpening, setEditingOpening] = useState(false);
   const [pinError, setPinError] = useState<string | null>(null);
+  const [replyOffset, setReplyOffset] = useState(0);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const repliesRef = useRef<HTMLElement>(null);
   const headingId = useId();
   const repliesHeadingId = useId();
   const openingPost = thread.opening_post;
@@ -641,6 +647,23 @@ function ThreadDetailView({
   // Admins act on posts directly rather than reporting them.
   const canReport = !isAdminUser(user) && !banned;
   const notice = banNotice(user);
+
+  // Deleting the only reply on the last page leaves it empty: go back to the page before.
+  const lastPageOffset = Math.max(0, Math.floor((replyCount - 1) / REPLIES_PER_PAGE) * REPLIES_PER_PAGE);
+  if (replyOffset > lastPageOffset) setReplyOffset(lastPageOffset);
+  // A reply you just posted goes on the last page: show that page so it can be seen.
+  const [shownHighlight, setShownHighlight] = useState(highlightPostId);
+  if (shownHighlight !== highlightPostId) {
+    setShownHighlight(highlightPostId);
+    const index = thread.replies.findIndex((post) => post.id === highlightPostId);
+    if (index >= 0) setReplyOffset(Math.floor(index / REPLIES_PER_PAGE) * REPLIES_PER_PAGE);
+  }
+  const pageReplies = thread.replies.slice(replyOffset, replyOffset + REPLIES_PER_PAGE);
+
+  function changeReplyPage(next: number) {
+    setReplyOffset(next);
+    repliesRef.current?.scrollIntoView({ block: "start" });
+  }
 
   // Opening a thread swaps the whole view, so move focus to it for screen readers.
   useEffect(() => {
@@ -708,18 +731,39 @@ function ThreadDetailView({
           </div>
         </div>
 
+        {/* Reply box, above the replies so it's reachable without scrolling past them */}
+        {isActive && notice ? (
+          <p className="border-t border-gray-200 bg-surface-muted px-6 py-4 text-sm text-muted">{notice}</p>
+        ) : isActive ? (
+          <div className="border-t border-gray-200 bg-surface-muted">
+            <Composer
+              bare
+              heading={<p className="text-sm font-bold text-ink">Add a reply</p>}
+              label="Write a reply"
+              placeholder="Write your reply…"
+              submitLabel="Reply"
+              onSubmit={onReply}
+              user={user}
+            />
+          </div>
+        ) : (
+          <p className="border-t border-gray-200 bg-surface-muted px-6 py-4 text-sm text-muted">
+            The forum is read-only — replies can&apos;t be posted right now.
+          </p>
+        )}
+
         {/* Replies */}
-        <section aria-labelledby={repliesHeadingId} className="border-t border-gray-200">
+        <section ref={repliesRef} aria-labelledby={repliesHeadingId} className="scroll-mt-24 border-t border-gray-200">
           <h2 id={repliesHeadingId} className="px-6 pt-5 text-xs font-semibold uppercase tracking-wide text-muted">
             {replyCount} {replyCount === 1 ? "Reply" : "Replies"}
           </h2>
           {replyCount === 0 ? (
             <p className="px-6 pb-6 pt-2 text-sm text-muted">
-              No replies yet{isActive && !notice ? " — start the conversation below." : "."}
+              No replies yet{isActive && !notice ? " — start the conversation above." : "."}
             </p>
           ) : (
             <ol className="divide-y divide-gray-100 pb-2 pt-1">
-              {thread.replies.map((post) => (
+              {pageReplies.map((post) => (
                 <ReplyItem
                   key={post.id}
                   post={post}
@@ -733,27 +777,15 @@ function ThreadDetailView({
               ))}
             </ol>
           )}
+          <Pager
+            offset={replyOffset}
+            pageSize={REPLIES_PER_PAGE}
+            count={replyCount}
+            onChange={changeReplyPage}
+            className="px-6 pb-5 pt-2"
+          />
         </section>
 
-        {isActive && notice ? (
-          <p className="rounded-b-[10px] border-t border-gray-200 bg-surface-muted px-6 py-4 text-sm text-muted">{notice}</p>
-        ) : isActive ? (
-          <div className="rounded-b-[10px] border-t border-gray-200 bg-surface-muted">
-            <Composer
-              bare
-              heading={<p className="text-sm font-bold text-ink">Add a reply</p>}
-              label="Write a reply"
-              placeholder="Write your reply…"
-              submitLabel="Reply"
-              onSubmit={onReply}
-              user={user}
-            />
-          </div>
-        ) : (
-          <p className="rounded-b-[10px] border-t border-gray-200 bg-surface-muted px-6 py-4 text-sm text-muted">
-            The forum is read-only — replies can&apos;t be posted right now.
-          </p>
-        )}
       </Card>
     </div>
   );
@@ -1007,16 +1039,29 @@ export default function ForumPage() {
   const [query, setQuery] = useState("");
   const search = useDebouncedValue(query.trim());
   const canLoad = !authLoading && !!user && !needsRules;
+  const [offset, setOffset] = useState(0);
   // Threads come a page at a time, and the search runs on the server so it covers every thread.
-  const threadList = usePagedList((page) => listForumThreads({ search, ...page }), [user, attempt, needsRules, search], {
-    enabled: canLoad,
-    errorFallback: "Failed to load forum",
-  });
+  const threadList = useAsync(
+    () => listForumThreads({ search, limit: THREADS_PER_PAGE, offset }),
+    [user, attempt, needsRules, search, offset],
+    { count: 0, results: [] } as Page<ForumThread>,
+    { enabled: canLoad, errorFallback: "Failed to load forum" },
+  );
+  // A new search starts again from the first page.
+  const [shownSearch, setShownSearch] = useState(search);
+  if (shownSearch !== search) {
+    setShownSearch(search);
+    setOffset(0);
+  }
   const programStatus = useAsync(getProgramStatus, [user, attempt, needsRules], { is_active: true }, {
     enabled: canLoad,
     errorFallback: "Failed to load forum",
   });
-  const threads = threadList.items;
+  const { results: threads, count: threadCount } = threadList.data;
+  // Deleting the only thread on the last page leaves it empty: go back to the page before.
+  if (threadCount > 0 && offset >= threadCount) {
+    setOffset(Math.floor((threadCount - 1) / THREADS_PER_PAGE) * THREADS_PER_PAGE);
+  }
   const isActive = programStatus.data.is_active;
   // The open thread lives in the URL (/forum?thread=12), so back, refresh and links work.
   const threadId = parseThreadId(router.query.thread);
@@ -1057,7 +1102,12 @@ export default function ForumPage() {
   // Re-fetch rather than patching the list locally: the server sorts threads
   // (pinned ones first) and owns each thread's reply_count.
   async function refreshThreads() {
-    await threadList.reload();
+    threadList.setData(await listForumThreads({ search, limit: THREADS_PER_PAGE, offset }));
+  }
+
+  function changePage(next: number) {
+    setOffset(next);
+    window.scrollTo({ top: 0 });
   }
 
   async function handleAcceptRules() {
@@ -1137,8 +1187,9 @@ export default function ForumPage() {
         await refreshThreads();
       } else {
         await deleteForumThread(id);
-        threadList.removeItem(id);
         if (threadId === id) router.replace("/forum", undefined, { shallow: true });
+        // Re-fetch so the next page's first thread moves up into the gap.
+        await refreshThreads();
       }
     } catch (e) {
       setActionError(errorMessage(e, "Failed to delete"));
@@ -1239,12 +1290,7 @@ export default function ForumPage() {
                     threads={threads}
                     searching={!!search}
                     more={
-                      <LoadMore
-                        hasMore={threadList.hasMore}
-                        loading={threadList.loadingMore}
-                        error={threadList.loadMoreError}
-                        onLoadMore={threadList.loadMore}
-                      />
+                      <Pager offset={offset} pageSize={THREADS_PER_PAGE} count={threadCount} onChange={changePage} />
                     }
                     onSelect={openThread}
                     onCreateThread={handleCreateThread}
