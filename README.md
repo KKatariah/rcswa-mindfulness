@@ -184,8 +184,7 @@ These are separate from the secrets (`SECRET_KEY`, Google and VAPID keys) set up
 - Uses only Gravatar's free, unauthenticated avatar endpoint - no API key required (We are currently only fetching profile image, but one is needed if you want to fetch more than that from a user's profile on Gravatar). See Gravatar's [documentation](https://docs.gravatar.com) if you wish to learn more about its features. 
 
 ### User payload / serialization
-`GET /api/user/`, and the `login`, `register`, `Google-login`, `profile-update`, and `accept-rules` endpoints, all return a hand-built `_user_payload() dict` from `app/views.py` — not UserSerializer.
-UserSerializer (which separately defines its own avatar_url field) does not appear to be imported or used anywhere in views.py. Worth confirming with the dev team whether it's dead code before relying on it for anything.
+`GET /api/user/`, and the `login`, `register`, `Google-login`, `profile-update`, and `accept-rules` endpoints, all return a hand-built `_user_payload() dict` from `app/views.py`.
 
 ---
 
