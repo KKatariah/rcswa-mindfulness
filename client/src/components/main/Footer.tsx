@@ -40,7 +40,13 @@ export default function Footer() {
     <footer className="bg-ink px-6 py-16 sm:px-10 lg:px-30">
       <div className="flex flex-col justify-between gap-12 lg:flex-row lg:items-start">
         <div className="max-w-xs">
-          <img src="/assets/branding/rcswa-logo-white.png" alt="RCSWA logo" width={803} height={730} className="h-16 w-auto" />
+          <img
+            src="/assets/branding/rcswa-logo-white.png"
+            alt="RCSWA logo"
+            width={803}
+            height={730}
+            className="h-16 w-auto"
+          />
           <p className="mt-4 text-md text-white/50">
             An 8-week guided meditation journey for lasting wellbeing.
           </p>
@@ -59,7 +65,9 @@ export default function Footer() {
                       <Link
                         href={link.href}
                         // Pending users get the approval popup instead of navigating.
-                        onClick={link.href === PROGRAM_HREF ? guardApproval : undefined}
+                        onClick={
+                          link.href === PROGRAM_HREF ? guardApproval : undefined
+                        }
                         className="text-sm text-white/50"
                       >
                         {link.label}
@@ -81,10 +89,10 @@ export default function Footer() {
 
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
           <a
-            href="mailto:sara.j.moore@rcswa.edu.au"
+            href="mailto:sarah.j.moore@rcswa.edu.au"
             className="text-sm text-white/50 transition-colors hover:text-white/80"
           >
-            sara.j.moore@rcswa.edu.au
+            sarah.j.moore@rcswa.edu.au
           </a>
 
           <div className="flex items-center gap-3">
