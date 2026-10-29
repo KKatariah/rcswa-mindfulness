@@ -9,7 +9,7 @@
 #
 # Images are built and published by .github/workflows/docker-publish.yml.
 
-x-image: &api-image ${IMAGE_PREFIX:-ghcr.io/kkatariah/cits3200-professional-computing}-api:${IMAGE_TAG:-latest}
+x-image: &api-image ${IMAGE_PREFIX:-ghcr.io/kkatariah/rcswa-mindfulness}-api:${IMAGE_TAG:-latest}
 
 x-api-env: &api-env
   env_file: .env
@@ -52,7 +52,7 @@ services:
       retries: 3
 
   web:
-    image: ${IMAGE_PREFIX:-ghcr.io/kkatariah/cits3200-professional-computing}-web:${IMAGE_TAG:-latest}
+    image: ${IMAGE_PREFIX:-ghcr.io/kkatariah/rcswa-mindfulness}-web:${IMAGE_TAG:-latest}
     restart: unless-stopped
     labels: *auto-update
 
