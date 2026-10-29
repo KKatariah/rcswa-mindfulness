@@ -1,6 +1,6 @@
 asgiref==3.12.1
 cachetools==5.5.2
-certifi==2026.10.18
+certifi==2026.10.19
 charset-normalizer==3.5.1
 Django==6.0.8
 django-cors-headers==4.9.0
