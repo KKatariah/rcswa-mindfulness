@@ -18,7 +18,7 @@ appdata     named volume: SQLite DB and uploaded media, mounted at /data
 ## Setup
 
 ```bash
-REPO=https://raw.githubusercontent.com/KKatariah/CITS3200-Professional-Computing/main
+REPO=https://raw.githubusercontent.com/KKatariah/rcswa-mindfulness/main
 curl -fsSLO $REPO/docker-compose.yml -O $REPO/.env.example
 cp .env.example .env && chmod 600 .env   # then fill in
 docker compose up -d
@@ -44,7 +44,7 @@ docker compose exec api python manage.py seed_site
 
 ## Updates and rollback
 
-A merge to `main` runs the backend and frontend CI. If both pass, it publishes `:latest` and `:sha-<7>` for both images ([api](https://github.com/KKatariah/CITS3200-Professional-Computing/pkgs/container/cits3200-professional-computing-api), [web](https://github.com/KKatariah/CITS3200-Professional-Computing/pkgs/container/cits3200-professional-computing-web)). Watchtower then redeploys within `UPDATE_POLL_SECONDS`. Because the API runs migrations on start, an auto-update can change the schema.
+A merge to `main` runs the backend and frontend CI. If both pass, it publishes `:latest` and `:sha-<7>` for both images ([api](https://github.com/KKatariah/rcswa-mindfulness/pkgs/container/rcswa-mindfulness-api), [web](https://github.com/KKatariah/rcswa-mindfulness/pkgs/container/rcswa-mindfulness-web)). Watchtower then redeploys within `UPDATE_POLL_SECONDS`. Because the API runs migrations on start, an auto-update can change the schema.
 
 **Production:** we suggest auto-updating only dev. On prod, pin `IMAGE_TAG` to the `sha-` tag verified in dev, and promote with `docker compose up -d` after taking a backup.
 
